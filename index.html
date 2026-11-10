@@ -16,8 +16,8 @@
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
-const ROAD_L = 90, ROAD_R = 390;
-const LANE_X = [127, 202, 278, 353];
+const ROAD_L = 125, ROAD_R = 355;
+const LANE_X = [(ROAD_L + W / 2) / 2, (ROAD_R + W / 2) / 2];
 const BUCKET = 6, TRAILER_CAP = 5, NT = 4;           // tonnes per scoop, scoops per trailer, trailers
 const MAX_ORE = BUCKET * TRAILER_CAP * NT, MIN_ORE = BUCKET * 4;
 const TRIP = 6000;
@@ -65,14 +65,14 @@ cv.addEventListener('lostpointercapture', up);
 addEventListener('blur', () => { ptrs.clear(); for (const k in keys) keys[k] = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
-let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist;
+let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed;
 let ldr, carrying;
 let best = +localStorage.oreBest || 0;
 const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
 
 function reset() {
-  fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; qx = W / 2; qy = 260; traffic = []; animals = [];
-  scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: W / 2 }];
+  fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
+  scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }];
   ldr = { x: 250, y: 600, angle: 0 }; carrying = false; ptrs.clear(); syncBtns();
 }
 reset();
@@ -105,7 +105,7 @@ function action() {
 
 function spawn() {
   if (Math.random() < .6) {
-    const lane = Math.floor(Math.random() * 4), oncoming = lane < 2;
+    const lane = Math.floor(Math.random() * LANE_X.length), oncoming = lane === 1;
     const col = ['#c33', '#36c', '#ccc', '#e8b100', '#3a3'][Math.floor(Math.random() * 5)];
     const truck = Math.random() < .25;
     traffic.push({ x: LANE_X[lane], y: -100, w: 34, h: truck ? 90 : 56, v: oncoming ? -110 : 40 + Math.random() * 40, col, truck, oncoming });
@@ -124,7 +124,7 @@ function sampleX(s) {
   }
   return hist[0].x;
 }
-const trailerX = i => sampleX(scroll - OFF(i));
+const trailerX = i => sampleX(scroll - OFF(i) * .3);
 
 function damage(n, what, idx) {
   hp -= n; shake = .3; flash(what);
@@ -156,7 +156,9 @@ function update(dt) {
   else speed -= 40 * dt;
   speed = Math.max(0, Math.min(maxSpeed, speed));
   const steer = (keys.ArrowLeft || keys.KeyA || keys.TL ? -1 : 0) + (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0);
-  qx += steer * (100 + 70 * lf) * dt * Math.min(1, speed / 40);
+  const targetSteeringSpeed = steer * (100 + 70 * lf) * Math.min(1, speed / 40);
+  steeringSpeed += (targetSteeringSpeed - steeringSpeed) * (1 - Math.exp(-8 * dt));
+  qx += steeringSpeed * dt;
   qx = Math.max(30, Math.min(W - 30, qx));
   if ((qx < ROAD_L - 10 || qx > ROAD_R + 10) && speed > 90) speed -= 200 * dt;
 
@@ -204,14 +206,25 @@ function drawBtn(r, label, on) {
 function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
 
 function drawRoad() {
-  rect(0, 0, W, H, '#4a7c3a');
-  for (let y = -80 + (scroll % 80); y < H; y += 80) { rect(10, y, 14, 14, '#3f6d31'); rect(W - 30, y + 30, 14, 14, '#3f6d31'); }
-  rect(ROAD_L - 10, 0, ROAD_R - ROAD_L + 20, H, '#7a6a4a');
-  rect(ROAD_L, 0, ROAD_R - ROAD_L, H, '#444');
-  rect(W / 2 - 3, 0, 2, H, '#e8b100'); rect(W / 2 + 2, 0, 2, H, '#e8b100');
-  for (const x of [ROAD_L + 75, ROAD_R - 75])
-    for (let y = -60 + (scroll % 60); y < H; y += 60) rect(x - 1, y, 2, 30, '#aaa');
-  rect(ROAD_L, 0, 3, H, '#ddd'); rect(ROAD_R - 3, 0, 3, H, '#ddd');
+  rect(0, 0, W, H, '#a74626');
+  for (let y = -160 + (scroll % 160); y < H + 100; y += 160) {
+    for (const x of [35, W - 50]) {
+      ctx.fillStyle = '#87351e'; ctx.beginPath(); ctx.ellipse(x, y + 35, 29, 17, -.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#bc5b31'; ctx.beginPath(); ctx.ellipse(x - 5, y + 30, 23, 11, -.3, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const x of [75, W - 80]) {
+      ctx.fillStyle = '#77713b'; ctx.beginPath(); ctx.arc(x, y + 102, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#a4a063'; ctx.beginPath(); ctx.arc(x - 3, y + 99, 7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  rect(ROAD_L - 13, 0, ROAD_R - ROAD_L + 26, H, '#bf7044');
+  rect(ROAD_L, 0, ROAD_R - ROAD_L, H, '#514f4b');
+  for (let y = -70 + (scroll % 70); y < H; y += 70) rect(W / 2 - 2, y, 4, 34, '#eee8d5');
+  rect(ROAD_L + 2, 0, 3, H, '#eee8d5'); rect(ROAD_R - 5, 0, 3, H, '#eee8d5');
+  for (let y = -160 + (scroll % 160); y < H; y += 160) {
+    rect(ROAD_L - 20, y, 4, 15, '#eee8d5'); rect(ROAD_R + 16, y, 4, 15, '#eee8d5');
+    rect(ROAD_L - 20, y + 3, 4, 4, '#d33'); rect(ROAD_R + 16, y + 3, 4, 4, '#d33');
+  }
 }
 function drawCar(t) {
   ctx.save(); ctx.translate(t.x, t.y);
@@ -238,8 +251,8 @@ function drawAnimal(a) {
 function drawTrailer(x, y, w, h, fill, num) {
   rect(x - w / 2 - 3, y - h / 2 + 6, 5, 14, '#111'); rect(x - w / 2 - 3, y + h / 2 - 20, 5, 14, '#111');
   rect(x + w / 2 - 2, y - h / 2 + 6, 5, 14, '#111'); rect(x + w / 2 - 2, y + h / 2 - 20, 5, 14, '#111');
-  rect(x - w / 2, y - h / 2, w, h, '#556');
-  rect(x - w / 2 + 3, y - h / 2 + 3, w - 6, h - 6, '#2c2c34');
+  rect(x - w / 2, y - h / 2, w, h, '#ee5c9d');
+  rect(x - w / 2 + 3, y - h / 2 + 3, w - 6, h - 6, '#b73770');
   if (fill > 0) {
     const ih = (h - 10) * Math.min(1, .25 + fill * .75);
     rect(x - w / 2 + 5, y - ih / 2, w - 10, ih, '#8a5a44');
@@ -250,9 +263,15 @@ function drawTrailer(x, y, w, h, fill, num) {
 }
 function drawCab(x, y) {
   rect(x - 19, y - 14, 5, 14, '#111'); rect(x + 14, y - 14, 5, 14, '#111');
-  rect(x - 15, y - 22, 30, 44, '#c22'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#a11');
+  rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
 }
 function drawTruck() {
+  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
+  for (let i = 0; i < NT; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i === 0 ? qx : trailerX(i - 1), i === 0 ? qy + 22 : qy + OFF(i - 1) + 28);
+    ctx.lineTo(trailerX(i), qy + OFF(i) - 28); ctx.stroke();
+  }
   for (let i = NT - 1; i >= 0; i--) { const tx = trailerX(i); drawTrailer(tx, qy + OFF(i), 34, 56, fills[i] / TRAILER_CAP, 0); }
   drawCab(qx, qy);
 }
@@ -267,8 +286,8 @@ function drawLoader(x, y, loaded) {
   ctx.restore();
 }
 function drawYard() {
-  rect(0, 0, W, H, '#6b5b45');
-  for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#5c4d3a');
+  rect(0, 0, W, H, '#a74626');
+  for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
   ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2, PILE.h / 2, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 10, PILE.y + PILE.h / 2 - 20, PILE.w / 3, PILE.h / 3, 0, 0, 7); ctx.fill();
   text('IRON ORE', PILE.x + PILE.w / 2, PILE.y + PILE.h / 2 + 5, 16, '#fff');
