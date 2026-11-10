@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes">
-<title>Ore Hauler: Ultra Quad</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Ore Hauler: Loader & Side-Tippers</title>
 <style>
   html,body{margin:0;height:100%;background:#1a1a1a;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;position:fixed;width:100%}
   #wrap{display:flex;justify-content:center;align-items:center;height:100%}
@@ -17,48 +18,88 @@ const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
 const ROAD_L = 90, ROAD_R = 390;
 const LANE_X = [127, 202, 278, 353];
-const CAPACITY = 100, TRIP = 6000;
+const BUCKET = 6, TRAILER_CAP = 5, NT = 4;           // tonnes per scoop, scoops per trailer, trailers
+const MAX_ORE = BUCKET * TRAILER_CAP * NT, MIN_ORE = BUCKET * 4;
+const TRIP = 6000;
+const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
+const PILE = { x: 20, y: 230, w: 170, h: 270 };
+const OFF = i => 57 + i * 62;                           // trailer distance behind cab centre when driving
 
 const keys = {};
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
-const BTN = { TL: [10, 650, 80, 60, '◀'], TR: [100, 650, 80, 60, '▶'], TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
-const GO = [140, 560, 200, 60];
+const DB = { TL: [10, 650, 80, 60, '◀'], TR: [100, 650, 80, 60, '▶'], TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
+const LB = { TL: [10, 650, 66, 60, '◀'], TR: [82, 650, 66, 60, '▶'], TU: [154, 650, 66, 60, '▲'], TD: [226, 650, 66, 60, '▼'] };
+const ACT = [310, 650, 160, 60, 'SCOOP / DUMP'];
+const GO = [140, 585, 200, 50, 'START DRIVING'];
 const ptrs = new Map();
 const inR = (p, r) => p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
-function syncBtns() { for (const k in BTN) keys[k] = [...ptrs.values()].some(p => inR(p, BTN[k])); }
+function curBtns() { return state === 'load' ? LB : DB; }
+function syncBtns() {
+  for (const k of ['TL', 'TR', 'TU', 'TD', 'TB', 'TG']) keys[k] = false;
+  const b = curBtns();
+  for (const k in b) keys[k] = [...ptrs.values()].some(p => inR(p, b[k]));
+}
 function cpos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
-addEventListener('keydown', e => { keys[e.code] = true; if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); if (!e.repeat) onKey(e.code); });
+
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if (!e.repeat) onKey(e.code);
+});
 addEventListener('keyup', e => keys[e.code] = false);
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
   if (state === 'drive') { ptrs.set(e.pointerId, p); syncBtns(); return; }
-  if (state === 'load' && ore >= 20 && inR(p, GO)) onKey('KeyG'); else onKey('Space');
+  if (state === 'load') {
+    if (ore() >= MIN_ORE && inR(p, GO)) start();
+    else if (inR(p, ACT)) action();
+    else { ptrs.set(e.pointerId, p); syncBtns(); }
+    return;
+  }
+  onKey('Space');
 });
 cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { ptrs.set(e.pointerId, cpos(e)); syncBtns(); } });
 const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
-let state = 'menu', ore, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake;
+let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist;
+let ldr, carrying;
 let best = +localStorage.oreBest || 0;
+const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
 
 function reset() {
-  ore = 0; hp = 100; dist = 0; speed = 0; qx = W / 2; qy = H - 130; traffic = []; animals = [];
-  scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0;
+  fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; qx = W / 2; qy = 260; traffic = []; animals = [];
+  scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: W / 2 }];
+  ldr = { x: 250, y: 600 }; carrying = false; ptrs.clear();
 }
 reset();
 
 function onKey(code) {
-  if (code === 'Space' || code === 'Enter') {
-    if (state === 'menu') { reset(); state = 'load'; return; }
-    if (state === 'load') { if (code === 'Enter' && ore >= 20) { start(); return; } if (code === 'Space') { ore = Math.min(CAPACITY, ore + 4); burst(W / 2 + 60, 330, '#8a5a44', 4); } return; }
-    if (state === 'over' || state === 'win') { reset(); state = 'menu'; }
+  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { reset(); state = 'load'; flash('Scoop ore from the pile, dump it in the trailers'); return; }
+  if (state === 'load') {
+    if (code === 'Space') action();
+    else if ((code === 'Enter' || code === 'KeyG') && ore() >= MIN_ORE) start();
+    return;
   }
-  if (code === 'KeyG' && state === 'load' && ore >= 20) start();
+  if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-function start() { state = 'drive'; flash('Go! Dodge traffic & livestock'); }
-function flash(t) { msg = t; msgT = 2; }
+function start() { state = 'drive'; ptrs.clear(); syncBtns(); flash('Go! Dodge traffic & livestock'); }
+function flash(t) { msg = t; msgT = 2.5; }
 function burst(x, y, col, n) { for (let i = 0; i < n; i++) particles.push({ x, y, vx: (Math.random() - .5) * 120, vy: (Math.random() - .8) * 120, l: .6, col }); }
+
+const nearPile = () => ldr.x > PILE.x - 40 && ldr.x < PILE.x + PILE.w + 40 && ldr.y > PILE.y - 40 && ldr.y < PILE.y + PILE.h + 40;
+const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0) / TR_H); return ldr.x > TR_X - 100 && i >= 0 && i < NT ? i : -1; };
+function action() {
+  if (!carrying) {
+    if (nearPile()) { carrying = true; burst(ldr.x, ldr.y - 30, '#8a5a44', 6); } else flash('Drive up to the ore pile to scoop');
+  } else {
+    const i = trailerAt();
+    if (i < 0) flash('Line up beside a trailer to dump');
+    else if (fills[i] >= TRAILER_CAP) flash(`Trailer ${i + 1} is full`);
+    else { fills[i]++; carrying = false; burst(TR_X + TR_W / 2, TR_Y0 + i * TR_H + TR_H / 2, '#a8705a', 8); }
+  }
+}
 
 function spawn() {
   if (Math.random() < .6) {
@@ -73,42 +114,72 @@ function spawn() {
 }
 
 const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 3 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 3;
+function sampleX(s) {
+  if (s <= hist[0].s) return hist[0].x;
+  for (let i = hist.length - 1; i > 0; i--) if (hist[i - 1].s <= s) {
+    const a = hist[i - 1], b = hist[i], f = b.s === a.s ? 0 : (s - a.s) / (b.s - a.s);
+    return a.x + (b.x - a.x) * Math.min(1, f);
+  }
+  return hist[0].x;
+}
+const trailerX = i => sampleX(scroll - OFF(i));
 
-function damage(n, what) {
-  hp -= n; shake = .3; ore = Math.max(0, ore - n * .8); burst(qx, qy, '#8a5a44', 10); flash(what);
+function damage(n, what, idx) {
+  hp -= n; shake = .3; flash(what);
+  if (idx >= 0) fills[idx] = Math.max(0, Math.round(fills[idx] * .6 - .2)); else for (let i = 0; i < NT; i++) fills[i] = Math.max(0, fills[i] - (Math.random() < .3 ? 1 : 0));
+  burst(qx, qy + (idx >= 0 ? OFF(idx) : 0), '#8a5a44', 10);
   if (hp <= 0) { hp = 0; state = 'over'; }
 }
 
+function updateLoad(dt) {
+  const sp = (carrying ? 120 : 160) * dt;
+  const dx = (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0) - (keys.ArrowLeft || keys.KeyA || keys.TL ? 1 : 0);
+  const dy = (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0) - (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0);
+  ldr.x = Math.max(25, Math.min(W - 25, ldr.x + dx * sp)); ldr.y = Math.max(85, Math.min(H - 100, ldr.y + dy * sp));
+  if (ldr.x > TR_X - 36 && ldr.y < TR_Y0 + NT * TR_H + 20) ldr.x = TR_X - 36; // trailers block the way
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
+  particles = particles.filter(p => p.l > 0); msgT -= dt;
+}
+
 function update(dt) {
+  if (state === 'load') return updateLoad(dt);
   if (state !== 'drive') return;
   time += dt;
-  const lf = 1 - (ore / CAPACITY) * .35;
-  const maxSpeed = 220 * lf + 60;
-  if (keys.ArrowUp || keys.KeyW || keys.TG) speed += 140 * lf * dt;
-  else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 260 * dt;
+  const lf = 1 - (ore() / MAX_ORE) * .45;
+  const maxSpeed = 220 * lf + 50;
+  if (keys.ArrowUp || keys.KeyW || keys.TG) speed += 120 * lf * dt;
+  else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 220 * dt;
   else speed -= 40 * dt;
   speed = Math.max(0, Math.min(maxSpeed, speed));
   const steer = (keys.ArrowLeft || keys.KeyA || keys.TL ? -1 : 0) + (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0);
-  qx += steer * (120 + 90 * lf) * dt * Math.min(1, speed / 40);
+  qx += steer * (100 + 70 * lf) * dt * Math.min(1, speed / 40);
   qx = Math.max(30, Math.min(W - 30, qx));
-  if ((qx < ROAD_L - 10 || qx > ROAD_R + 10) && speed > 90) speed -= 200 * dt; // rough verge slows you
+  if ((qx < ROAD_L - 10 || qx > ROAD_R + 10) && speed > 90) speed -= 200 * dt;
 
   dist += speed * dt / 4; scroll += speed * dt;
+  if (speed > 0) { hist.push({ s: scroll, x: qx }); while (hist.length > 2 && hist[1].s < scroll - 400) hist.shift(); }
   spawnT -= dt;
   if (spawnT <= 0) { spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6); }
 
   for (const t of traffic) t.y += (speed - t.v) * dt;
   for (const a of animals) { a.y += speed * dt; a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
-  const q = { x: qx, y: qy, w: 28, h: 54 };
-  for (const t of traffic) if (!t.hit && hit(q, t)) { t.hit = true; damage(25, 'Hit a vehicle!'); speed *= .3; }
-  for (const a of animals) if (!a.hit && hit(q, a)) { a.hit = true; damage(a.type === 'cow' ? 30 : 15, 'Livestock collision!'); speed *= .4; }
+  const parts = [{ x: qx, y: qy, w: 30, h: 44, idx: -1 }];
+  for (let i = 0; i < NT; i++) parts.push({ x: trailerX(i), y: qy + OFF(i), w: 34, h: 54, idx: i });
+  for (const o of [...traffic, ...animals]) {
+    if (o.hit) continue;
+    const p = parts.find(p => hit(p, o)); if (!p) continue;
+    o.hit = true;
+    if (o.type) damage(o.type === 'cow' ? 30 : 15, 'Livestock collision!', p.idx), speed *= .4;
+    else damage(25, p.idx < 0 ? 'Hit a vehicle!' : `Trailer ${p.idx + 1} clipped!`, p.idx), speed *= .3;
+    if (state === 'over') break;
+  }
   traffic = traffic.filter(t => t.y < H + 120 && t.y > -300);
   animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80);
 
-  if (dist >= TRIP) {
-    score = Math.round(ore * 10 + hp * 5 + Math.max(0, 300 - time) * 2);
+  if (state === 'drive' && dist >= TRIP) {
+    score = Math.round(ore() * 10 + hp * 5 + Math.max(0, 300 - time) * 2);
     if (score > best) { best = score; localStorage.oreBest = best; }
-    state = 'win';
+    state = 'win'; ptrs.clear(); syncBtns();
   }
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
@@ -117,6 +188,17 @@ function update(dt) {
 
 // ---------- drawing ----------
 function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function text(s, x, y, size = 18, col = '#fff', align = 'center') {
+  ctx.fillStyle = col; ctx.font = `bold ${size}px system-ui,sans-serif`; ctx.textAlign = align; ctx.fillText(s, x, y);
+}
+function bar(x, y, w, h, f, col) { rect(x, y, w, h, '#000a'); rect(x + 2, y + 2, (w - 4) * Math.max(0, Math.min(1, f)), h - 4, col); }
+function drawBtn(r, label, on) {
+  ctx.globalAlpha = on ? .8 : .5; rect(r[0], r[1], r[2], r[3], '#000');
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]); ctx.globalAlpha = 1;
+  text(label, r[0] + r[2] / 2, r[1] + r[3] / 2 + 6, label.length > 1 ? 15 : 26);
+}
+function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
+
 function drawRoad() {
   rect(0, 0, W, H, '#4a7c3a');
   for (let y = -80 + (scroll % 80); y < H; y += 80) { rect(10, y, 14, 14, '#3f6d31'); rect(W - 30, y + 30, 14, 14, '#3f6d31'); }
@@ -148,54 +230,74 @@ function drawAnimal(a) {
   rect(-16, 10, 4, 8 + s, '#222'); rect(-4, 10, 4, 8 - s, '#222'); rect(4, 10, 4, 8 + s, '#222'); rect(8, 10, 4, 8 - s, '#222');
   ctx.restore();
 }
-function drawQuad(x, y, oreAmt, big) {
-  const k = big ? 1.6 : 1;
-  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
-  rect(-16, -26, 8, 14, '#111'); rect(8, -26, 8, 14, '#111');
-  rect(-17, 12, 9, 16, '#111'); rect(8, 12, 9, 16, '#111');
-  rect(-11, -22, 22, 50, '#f60');
-  rect(-9, -18, 18, 12, '#d40');
-  rect(-12, -6, 24, 3, '#aaa'); rect(-6, 0, 12, 10, '#333');
-  rect(-9, 10, 18, 18, '#222');
-  if (oreAmt > 0) { const h = 16 * oreAmt / CAPACITY; rect(-8, 27 - h, 16, h, '#8a5a44'); rect(-5, 27 - h - 2, 10, 3, '#a8705a'); }
-  ctx.restore();
+// side-tipper trailer, top-down, centred on (x,y); w x h; fill 0..1; tipSide hinge on right
+function drawTrailer(x, y, w, h, fill, num) {
+  rect(x - w / 2 - 3, y - h / 2 + 6, 5, 14, '#111'); rect(x - w / 2 - 3, y + h / 2 - 20, 5, 14, '#111');
+  rect(x + w / 2 - 2, y - h / 2 + 6, 5, 14, '#111'); rect(x + w / 2 - 2, y + h / 2 - 20, 5, 14, '#111');
+  rect(x - w / 2, y - h / 2, w, h, '#556');
+  rect(x - w / 2 + 3, y - h / 2 + 3, w - 6, h - 6, '#2c2c34');
+  if (fill > 0) {
+    const ih = (h - 10) * Math.min(1, .25 + fill * .75);
+    rect(x - w / 2 + 5, y - ih / 2, w - 10, ih, '#8a5a44');
+    rect(x - w / 2 + 9, y - ih / 2 + 3, w - 18, Math.max(2, ih - 6), '#a8705a');
+  }
+  rect(x + w / 2 - 3, y - h / 2, 3, h, '#e8b100');               // tipping hinge rail
+  if (num) text(String(num), x - w / 2 + 12, y - h / 2 + 16, 12, '#ccd');
 }
-function text(s, x, y, size = 18, col = '#fff', align = 'center') {
-  ctx.fillStyle = col; ctx.font = `bold ${size}px system-ui,sans-serif`; ctx.textAlign = align; ctx.fillText(s, x, y);
+function drawCab(x, y) {
+  rect(x - 19, y - 14, 5, 14, '#111'); rect(x + 14, y - 14, 5, 14, '#111');
+  rect(x - 15, y - 22, 30, 44, '#c22'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#a11');
 }
-function bar(x, y, w, h, f, col) { rect(x, y, w, h, '#000a'); rect(x + 2, y + 2, (w - 4) * Math.max(0, Math.min(1, f)), h - 4, col); }
-
-function drawBtn(r, label, on) {
-  ctx.globalAlpha = on ? .75 : .45; ctx.fillStyle = '#000'; ctx.fillRect(r[0], r[1], r[2], r[3]);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]); ctx.globalAlpha = 1;
-  text(label, r[0] + r[2] / 2, r[1] + r[3] / 2 + 7, label.length > 1 ? 15 : 26);
+function drawTruck() {
+  for (let i = NT - 1; i >= 0; i--) { const tx = trailerX(i); drawTrailer(tx, qy + OFF(i), 34, 56, fills[i] / TRAILER_CAP, 0); }
+  drawCab(qx, qy);
 }
-function drawTouch() { for (const k in BTN) drawBtn(BTN[k], BTN[k][4], keys[k]); }
-function drawMine() {
+function drawLoader(x, y, loaded) {
+  rect(x - 22, y - 12, 9, 18, '#111'); rect(x + 13, y - 12, 9, 18, '#111'); rect(x - 22, y + 10, 9, 18, '#111'); rect(x + 13, y + 10, 9, 18, '#111');
+  rect(x - 14, y - 10, 28, 42, '#f2b200');
+  rect(x - 10, y + 4, 20, 14, '#333'); rect(x - 8, y + 6, 16, 8, '#9cf');
+  rect(x - 3, y - 26, 6, 18, '#d49a00');
+  rect(x - 25, y - 38, 50, 14, '#777');
+  if (loaded) { rect(x - 21, y - 44, 42, 12, '#8a5a44'); rect(x - 15, y - 48, 30, 6, '#a8705a'); }
+}
+function drawYard() {
   rect(0, 0, W, H, '#6b5b45');
   for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#5c4d3a');
-  ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.moveTo(W / 2 - 40, 360); ctx.lineTo(W / 2 + 60, 250); ctx.lineTo(W / 2 + 170, 360); ctx.fill();
-  ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.moveTo(W / 2 + 20, 360); ctx.lineTo(W / 2 + 60, 290); ctx.lineTo(W / 2 + 120, 360); ctx.fill();
-  drawQuad(W / 2 - 60, 470, ore, true);
-  text('IRON ORE MINE', W / 2, 50, 28);
-  text('Mash SPACE (or tap the screen) to shovel ore onto the quad', W / 2, 90, 15, '#ddd');
-  bar(60, 130, W - 120, 26, ore / CAPACITY, '#c86');
-  text(`Load: ${ore} / ${CAPACITY} kg — heavier = slower, wider turns, more score`, W / 2, 180, 13, '#ddd');
-  if (ore >= 20) { if (isTouch) drawBtn(GO, 'START DRIVING', false); else text('Press G / Enter to start driving', W / 2, 620, 20, '#ff6'); }
-  else text('Load at least 20 kg to depart', W / 2, 620, 16, '#999');
+  ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2, PILE.h / 2, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 10, PILE.y + PILE.h / 2 - 20, PILE.w / 3, PILE.h / 3, 0, 0, 7); ctx.fill();
+  text('IRON ORE', PILE.x + PILE.w / 2, PILE.y + PILE.h / 2 + 5, 16, '#fff');
+  drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38);
+  for (let i = 0; i < NT; i++) {
+    const cy = TR_Y0 + i * TR_H + TR_H / 2;
+    rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 12, '#444');
+    drawTrailer(TR_X + TR_W / 2, cy, TR_W, TR_H - 14, fills[i] / TRAILER_CAP, i + 1);
+    text(`${fills[i] * BUCKET}/${TRAILER_CAP * BUCKET}t`, TR_X + TR_W / 2, cy + 6, 13, '#fff');
+    if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
+  }
+  drawLoader(ldr.x, ldr.y, carrying);
+  for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
+  rect(0, 0, W, 56, '#000a');
+  text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
+  text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
+  text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
+  text(isTouch ? '' : 'Arrows move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
+  if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
+  if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
+  else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
+  if (isTouch) { drawBtns(LB); drawBtn(ACT, ACT[4], false); }
 }
 
 function render() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
-  if (state === 'load') drawMine();
+  if (state === 'load') drawYard();
   else if (state === 'menu') {
     drawRoad();
-    drawQuad(W / 2, 400, 70, true);
-    rect(40, 90, W - 80, 170, '#000b');
-    text('ORE HAULER', W / 2, 150, 44, '#f60');
-    text('Ultra Quad Delivery', W / 2, 185, 20);
-    text('Load iron ore, deliver it, dodge traffic & livestock', W / 2, 220, 14, '#ddd');
+    drawCab(W / 2, 360); for (let i = 0; i < NT; i++) drawTrailer(W / 2, 360 + OFF(i), 34, 56, .8, 0);
+    rect(40, 70, W - 80, 180, '#000b');
+    text('ORE HAULER', W / 2, 130, 44, '#f60');
+    text('Loader + 4 Side-Tippers', W / 2, 165, 20);
+    text('Load the trailers, haul the ore, dodge traffic & livestock', W / 2, 205, 13, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
     text('↑/W throttle   ↓/S brake   ←→/A D steer', W / 2, 620, 14, '#ccc');
     text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
@@ -203,21 +305,21 @@ function render() {
     drawRoad();
     for (const a of animals) drawAnimal(a);
     for (const t of traffic) drawCar(t);
-    drawQuad(qx, qy, ore, false);
+    drawTruck();
     for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
     rect(0, 0, W, 64, '#000a');
     text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
-    text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore / CAPACITY, '#c86');
+    text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore() / MAX_ORE, '#c86');
     text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
     text(`${Math.min(100, Math.round(dist / TRIP * 100))}% to depot`, W - 10, 48, 14, '#ff6', 'right');
-    if (isTouch && state === 'drive') drawTouch();
+    if (isTouch && state === 'drive') drawBtns(DB);
     if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
     if (state === 'over' || state === 'win') {
       rect(40, 220, W - 80, 240, '#000d');
-      if (state === 'over') { text('WRECKED!', W / 2, 280, 40, '#e44'); text('The quad is totalled.', W / 2, 320, 18); }
+      if (state === 'over') { text('WRECKED!', W / 2, 280, 40, '#e44'); text('The truck is out of action.', W / 2, 320, 18); }
       else {
         text('DELIVERED!', W / 2, 275, 40, '#4c4');
-        text(`${Math.round(ore)} kg of ore in ${Math.round(time)}s`, W / 2, 315, 18);
+        text(`Side-tipped ${ore()} t in ${Math.round(time)}s`, W / 2, 315, 18);
         text(`Score: ${score}`, W / 2, 350, 24, '#ff6'); text(`Best: ${best}`, W / 2, 380, 16);
       }
       text(isTouch ? 'Tap to play again' : 'Press SPACE to play again', W / 2, 430, 18, '#ff6');
