@@ -28,7 +28,7 @@ const OFF = i => 57 + i * 62;                           // trailer distance behi
 const keys = {};
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 const DB = { TL: [10, 650, 80, 60, '◀'], TR: [100, 650, 80, 60, '▶'], TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
-const LB = { TL: [10, 650, 66, 60, '◀'], TR: [82, 650, 66, 60, '▶'], TU: [154, 650, 66, 60, '▲'], TD: [226, 650, 66, 60, '▼'] };
+const LB = { TL: [10, 650, 58, 60, '◀'], TR: [74, 650, 58, 60, '▶'], TU: [150, 650, 82, 60, 'GAS'], TD: [240, 650, 60, 60, 'REV'] };
 const ACT = [310, 650, 160, 60, 'SCOOP / DUMP'];
 const GO = [140, 585, 200, 50, 'START DRIVING'];
 const ptrs = new Map();
@@ -37,7 +37,10 @@ function curBtns() { return state === 'load' ? LB : DB; }
 function syncBtns() {
   for (const k of ['TL', 'TR', 'TU', 'TD', 'TB', 'TG']) keys[k] = false;
   const b = curBtns();
-  for (const k in b) keys[k] = [...ptrs.values()].some(p => inR(p, b[k]));
+  for (const k in b) {
+    if (state === 'load' && (k === 'TL' || k === 'TR')) continue;
+    keys[k] = [...ptrs.values()].some(p => inR(p, b[k]));
+  }
 }
 function cpos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
 
@@ -53,6 +56,8 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
+    else if (inR(p, LB.TL)) { steerToggle = steerToggle === -1 ? 0 : -1; }
+    else if (inR(p, LB.TR)) { steerToggle = steerToggle === 1 ? 0 : 1; }
     else { ptrs.set(e.pointerId, p); syncBtns(); }
     return;
   }
@@ -63,7 +68,7 @@ const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
-let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist;
+let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steerToggle;
 let ldr, carrying;
 let best = +localStorage.oreBest || 0;
 const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
@@ -71,7 +76,7 @@ const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
 function reset() {
   fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; qx = W / 2; qy = 260; traffic = []; animals = [];
   scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: W / 2 }];
-  ldr = { x: 250, y: 600 }; carrying = false; ptrs.clear();
+  ldr = { x: 250, y: 600 }; carrying = false; steerToggle = 0; ptrs.clear();
 }
 reset();
 
@@ -133,7 +138,7 @@ function damage(n, what, idx) {
 
 function updateLoad(dt) {
   const sp = (carrying ? 120 : 160) * dt;
-  const dx = (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0) - (keys.ArrowLeft || keys.KeyA || keys.TL ? 1 : 0);
+  const dx = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0) + steerToggle;
   const dy = (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0) - (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0);
   ldr.x = Math.max(25, Math.min(W - 25, ldr.x + dx * sp)); ldr.y = Math.max(85, Math.min(H - 100, ldr.y + dy * sp));
   if (ldr.x > TR_X - 36 && ldr.y < TR_Y0 + NT * TR_H + 20) ldr.x = TR_X - 36; // trailers block the way
@@ -280,11 +285,16 @@ function drawYard() {
   text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
   text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
   text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
-  text(isTouch ? '' : 'Arrows move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
+  text(isTouch ? 'Toggle ◀/▶ steer · GAS forward · REV back' : 'Arrows move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
   if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
   if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
   else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
-  if (isTouch) { drawBtns(LB); drawBtn(ACT, ACT[4], false); }
+  if (isTouch) {
+    drawBtns(LB);
+    drawBtn(LB.TL, '◀', steerToggle === -1);
+    drawBtn(LB.TR, '▶', steerToggle === 1);
+    drawBtn(ACT, ACT[4], false);
+  }
 }
 
 function render() {
