@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes">
+<title>Ore Hauler: Ultra Quad</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1a1a;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;position:fixed;width:100%}
+  #wrap{display:flex;justify-content:center;align-items:center;height:100%}
+  canvas{background:#000;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;max-height:100vh;max-width:100vw;touch-action:none}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="480" height="720"></canvas></div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const ROAD_L = 90, ROAD_R = 390;
+const LANE_X = [127, 202, 278, 353];
+const CAPACITY = 100, TRIP = 6000;
+
+const keys = {};
+const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+const BTN = { TL: [10, 650, 80, 60, '◀'], TR: [100, 650, 80, 60, '▶'], TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
+const GO = [140, 560, 200, 60];
+const ptrs = new Map();
+const inR = (p, r) => p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
+function syncBtns() { for (const k in BTN) keys[k] = [...ptrs.values()].some(p => inR(p, BTN[k])); }
+function cpos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
+addEventListener('keydown', e => { keys[e.code] = true; if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); if (!e.repeat) onKey(e.code); });
+addEventListener('keyup', e => keys[e.code] = false);
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); const p = cpos(e);
+  if (state === 'drive') { ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'load' && ore >= 20 && inR(p, GO)) onKey('KeyG'); else onKey('Space');
+});
+cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { ptrs.set(e.pointerId, cpos(e)); syncBtns(); } });
+const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+let state = 'menu', ore, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake;
+let best = +localStorage.oreBest || 0;
+
+function reset() {
+  ore = 0; hp = 100; dist = 0; speed = 0; qx = W / 2; qy = H - 130; traffic = []; animals = [];
+  scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0;
+}
+reset();
+
+function onKey(code) {
+  if (code === 'Space' || code === 'Enter') {
+    if (state === 'menu') { reset(); state = 'load'; return; }
+    if (state === 'load') { if (code === 'Enter' && ore >= 20) { start(); return; } if (code === 'Space') { ore = Math.min(CAPACITY, ore + 4); burst(W / 2 + 60, 330, '#8a5a44', 4); } return; }
+    if (state === 'over' || state === 'win') { reset(); state = 'menu'; }
+  }
+  if (code === 'KeyG' && state === 'load' && ore >= 20) start();
+}
+function start() { state = 'drive'; flash('Go! Dodge traffic & livestock'); }
+function flash(t) { msg = t; msgT = 2; }
+function burst(x, y, col, n) { for (let i = 0; i < n; i++) particles.push({ x, y, vx: (Math.random() - .5) * 120, vy: (Math.random() - .8) * 120, l: .6, col }); }
+
+function spawn() {
+  if (Math.random() < .6) {
+    const lane = Math.floor(Math.random() * 4), oncoming = lane < 2;
+    const col = ['#c33', '#36c', '#ccc', '#e8b100', '#3a3'][Math.floor(Math.random() * 5)];
+    const truck = Math.random() < .25;
+    traffic.push({ x: LANE_X[lane], y: -100, w: 34, h: truck ? 90 : 56, v: oncoming ? -110 : 40 + Math.random() * 40, col, truck, oncoming });
+  } else {
+    const dir = Math.random() < .5 ? 1 : -1;
+    animals.push({ x: dir > 0 ? ROAD_L - 40 : ROAD_R + 40, y: -40, dir, w: 44, h: 28, type: Math.random() < .5 ? 'cow' : 'sheep', vx: 35 + Math.random() * 25, ph: 0 });
+  }
+}
+
+const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 3 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 3;
+
+function damage(n, what) {
+  hp -= n; shake = .3; ore = Math.max(0, ore - n * .8); burst(qx, qy, '#8a5a44', 10); flash(what);
+  if (hp <= 0) { hp = 0; state = 'over'; }
+}
+
+function update(dt) {
+  if (state !== 'drive') return;
+  time += dt;
+  const lf = 1 - (ore / CAPACITY) * .35;
+  const maxSpeed = 220 * lf + 60;
+  if (keys.ArrowUp || keys.KeyW || keys.TG) speed += 140 * lf * dt;
+  else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 260 * dt;
+  else speed -= 40 * dt;
+  speed = Math.max(0, Math.min(maxSpeed, speed));
+  const steer = (keys.ArrowLeft || keys.KeyA || keys.TL ? -1 : 0) + (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0);
+  qx += steer * (120 + 90 * lf) * dt * Math.min(1, speed / 40);
+  qx = Math.max(30, Math.min(W - 30, qx));
+  if ((qx < ROAD_L - 10 || qx > ROAD_R + 10) && speed > 90) speed -= 200 * dt; // rough verge slows you
+
+  dist += speed * dt / 4; scroll += speed * dt;
+  spawnT -= dt;
+  if (spawnT <= 0) { spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6); }
+
+  for (const t of traffic) t.y += (speed - t.v) * dt;
+  for (const a of animals) { a.y += speed * dt; a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
+  const q = { x: qx, y: qy, w: 28, h: 54 };
+  for (const t of traffic) if (!t.hit && hit(q, t)) { t.hit = true; damage(25, 'Hit a vehicle!'); speed *= .3; }
+  for (const a of animals) if (!a.hit && hit(q, a)) { a.hit = true; damage(a.type === 'cow' ? 30 : 15, 'Livestock collision!'); speed *= .4; }
+  traffic = traffic.filter(t => t.y < H + 120 && t.y > -300);
+  animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80);
+
+  if (dist >= TRIP) {
+    score = Math.round(ore * 10 + hp * 5 + Math.max(0, 300 - time) * 2);
+    if (score > best) { best = score; localStorage.oreBest = best; }
+    state = 'win';
+  }
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
+  particles = particles.filter(p => p.l > 0);
+  shake = Math.max(0, shake - dt); msgT -= dt;
+}
+
+// ---------- drawing ----------
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function drawRoad() {
+  rect(0, 0, W, H, '#4a7c3a');
+  for (let y = -80 + (scroll % 80); y < H; y += 80) { rect(10, y, 14, 14, '#3f6d31'); rect(W - 30, y + 30, 14, 14, '#3f6d31'); }
+  rect(ROAD_L - 10, 0, ROAD_R - ROAD_L + 20, H, '#7a6a4a');
+  rect(ROAD_L, 0, ROAD_R - ROAD_L, H, '#444');
+  rect(W / 2 - 3, 0, 2, H, '#e8b100'); rect(W / 2 + 2, 0, 2, H, '#e8b100');
+  for (const x of [ROAD_L + 75, ROAD_R - 75])
+    for (let y = -60 + (scroll % 60); y < H; y += 60) rect(x - 1, y, 2, 30, '#aaa');
+  rect(ROAD_L, 0, 3, H, '#ddd'); rect(ROAD_R - 3, 0, 3, H, '#ddd');
+}
+function drawCar(t) {
+  ctx.save(); ctx.translate(t.x, t.y);
+  if (t.oncoming) ctx.rotate(Math.PI);
+  const x = -t.w / 2, y = -t.h / 2;
+  rect(x, y, t.w, t.h, t.col);
+  rect(x + 4, y + 6, t.w - 8, 12, '#9cf');
+  if (t.truck) rect(x + 2, y + 24, t.w - 4, t.h - 28, '#ddd');
+  rect(x + 3, y + t.h - 4, 8, 3, '#f33'); rect(x + t.w - 11, y + t.h - 4, 8, 3, '#f33');
+  ctx.restore();
+}
+function drawAnimal(a) {
+  ctx.save(); ctx.translate(a.x, a.y); ctx.scale(a.dir, 1);
+  const cow = a.type === 'cow';
+  rect(-20, -10, 32, 20, cow ? '#fff' : '#eee');
+  if (cow) { rect(-14, -8, 9, 8, '#222'); rect(2, 0, 8, 8, '#222'); }
+  rect(12, -8, 12, 12, cow ? '#fff' : '#333');
+  rect(20, -6, 2, 2, cow ? '#000' : '#fff');
+  const s = Math.sin(a.ph) * 3;
+  rect(-16, 10, 4, 8 + s, '#222'); rect(-4, 10, 4, 8 - s, '#222'); rect(4, 10, 4, 8 + s, '#222'); rect(8, 10, 4, 8 - s, '#222');
+  ctx.restore();
+}
+function drawQuad(x, y, oreAmt, big) {
+  const k = big ? 1.6 : 1;
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  rect(-16, -26, 8, 14, '#111'); rect(8, -26, 8, 14, '#111');
+  rect(-17, 12, 9, 16, '#111'); rect(8, 12, 9, 16, '#111');
+  rect(-11, -22, 22, 50, '#f60');
+  rect(-9, -18, 18, 12, '#d40');
+  rect(-12, -6, 24, 3, '#aaa'); rect(-6, 0, 12, 10, '#333');
+  rect(-9, 10, 18, 18, '#222');
+  if (oreAmt > 0) { const h = 16 * oreAmt / CAPACITY; rect(-8, 27 - h, 16, h, '#8a5a44'); rect(-5, 27 - h - 2, 10, 3, '#a8705a'); }
+  ctx.restore();
+}
+function text(s, x, y, size = 18, col = '#fff', align = 'center') {
+  ctx.fillStyle = col; ctx.font = `bold ${size}px system-ui,sans-serif`; ctx.textAlign = align; ctx.fillText(s, x, y);
+}
+function bar(x, y, w, h, f, col) { rect(x, y, w, h, '#000a'); rect(x + 2, y + 2, (w - 4) * Math.max(0, Math.min(1, f)), h - 4, col); }
+
+function drawBtn(r, label, on) {
+  ctx.globalAlpha = on ? .75 : .45; ctx.fillStyle = '#000'; ctx.fillRect(r[0], r[1], r[2], r[3]);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]); ctx.globalAlpha = 1;
+  text(label, r[0] + r[2] / 2, r[1] + r[3] / 2 + 7, label.length > 1 ? 15 : 26);
+}
+function drawTouch() { for (const k in BTN) drawBtn(BTN[k], BTN[k][4], keys[k]); }
+function drawMine() {
+  rect(0, 0, W, H, '#6b5b45');
+  for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#5c4d3a');
+  ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.moveTo(W / 2 - 40, 360); ctx.lineTo(W / 2 + 60, 250); ctx.lineTo(W / 2 + 170, 360); ctx.fill();
+  ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.moveTo(W / 2 + 20, 360); ctx.lineTo(W / 2 + 60, 290); ctx.lineTo(W / 2 + 120, 360); ctx.fill();
+  drawQuad(W / 2 - 60, 470, ore, true);
+  text('IRON ORE MINE', W / 2, 50, 28);
+  text('Mash SPACE (or tap the screen) to shovel ore onto the quad', W / 2, 90, 15, '#ddd');
+  bar(60, 130, W - 120, 26, ore / CAPACITY, '#c86');
+  text(`Load: ${ore} / ${CAPACITY} kg — heavier = slower, wider turns, more score`, W / 2, 180, 13, '#ddd');
+  if (ore >= 20) { if (isTouch) drawBtn(GO, 'START DRIVING', false); else text('Press G / Enter to start driving', W / 2, 620, 20, '#ff6'); }
+  else text('Load at least 20 kg to depart', W / 2, 620, 16, '#999');
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
+  if (state === 'load') drawMine();
+  else if (state === 'menu') {
+    drawRoad();
+    drawQuad(W / 2, 400, 70, true);
+    rect(40, 90, W - 80, 170, '#000b');
+    text('ORE HAULER', W / 2, 150, 44, '#f60');
+    text('Ultra Quad Delivery', W / 2, 185, 20);
+    text('Load iron ore, deliver it, dodge traffic & livestock', W / 2, 220, 14, '#ddd');
+    text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
+    text('↑/W throttle   ↓/S brake   ←→/A D steer', W / 2, 620, 14, '#ccc');
+    text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
+  } else {
+    drawRoad();
+    for (const a of animals) drawAnimal(a);
+    for (const t of traffic) drawCar(t);
+    drawQuad(qx, qy, ore, false);
+    for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
+    rect(0, 0, W, 64, '#000a');
+    text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
+    text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore / CAPACITY, '#c86');
+    text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
+    text(`${Math.min(100, Math.round(dist / TRIP * 100))}% to depot`, W - 10, 48, 14, '#ff6', 'right');
+    if (isTouch && state === 'drive') drawTouch();
+    if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
+    if (state === 'over' || state === 'win') {
+      rect(40, 220, W - 80, 240, '#000d');
+      if (state === 'over') { text('WRECKED!', W / 2, 280, 40, '#e44'); text('The quad is totalled.', W / 2, 320, 18); }
+      else {
+        text('DELIVERED!', W / 2, 275, 40, '#4c4');
+        text(`${Math.round(ore)} kg of ore in ${Math.round(time)}s`, W / 2, 315, 18);
+        text(`Score: ${score}`, W / 2, 350, 24, '#ff6'); text(`Best: ${best}`, W / 2, 380, 16);
+      }
+      text(isTouch ? 'Tap to play again' : 'Press SPACE to play again', W / 2, 430, 18, '#ff6');
+    }
+  }
+  ctx.restore();
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  update(dt); render(); requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
