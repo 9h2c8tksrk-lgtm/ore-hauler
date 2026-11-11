@@ -267,11 +267,16 @@ function update(dt) {
   if (state !== 'drive') return;
   time += dt;
   const lf = 1 - (ore() / MAX_ORE) * .45;
-  const maxSpeed = 220 * lf + 50;
+  const maxSpeed = Math.min(180, 220 * lf + 50);   // 180 px/s shows as 90 km/h
   if (keys.ArrowUp || keys.KeyW || keys.TG) speed += 120 * lf * dt;
   else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 220 * dt;
   else speed -= 40 * dt;
   speed = Math.max(0, Math.min(maxSpeed, speed));
+  // no overtaking: can't outrun same-direction traffic ahead
+  for (const t of traffic) {
+    if (t.oncoming || t.hit || t.y > qy || Math.abs(t.x - qx) > 50) continue;
+    if (qy - 22 - (t.y + t.h / 2) < 12) speed = Math.min(speed, t.v);
+  }
   const steer = steerAxis();
   const targetSteeringSpeed = steer * (100 + 70 * lf) * Math.min(1, speed / 40);
   steeringSpeed += (targetSteeringSpeed - steeringSpeed) * (1 - Math.exp(-8 * dt));
