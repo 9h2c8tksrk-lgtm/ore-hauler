@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Let's Haul: Loader & Side-Tippers</title>
+<title>Let's Haul</title>
 <style>
   html,body{margin:0;height:100%;background:#1a1a1a;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;position:fixed;width:100%}
   #wrap{display:flex;justify-content:center;align-items:center;height:100%}
@@ -511,7 +511,7 @@ function render() {
     drawBoard(344, 5, 0);
     for (let i = 0; i < 3; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
-    text('Haul the ore, dodge traffic, cows & kangaroos', W / 2, 175, 14, '#ddd');
+    text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
     text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 620, 14, '#ccc');
     text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
