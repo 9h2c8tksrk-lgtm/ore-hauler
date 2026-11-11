@@ -511,8 +511,7 @@ function render() {
     drawBoard(344, 5, 0);
     for (let i = 0; i < 3; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
-    text('Loader + 4 Side-Tippers', W / 2, 165, 20);
-    text('Load the trailers, haul the ore, dodge traffic, cows & kangaroos', W / 2, 205, 13, '#ddd');
+    text('Haul the ore, dodge traffic, cows & kangaroos', W / 2, 175, 14, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
     text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 620, 14, '#ccc');
     text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
