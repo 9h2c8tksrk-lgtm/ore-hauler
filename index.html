@@ -32,7 +32,7 @@ function roadOff(s) {
 }
 let warned = 0, hurtByStock = false, wk = null;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
-const WK = { x: 108, y: 220, w: 264, h: 120 }, BAY_W = 44, WK_SC = .62;   // workshop building, six bays across
+const WK = { x: 108, y: 160, w: 264, h: 120 }, BAY_W = 44, WK_SC = .62;   // workshop building, six bays across
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
 const PILE = { x: 20, y: 230, w: 170, h: 270 };
@@ -571,14 +571,21 @@ function drawCab(x, y) {
   ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(ex, ey, 2.7, 0, Math.PI * 2); ctx.fill();
 }
 function drawTruck() {
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
+  // cab leans into the steering; trailers follow the recorded path and angle along it
+  const ca = Math.atan2(steeringSpeed, Math.max(speed, 60));
+  const pts = [{ x: qx - Math.sin(ca) * 22, y: qy + Math.cos(ca) * 22 }], tp = [];
   for (let i = 0; i < NT; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i === 0 ? qx : trailerX(i - 1), i === 0 ? qy + 22 : qy + OFF(i - 1) + 28);
-    ctx.lineTo(trailerX(i), qy + OFF(i) - 28); ctx.stroke();
+    const s0 = scroll - OFF(i) * .3, a = Math.atan2(sampleX(s0 + 8) - sampleX(s0 - 8), 16), tx = trailerX(i), ty = qy + OFF(i);
+    tp.push({ x: tx, y: ty, a });
+    pts.push({ x: tx + Math.sin(a) * 28, y: ty - Math.cos(a) * 28 }, { x: tx - Math.sin(a) * 28, y: ty + Math.cos(a) * 28 });
   }
-  for (let i = NT - 1; i >= 0; i--) { const tx = trailerX(i); drawTrailer(tx, qy + OFF(i), 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid); }
-  drawCab(qx, qy);
+  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
+  for (let i = 0; i < NT; i++) { ctx.beginPath(); ctx.moveTo(pts[i * 2].x, pts[i * 2].y); ctx.lineTo(pts[i * 2 + 1].x, pts[i * 2 + 1].y); ctx.stroke(); }
+  for (let i = NT - 1; i >= 0; i--) {
+    const p = tp[i]; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+    drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid); ctx.restore();
+  }
+  ctx.save(); ctx.translate(qx, qy); ctx.rotate(ca); drawCab(0, 0); ctx.restore();
 }
 function drawLoader(x, y, loaded) {
   // (x, y) is the articulation joint; rear section follows ldr.angle, front section angle + art
@@ -657,10 +664,10 @@ function drawWorkshop() {
   for (let i = 0; i < 6; i++) {
     const cx = wkBayX(i), on = al && al.i === i && wk.y > WK_MOUTH - 20;
     ctx.strokeStyle = on ? (al.ok ? '#6f6' : '#f66') : 'rgba(255,255,255,.35)'; ctx.lineWidth = on ? 3 : 2; ctx.setLineDash([10, 10]);
-    ctx.beginPath(); ctx.moveTo(cx, WK_MOUTH + 4); ctx.lineTo(cx, WK_MOUTH + 280); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(cx, WK_MOUTH + 4); ctx.lineTo(cx, WK_MOUTH + 400); ctx.stroke(); ctx.setLineDash([]);
     text(String(i + 1), cx, WK_MOUTH + 22, 14, '#fff');
   }
-  for (const [k, x, y] of [[1, 54, WK.y + 60], [2, WK.x + WK.w / 2, 120], [4, W - 54, WK.y + 60]]) {
+  for (const [k, x, y] of [[1, 54, WK.y + 60], [2, WK.x + WK.w / 2, 112], [4, W - 54, WK.y + 60]]) {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
   }
   const ps = wkParts();
