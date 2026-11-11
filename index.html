@@ -152,10 +152,9 @@ const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
-  scroll = 0; warned = 0; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }];
+  scroll = 0; warned = 0; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
-reset();
 
 function onKey(code) {
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
@@ -242,7 +241,8 @@ function chainPose(J, i) {
 }
 const TRAILER_LEN = 62, HITCH = 26;   // joint-to-joint trailer length and cab hitch distance behind the cab centre
 const straightChain = (x, y, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x, y: y + (HITCH + TRAILER_LEN * k) * sc }));
-let cabAngle = 0;
+let cabAngle = 0, jts;
+reset();
 
 function damage(n, what, idx) {
   n = Math.round(n * D().dmg); hp -= n; shake = .3; flash(what);
