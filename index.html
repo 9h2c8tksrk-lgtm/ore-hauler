@@ -286,13 +286,102 @@ function updateSkyway(dt) {
 }
 // ---------- workshop yard ----------
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
+const TYRE_BAY = 5, TY_RACK = { x: WK.x + WK.w + 28, y: WK_MOUTH + 20 }, TY_SCRAP = { x: WK.x + WK.w + 28, y: WK_MOUTH + 95 };
+const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
+const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK.y + 60 });
+function fitInit() { const p = idleSpot(); return { u: -1, stage: 0, t: 0, st: [0, 0, 0, 0, 0], fx: p.x, fy: p.y, fa: Math.PI / 2, walk: false, rolls: [], piled: 0 }; }
+let yard;
+// other trucks parked or shuffling about the yard, plus mechanics who walk to a spot, pause and work
+function makeYard() {
+  const park = (x, y, h, f) => ({ x, y, h, f, j: chainLine(x, y, h, WK_SC) });
+  const mover = (f, pts) => { const h = Math.atan2(pts[1].x - pts[0].x, -(pts[1].y - pts[0].y)); return { x: pts[0].x, y: pts[0].y, h, f, i: 1, v: 0, pts, j: chainLine(pts[0].x, pts[0].y, h, WK_SC) }; };
+  const mech = (col, pts) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6 });
+  const P = (x, y, w = 0) => ({ x, y, w });
+  return {
+    parked: [park(860, 1250, Math.PI / 2, .8), park(860, 1195, Math.PI / 2, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
+    movers: [
+      mover(.7, [P(690, 560), P(830, 560), P(830, 900), P(690, 900)]),
+      mover(0, [P(460, 820), P(460, 1120), P(620, 1120), P(620, 820)])],
+    mechs: [
+      mech('#2a6fd6', [P(67, 310, 3), P(67, 170, 3)]),
+      mech('#e8721a', [P(710, 1222, 3), P(810, 1222, 2)]),
+      mech('#3a9a4a', [P(300, 520, 2.5), P(400, 520), P(500, 545, 3), P(400, 545)]),
+      mech('#8a8a8a', [P(640, 600, 2), P(640, 860, 3)])]
+  };
+}
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+function rigPoints(r) {
+  const o = [{ x: r.x, y: r.y }, { x: r.x + Math.sin(r.h) * 14, y: r.y - Math.cos(r.h) * 14 }, ...r.j];
+  for (let i = 0; i < NT; i++) o.push(chainPose(r.j, i));
+  return o;
+}
+const wkPoints = () => rigPoints({ x: wk.x, y: wk.y, h: wk.h, j: wk.j });
+function yardHit() {
+  const me = wkPoints();
+  return yard.parked.some(r => rigPoints(r).some(a => me.some(b => Math.hypot(a.x - b.x, a.y - b.y) < 15)));
+}
+function yardUpdate(dt) {
+  const me = wkPoints();
+  for (const m of yard.movers) {
+    const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y;
+    if (Math.hypot(dx, dy) < 14) m.i = (m.i + 1) % m.pts.length;
+    const diff = angDiff(Math.atan2(dx, -dy), m.h);
+    m.h += Math.max(-1.1 * dt, Math.min(1.1 * dt, diff));
+    const fx = m.x + Math.sin(m.h) * 30, fy = m.y - Math.cos(m.h) * 30;
+    const blocked = me.some(p => Math.hypot(p.x - fx, p.y - fy) < 45 || Math.hypot(p.x - m.x, p.y - m.y) < 30);
+    m.v += ((blocked ? 0 : Math.abs(diff) > .5 ? 16 : 32) - m.v) * Math.min(1, dt * 3);
+    m.x += Math.sin(m.h) * m.v * dt; m.y -= Math.cos(m.h) * m.v * dt;
+    m.j[0].x = m.x - Math.sin(m.h) * HITCH * WK_SC; m.j[0].y = m.y + Math.cos(m.h) * HITCH * WK_SC;
+    chainFollow(m.j, TRAILER_LEN * WK_SC);
+  }
+  for (const m of yard.mechs) {
+    if (m.wait > 0) { m.wait -= dt; m.walk = false; m.work = m.wait > 0; continue; }
+    const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y, d = Math.hypot(dx, dy);
+    if (d < 2) { m.wait = g.w; m.i = (m.i + 1) % m.pts.length; m.walk = false; continue; }
+    const st = Math.min(d, 26 * dt); m.x += dx / d * st; m.y += dy / d * st; m.a = Math.atan2(dx, -dy); m.walk = true; m.work = false;
+  }
+}
+// the tyre fitter walks to a spot; true once there
+function fitWalk(f, tx, ty, dt) {
+  const dx = tx - f.fx, dy = ty - f.fy, d = Math.hypot(dx, dy);
+  if (d < 2) { f.walk = false; return true; }
+  const st = Math.min(d, 80 * dt); f.fx += dx / d * st; f.fy += dy / d * st; f.fa = Math.atan2(dx, -dy); f.walk = true;
+  return false;
+}
+// tyre bay: for each unit (cab, then trailers) the fitter fetches a new tyre, takes the old one off, fits the new one
+function tyreWork(dt) {
+  const f = wk.fit; wk.v = 0;
+  for (const r of f.rolls) {
+    const dx = r.tx - r.x, dy = r.ty - r.y, d = Math.hypot(dx, dy), st = 140 * dt;
+    if (d <= st) { r.x = r.tx; r.y = r.ty; r.done = true; } else { r.x += dx / d * st; r.y += dy / d * st; r.a += dt * 14; }
+  }
+  f.rolls = f.rolls.filter(r => { if (r.kind === 'old' && r.done) { f.piled++; return false; } return true; });
+  if (f.u < 0) { f.u = 0; f.stage = 0; }
+  if (f.u > NT) { wk.done = true; hp = 100; flash('New tyres all round! Back to the highway'); return; }
+  const p = wkParts()[f.u], wx = p.x + 11;
+  if (f.stage === 0) {
+    if (!fitWalk(f, p.x + 24, p.y, dt)) return;
+    f.fa = -Math.PI / 2; f.stage = 1; f.t = 0;
+    f.rolls.push({ kind: 'new', x: TY_RACK.x, y: TY_RACK.y, tx: wx, ty: p.y, a: 0, done: false });
+  } else if (f.stage === 1) {
+    f.t += dt;
+    if (f.t >= 1) { f.st[f.u] = 1; f.rolls.push({ kind: 'old', x: wx, y: p.y, tx: TY_SCRAP.x, ty: TY_SCRAP.y, a: 0, done: false }); f.stage = 2; f.t = 0; burst(wx, p.y, '#999', 6); }
+  } else if (f.stage === 2) {
+    if (!f.rolls.some(r => r.kind === 'new' && r.done)) return;
+    f.t += dt;
+    if (f.t >= .9) {
+      f.st[f.u] = 2; f.rolls = f.rolls.filter(r => r.kind !== 'new'); hp = Math.min(100, hp + (100 - wk.hp0) / 5);
+      burst(wx, p.y, '#ffd23a', 12); f.stage = 3; f.t = 0;
+    }
+  } else { f.t += dt; if (f.t >= .25) { f.u++; f.stage = 0; } }
+}
 function wkFresh() {
   const x = 130, y = 1180;
-  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0 };
+  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
 }
 function toWorkshop() {
   if (state !== 'drive') return;
-  state = 'workshop'; wk = wkFresh(); particles = []; ptrs.clear(); syncBtns();
+  state = 'workshop'; wk = wkFresh(); yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
   flash('Drive a lap around the workshop, then line up with a bay');
 }
 // drag the trailer chain behind the cab
@@ -328,8 +417,15 @@ function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
+  yardUpdate(dt);
   if (wk.auto) {
     const cx = wkBayX(wk.bay);
+    if (wk.bay === TYRE_BAY && !wk.done) {
+      wk.h *= 1 - Math.min(1, dt * 6); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
+      if (wk.y > WK.y + 40) { wk.y -= 38 * dt; wkChain(); fitWalk(wk.fit, cx + 19, WK.y + 70, dt); return; }
+      wkChain(); return tyreWork(dt);
+    }
+    if (wk.bay === TYRE_BAY) { const p = idleSpot(); if (fitWalk(wk.fit, p.x, p.y, dt)) wk.fit.fa = Math.PI / 2; }
     wk.v = wk.done ? Math.min(90, wk.v + 80 * dt) : 38;
     wk.h *= 1 - Math.min(1, dt * 6); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
     wk.y -= wk.v * dt; wkChain();
@@ -361,9 +457,10 @@ function updateWorkshop(dt) {
     if (wk.lap !== 15) return wkBump('Drive a lap of the yard first!');
     const a = wkAlign();
     if (!a.ok) return wkBump('Not straight! Line up with a bay and try again');
-    wk.auto = true; wk.bay = a.i; flash('Lined up! Going through the workshop'); return;
+    wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Going through the workshop'); return;
   }
   if (wkParts().slice(1).some(p => wkInside(p.x, p.y))) return wkBump('Trailer clipped the workshop!');
+  if (yardHit()) return wkBump('Hit a parked truck! Start again');
 }
 
 function update(dt) {
@@ -451,6 +548,19 @@ function drawStick() {
 }
 function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
 
+// road is drawn as smooth paths (not pixel strips) so the curves don't shimmer while scrolling
+const roadX = y => roadOff(scroll + qy - y);
+function curve(x, y0, y1, lw, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
+  for (let y = y0; ; y = Math.min(y + 8, y1)) { const px = x + roadX(y); if (y === y0) ctx.moveTo(px, y); else ctx.lineTo(px, y); if (y >= y1) break; }
+  ctx.stroke();
+}
+function band(xl, xr, col) {
+  ctx.fillStyle = col; ctx.beginPath();
+  for (let y = -8; y <= H + 8; y += 8) ctx.lineTo(xl + roadX(y), y);
+  for (let y = H + 8; y >= -8; y -= 8) ctx.lineTo(xr + roadX(y), y);
+  ctx.fill();
+}
 function drawRoad() {
   rect(0, 0, W, H, '#a74626');
   for (let y = -160 + (scroll % 160); y < H + 100; y += 160) {
@@ -463,17 +573,11 @@ function drawRoad() {
       ctx.fillStyle = '#a4a063'; ctx.beginPath(); ctx.arc(x - 3, y + 99, 7, 0, Math.PI * 2); ctx.fill();
     }
   }
-  const S = 5;
-  for (let y = 0; y < H; y += S) {
-    const ox = roadOff(scroll + qy - (y + S / 2)), rel = ((y - scroll) % 160 + 160) % 160, rel70 = ((y - scroll) % 70 + 70) % 70;
-    rect(ROAD_L - 13 + ox, y, ROAD_R - ROAD_L + 26, S, '#bf7044');
-    rect(ROAD_L + ox, y, ROAD_R - ROAD_L, S, '#514f4b');
-    if (rel70 < 34) rect(W / 2 - 2 + ox, y, 4, S, '#eee8d5');
-    rect(ROAD_L + 2 + ox, y, 3, S, '#eee8d5'); rect(ROAD_R - 5 + ox, y, 3, S, '#eee8d5');
-    if (rel < 15) {
-      rect(ROAD_L - 20 + ox, y, 4, S, '#eee8d5'); rect(ROAD_R + 16 + ox, y, 4, S, '#eee8d5');
-      if (rel >= 3 && rel < 7) { rect(ROAD_L - 20 + ox, y, 4, S, '#d33'); rect(ROAD_R + 16 + ox, y, 4, S, '#d33'); }
-    }
+  band(ROAD_L - 13, ROAD_R + 13, '#bf7044'); band(ROAD_L, ROAD_R, '#514f4b');
+  curve(ROAD_L + 3.5, -10, H + 10, 3, '#eee8d5'); curve(ROAD_R - 3.5, -10, H + 10, 3, '#eee8d5');
+  for (let y0 = (scroll % 70) - 70; y0 < H; y0 += 70) curve(W / 2, y0, y0 + 34, 4, '#eee8d5');
+  for (let y0 = (scroll % 160) - 160; y0 < H; y0 += 160) {
+    for (const x of [ROAD_L - 18, ROAD_R + 18]) { curve(x, y0, y0 + 15, 4, '#eee8d5'); curve(x, y0 + 3, y0 + 7, 4, '#d33'); }
   }
 }
 function drawCar(t) {
@@ -556,8 +660,15 @@ function drawSkyway() {
   for (const r of rocks) { const z = 5 * Math.min(1, r.l); rect(r.x, r.y, z, z, r.c); }
   text(isTouch ? 'Open each lid, then tip the bin' : '1-4 open/close lid · Q W E R tip bin', W / 2, 640, 14, '#ccc');
 }
-function drawCab(x, y) {
-  rect(x - 19, y - 14, 5, 14, '#111'); rect(x + 14, y - 14, 5, 14, '#111');
+// tyre look: -1 plain, 0 worn, 1 bare hub, 2 brand new
+function wheel(x, y, w, h, st = -1) {
+  if (st === 1) { rect(x - 1.5, y - 3, 3, 6, '#9aa0a6'); rect(x - .8, y - 1, 1.6, 2, '#444'); return; }
+  if (st === 2) { rect(x - w / 2, y - h / 2, w, h, '#050505'); rect(x - w / 2, y - h / 2, 1.2, h, '#dcdcdc'); for (let k = 1; k < 4; k++) rect(x - w / 2, y - h / 2 + k * h / 4, w, .8, '#2e2e2e'); return; }
+  rect(x - w / 2, y - h / 2, w, h, st === 0 ? '#3d3835' : '#111');
+  if (st === 0) rect(x - w / 2, y - .5, w, 1, '#777');
+}
+function drawCab(x, y, st = -1) {
+  wheel(x - 16.5, y - 7, 5, 14, st); wheel(x + 16.5, y - 7, 5, 14, st);
   rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
   drawBeacon(x - 8, y + 8, 0); drawBeacon(x + 8, y + 8, 1);
   const ex = x + 20, ey = y + 12, c = beaconClock();   // single exhaust stack, right side
@@ -573,17 +684,19 @@ function drawTruck() {
   drawRig(jts, qx, qy, cabAngle, 1);
 }
 // cab at (x, y) with heading `ang`, trailers hinged on the chain joints; sc scales the whole rig
-function drawRig(J, x, y, ang, sc) {
+function drawRig(J, x, y, ang, sc, o) {
   ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4 * sc; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); ctx.lineTo(J[NT].x, J[NT].y); ctx.stroke();
   for (let i = NT - 1; i >= 0; i--) {
-    const p = chainPose(J, i); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
-    drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid); ctx.restore();
+    const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
+    for (const sx of [-18.5, 18.5]) for (const wy of [8, 21]) wheel(sx, wy, 5, 11, st);
+    if (o && o.fill !== undefined) drawTrailer(0, 0, 34, 56, o.fill, 0, 0); else drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid);
+    ctx.restore();
   }
   ctx.fillStyle = '#e8b100';
   for (const j of J) { ctx.beginPath(); ctx.arc(j.x, j.y, 3 * sc, 0, Math.PI * 2); ctx.fill(); }
   ctx.lineCap = 'butt';
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(sc, sc); drawCab(0, 0); ctx.restore();
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(sc, sc); drawCab(0, 0, o && o.tyre ? o.tyre[0] : -1); ctx.restore();
 }
 function drawLoader(x, y, loaded) {
   // (x, y) is the articulation joint; rear section follows ldr.angle, front section angle + art
@@ -649,6 +762,45 @@ function drawYard() {
   if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, ACT[4], false); }
 }
 
+function tyreDisc(x, y, r, spin = 0) {
+  ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8a8d90'; ctx.beginPath(); ctx.arc(x, y, r * .55, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let k = 0; k < 4; k++) { const a = spin + k * Math.PI / 2; ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * r * .5, y + Math.sin(a) * r * .5); }
+  ctx.stroke();
+}
+// top-down mechanic facing "up" before rotation: boots, shoulders, reaching arms, hard hat
+function drawMech(m) {
+  const t = performance.now() / 1000, sw = m.walk ? Math.sin(t * 10 + m.ph) : 0, reach = m.work ? 7 + Math.sin(t * 16 + m.ph) * 2 : 3 + sw * 1.5;
+  ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.a); ctx.scale(1.3, 1.3);
+  rect(-4, -1 + sw * 3, 3, 5, '#222'); rect(1, -1 - sw * 3, 3, 5, '#222');
+  ctx.fillStyle = m.col; ctx.beginPath(); ctx.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = m.col; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath();
+  ctx.moveTo(-5, 0); ctx.lineTo(-4, -reach); ctx.moveTo(5, 0); ctx.lineTo(4, -reach * .9); ctx.stroke(); ctx.lineCap = 'butt';
+  if (m.work) rect(-6, -reach - 5, 3, 7, '#b8bcc0');
+  ctx.fillStyle = '#e0b090'; ctx.beginPath(); ctx.arc(0, -1, 3.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f2c200'; ctx.beginPath(); ctx.arc(0, -1.5, 3.6, Math.PI, 0); ctx.fill();
+  ctx.restore();
+}
+function drawYardLife() {
+  for (const r of yard.parked) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
+  for (const r of yard.movers) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
+  for (const m of yard.mechs) drawMech(m);
+  // new tyres on a rack and a heap of old ones outside the tyre bay
+  for (let k = 0; k < 3; k++) tyreDisc(TY_RACK.x, TY_RACK.y - k * 3, 9);
+  for (let k = 0; k < 3 + wk.fit.piled; k++) tyreDisc(TY_SCRAP.x + ((k * 7) % 13) - 6, TY_SCRAP.y + ((k * 5) % 11) - 5 - Math.floor(k / 4) * 3, 8);
+}
+function drawFitter() {
+  const f = wk.fit, idle = f.u < 0 && !wk.auto, bx = wkBayX(TYRE_BAY);
+  if (idle) tyreDisc(f.fx + 20, f.fy, 10, performance.now() / 150);
+  drawMech({ x: f.fx, y: f.fy, a: f.fa, col: '#d83a3a', walk: f.walk, work: idle || (wk.auto && !f.walk && f.u >= 0 && f.u <= NT && (f.stage === 1 || f.stage === 2)), ph: 0 });
+  for (const r of f.rolls) {
+    ctx.save(); ctx.translate(r.x, r.y);
+    rect(-5.5, -2.5, 11, 5, r.kind === 'new' ? '#050505' : '#3d3835');
+    rect(-5.5 + (r.a * 2) % 11, -2.5, 1.2, 5, '#777');
+    ctx.restore();
+  }
+}
 function drawWorkshop() {
   const cx0 = Math.max(0, Math.min(WORLD.w - W, wk.x - W / 2)), cy0 = Math.max(0, Math.min(WORLD.h - H, wk.y - H / 2));
   ctx.save(); ctx.translate(-Math.round(cx0), -Math.round(cy0));
@@ -671,17 +823,23 @@ function drawWorkshop() {
   for (const [k, x, y] of [[1, WK.x / 2, WK.y + WK.h / 2], [2, WK.x + WK.w / 2, WK.y / 2], [4, WORLD.w - WK.x / 2, WK.y + WK.h / 2]]) {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
-  drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC);
+  drawYardLife();
+  const tb = wkBayX(TYRE_BAY);
+  for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK.y + 14, 7); tyreDisc(x, WK.y + 11, 7); }
+  drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC, wk.auto && wk.bay === TYRE_BAY ? { tyre: wk.fit.st } : null);
+  drawFitter();
   rect(WK.x - 6, WK.y - 6, WK.w + 12, 6, '#3b3f44');
   ctx.fillStyle = 'rgba(95,105,115,.5)'; ctx.fillRect(WK.x, WK.y, WK.w, WK.h);
   text('WORKSHOP', WK.x + WK.w / 2, WK.y + WK.h / 2 + 6, 22, '#fff');
+  rect(tb - 24, WK.y - 26, 48, 16, '#222'); text('TYRES', tb, WK.y - 14, 12, '#ffd23a');
+  text('TYRES', tb, WK_MOUTH + 38, 10, '#ffd23a');
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
   ctx.restore();
   rect(0, 0, W, 64, '#000a');
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   const laps = [1, 2, 4].filter(k => wk.lap & k).length;
-  text(wk.auto ? 'Repairing...' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : `Lap of the yard: ${laps}/3`, W / 2, 52, 14, '#ddd');
+  text(wk.auto ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : 'Repairing...') : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : `Lap of the yard: ${laps}/3`, W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
   if (isTouch) { drawStick(); drawBtns(DB); }
 }
