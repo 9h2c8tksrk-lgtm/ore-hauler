@@ -90,7 +90,7 @@ cv.addEventListener('pointerdown', e => {
     for (let i = 0; i < NT; i++) { if (inR(p, lidBtn(i))) toggleLid(i); else if (inR(p, tipBtn(i))) tipTrailer(i); }
     return;
   }
-  if (state === 'menu') for (let i = 0; i < 3; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
+  if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
   onKey('Space');
 });
 cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { const n = cpos(e); n.stick = ptrs.get(e.pointerId).stick; ptrs.set(e.pointerId, n); syncBtns(); } });
@@ -108,11 +108,12 @@ nameIn.value = playerName;
 const DIFFS = [
   { n: 'EASY', spawn: 1.5, dmg: .6, vel: .85, mult: .7 },
   { n: 'NORMAL', spawn: 1, dmg: 1, vel: 1, mult: 1 },
-  { n: 'HARD', spawn: .7, dmg: 1.4, vel: 1.15, mult: 1.5 }];
-let diff = [0, 1, 2].includes(+localStorage.oreDiff) && localStorage.oreDiff !== undefined ? +localStorage.oreDiff : 1;
+  { n: 'HARD', spawn: .7, dmg: 1.4, vel: 1.15, mult: 1.5 },
+  { n: 'KIDS', spawn: 5, dmg: .5, vel: .85, mult: .5, noWildlife: true }];
+let diff = [0, 1, 2, 3].includes(+localStorage.oreDiff) && localStorage.oreDiff !== undefined ? +localStorage.oreDiff : 1;
 const D = () => DIFFS[diff];
-const diffBtn = i => [40 + i * 135, 516, 125, 38, DIFFS[i].n];
-function setDiff(i) { diff = (i + 3) % 3; localStorage.oreDiff = diff; }
+const diffBtn = i => [14 + i * 114, 516, 108, 38, DIFFS[i].n];
+function setDiff(i) { diff = (i + DIFFS.length) % DIFFS.length; localStorage.oreDiff = diff; }
 let board = [];
 try { board = JSON.parse(localStorage.oreBoard || '[]'); } catch (e) { board = []; }
 const rank = (a, b) => (b.done - a.done) || (a.done ? b.score - a.score : b.pct - a.pct);
@@ -189,7 +190,7 @@ function action() {
 }
 
 function spawn() {
-  if (Math.random() < .6) {
+  if (D().noWildlife || Math.random() < .6) {
     const lane = Math.floor(Math.random() * LANE_X.length), oncoming = lane === 1;
     const col = ['#c33', '#36c', '#ccc', '#e8b100', '#3a3'][Math.floor(Math.random() * 5)];
     const truck = Math.random() < .25;
@@ -530,7 +531,7 @@ function render() {
     drawCab(W / 2, 360); for (let i = 0; i < NT; i++) drawTrailer(W / 2, 360 + OFF(i), 34, 56, .8, 0, 0);
     rect(40, 70, W - 80, 180, '#000b'); rect(40, 316, W - 80, 190, '#000b');
     drawBoard(344, 5, 0);
-    for (let i = 0; i < 3; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
+    for (let i = 0; i < DIFFS.length; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
     text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
