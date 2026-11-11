@@ -393,6 +393,7 @@ function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
     const ih = (h - 10) * Math.min(1, .25 + fill * .75);
     rect(x - w / 2 + 5, y - ih / 2, w - 10, ih, '#8a5a44');
     rect(x - w / 2 + 9, y - ih / 2 + 3, w - 18, Math.max(2, ih - 6), '#a8705a');
+    rockChunks(x, y, (w - 12) / 2, ih / 2 - 1, Math.round(6 + ih / 3), 4.5, 3 + num);
   }
   if (lid < 1) {
     const lw = (w - 6) * (1 - lid);
@@ -469,11 +470,25 @@ function drawLoader(x, y, loaded) {
   ctx.restore();
   ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
 }
+// jagged rock chunks scattered over an ellipse; deterministic so they don't flicker
+function rockChunks(cx, cy, rx, ry, n, size, seed = 1) {
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const cols = ['#5e3a2c', '#7a4a38', '#8a5a44', '#a8705a', '#b98368'];
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * 6.283, d = Math.sqrt(rnd()), x = cx + Math.cos(a) * rx * d, y = cy + Math.sin(a) * ry * d, r = size * (.5 + rnd());
+    const k = 5 + Math.floor(rnd() * 3), rot = rnd() * 6.283;
+    ctx.fillStyle = cols[Math.floor(rnd() * cols.length)]; ctx.beginPath();
+    for (let j = 0; j < k; j++) { const t = rot + j / k * 6.283, rr = r * (.6 + rnd() * .5); ctx[j ? 'lineTo' : 'moveTo'](x + Math.cos(t) * rr, y + Math.sin(t) * rr); }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffffff22'; ctx.fillRect(x - r * .3, y - r * .4, r * .4, r * .25);
+  }
+}
 function drawYard() {
   rect(0, 0, W, H, '#a74626');
   for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
   ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2, PILE.h / 2, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 10, PILE.y + PILE.h / 2 - 20, PILE.w / 3, PILE.h / 3, 0, 0, 7); ctx.fill();
+  rockChunks(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2 - 8, PILE.h / 2 - 8, 120, 9, 7);
   text('IRON ORE', PILE.x + PILE.w / 2, PILE.y + PILE.h / 2 + 5, 16, '#fff');
   drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38);
   for (let i = 0; i < NT; i++) {
@@ -486,6 +501,7 @@ function drawYard() {
   for (const p of spills) {
     ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
+    rockChunks(p.x, p.y, p.r, p.r * .7, Math.round(p.r / 2) + 2, 3.5, Math.round(p.a * 100) + 1);
   }
   drawLoader(ldr.x, ldr.y, carrying);
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
