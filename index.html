@@ -294,25 +294,38 @@ let yard;
 // other trucks parked or shuffling about the yard, plus mechanics who walk to a spot, pause and work
 function makeYard() {
   const park = (x, y, h, f) => ({ x, y, h, f, j: chainLine(x, y, h, WK_SC) });
-  const mover = (f, pts) => { const h = Math.atan2(pts[1].x - pts[0].x, -(pts[1].y - pts[0].y)); return { x: pts[0].x, y: pts[0].y, h, f, i: 1, v: 0, pts, j: chainLine(pts[0].x, pts[0].y, h, WK_SC) }; };
-  const mech = (col, pts) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6 });
-  const P = (x, y, w = 0) => ({ x, y, w });
+  const P = (x, y, o = {}) => ({ x, y, w: 0, ...o });
+  // start part-way along the leg that ends at pts[i0]
+  const start = (pts, i0, k) => { const a = pts[(i0 + pts.length - 1) % pts.length], b = pts[i0]; return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, h: Math.atan2(b.x - a.x, -(b.y - a.y)) }; };
+  const truck = (f, pts, i0, k) => { const s0 = start(pts, i0, k); return { ...s0, f, i: i0, v: 0, hold: 0, blk: 0, free: 0, pts, j: chainLine(s0.x, s0.y, s0.h, WK_SC) }; };
+  // clockwise round the workshop like the player: along the top, down the right, back along the bottom, then straight in through a bay and out the top
+  const lap = (bay, long) => {
+    const bx = wkBayX(bay), inBay = [P(bx + 110, 1000), P(bx, 900, { lk: 1 }), P(bx, 372, { lk: 1, stop: 14 })];
+    return [P(bx, 230), P(750, 230), P(750, 1000), ...(long ? [P(150, 1000), P(150, 230), P(750, 230), P(750, 1000)] : []), ...inBay];
+  };
+  const ute = pts => { const s0 = start(pts, 1, .3); return { ...s0, ute: 1, i: 1, v: 0, hold: 0, blk: 0, free: 0, pts }; };
+  const mech = (col, pts, mv, u, side) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6, mv, u, side });
+  const pa = lap(1, false), pb = lap(3, true);
   return {
     parked: [park(860, 1250, Math.PI / 2, .8), park(860, 1195, Math.PI / 2, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
     movers: [
-      mover(.7, [P(690, 560), P(830, 560), P(830, 900), P(690, 900)]),
-      mover(0, [P(460, 820), P(460, 1120), P(620, 1120), P(620, 820)])],
+      truck(.7, pa, 2, .6), truck(0, pb, 4, .6),
+      ute([P(70, 780), P(260, 780), P(260, 1120), P(620, 1120), P(620, 1250), P(70, 1250)])],
     mechs: [
-      mech('#2a6fd6', [P(67, 310, 3), P(67, 170, 3)]),
-      mech('#e8721a', [P(710, 1222, 3), P(810, 1222, 2)]),
-      mech('#3a9a4a', [P(300, 520, 2.5), P(400, 520), P(500, 545, 3), P(400, 545)]),
-      mech('#8a8a8a', [P(640, 600, 2), P(640, 860, 3)])]
+      mech('#2a6fd6', [P(67, 310, { w: 3 }), P(67, 170, { w: 3 })]),
+      mech('#e8721a', [P(710, 1222, { w: 3 }), P(810, 1222, { w: 2 })]),
+      mech('#8a8a8a', [P(640, 600, { w: 2 }), P(640, 860, { w: 3 })]),
+      // crews that walk over and work on a truck while it is stopped in its bay
+      mech('#3a9a4a', [P(290, 580, { w: 2.5 }), P(250, 630, { w: 2 })], 0, 2, -1),
+      mech('#7a4fc2', [P(430, 590, { w: 2 }), P(420, 640, { w: 3 })], 0, 4, 1),
+      mech('#c2a02a', [P(545, 570, { w: 3 }), P(585, 625, { w: 2 })], 1, 1, 1),
+      mech('#d96aa0', [P(430, 660, { w: 2 }), P(435, 720, { w: 3 })], 1, 3, -1)]
   };
 }
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 function rigPoints(r) {
-  const o = [{ x: r.x, y: r.y }, { x: r.x + Math.sin(r.h) * 14, y: r.y - Math.cos(r.h) * 14 }, ...r.j];
-  for (let i = 0; i < NT; i++) o.push(chainPose(r.j, i));
+  const o = [{ x: r.x, y: r.y }, { x: r.x + Math.sin(r.h) * 14, y: r.y - Math.cos(r.h) * 14 }];
+  if (r.j) { o.push(...r.j); for (let i = 0; i < NT; i++) o.push(chainPose(r.j, i)); }
   return o;
 }
 const wkPoints = () => rigPoints({ x: wk.x, y: wk.y, h: wk.h, j: wk.j });
@@ -323,21 +336,38 @@ function yardHit() {
 function yardUpdate(dt) {
   const me = wkPoints();
   for (const m of yard.movers) {
-    const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y;
-    if (Math.hypot(dx, dy) < 14) m.i = (m.i + 1) % m.pts.length;
+    const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y, d = Math.hypot(dx, dy);
+    if (m.hold > 0) { m.hold -= dt; if (m.hold <= 0) m.i = (m.i + 1) % m.pts.length; }
+    else if (d < (g.stop ? 6 : 14)) { if (g.stop) m.hold = g.stop; else m.i = (m.i + 1) % m.pts.length; }
     const diff = angDiff(Math.atan2(dx, -dy), m.h);
-    m.h += Math.max(-1.1 * dt, Math.min(1.1 * dt, diff));
-    const fx = m.x + Math.sin(m.h) * 30, fy = m.y - Math.cos(m.h) * 30;
-    const blocked = me.some(p => Math.hypot(p.x - fx, p.y - fy) < 45 || Math.hypot(p.x - m.x, p.y - m.y) < 30);
-    m.v += ((blocked ? 0 : Math.abs(diff) > .5 ? 16 : 32) - m.v) * Math.min(1, dt * 3);
+    m.h += Math.max(-(m.ute ? 1.9 : 1.1) * dt, Math.min((m.ute ? 1.9 : 1.1) * dt, diff));
+    // wait for the player, the ute and the other trucks; give up after a while so nothing deadlocks
+    const reach = m.ute ? 22 : 30, fx = m.x + Math.sin(m.h) * reach, fy = m.y - Math.cos(m.h) * reach;
+    const others = m.ute ? me : [...me, ...yard.movers.filter(o => o !== m).flatMap(rigPoints)];
+    const blocked = others.some(p => Math.hypot(p.x - fx, p.y - fy) < reach + 15 || Math.hypot(p.x - m.x, p.y - m.y) < reach);
+    if (blocked) { m.blk += dt; if (m.blk > 10) { m.free = 3; m.blk = 0; } } else m.blk = 0;
+    m.free -= dt;
+    let tv = m.hold > 0 || (blocked && m.free <= 0) ? 0 : Math.abs(diff) > .5 ? (m.ute ? 22 : 16) : (m.ute ? 48 : 32);
+    if (g.stop && m.hold <= 0) tv = Math.min(tv, Math.max(3, d * .9));
+    m.v += (tv - m.v) * Math.min(1, dt * 3);
     m.x += Math.sin(m.h) * m.v * dt; m.y -= Math.cos(m.h) * m.v * dt;
-    m.j[0].x = m.x - Math.sin(m.h) * HITCH * WK_SC; m.j[0].y = m.y + Math.cos(m.h) * HITCH * WK_SC;
-    chainFollow(m.j, TRAILER_LEN * WK_SC);
+    if (g.lk) m.x += (g.x - m.x) * Math.min(1, dt * 2.5);   // line up straight with the bay
+    if (m.j) {
+      m.j[0].x = m.x - Math.sin(m.h) * HITCH * WK_SC; m.j[0].y = m.y + Math.cos(m.h) * HITCH * WK_SC;
+      chainFollow(m.j, TRAILER_LEN * WK_SC);
+    }
   }
   for (const m of yard.mechs) {
+    const mv = m.mv !== undefined ? yard.movers[m.mv] : null;
+    if (mv && mv.hold > 0) {
+      const p = chainPose(mv.j, m.u - 1), tx = p.x + m.side * 24, dx = tx - m.x, dy = p.y - m.y, d = Math.hypot(dx, dy);
+      if (d < 2) { m.walk = false; m.work = true; m.a = m.side > 0 ? -Math.PI / 2 : Math.PI / 2; }
+      else { const st = Math.min(d, 45 * dt); m.x += dx / d * st; m.y += dy / d * st; m.a = Math.atan2(dx, -dy); m.walk = true; m.work = false; }
+      m.wait = 0; continue;
+    }
     if (m.wait > 0) { m.wait -= dt; m.walk = false; m.work = m.wait > 0; continue; }
     const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y, d = Math.hypot(dx, dy);
-    if (d < 2) { m.wait = g.w; m.i = (m.i + 1) % m.pts.length; m.walk = false; continue; }
+    if (d < 2) { m.wait = g.w; m.i = (m.i + 1) % m.pts.length; m.walk = false; m.work = false; continue; }
     const st = Math.min(d, 26 * dt); m.x += dx / d * st; m.y += dy / d * st; m.a = Math.atan2(dx, -dy); m.walk = true; m.work = false;
   }
 }
@@ -782,9 +812,19 @@ function drawMech(m) {
   ctx.fillStyle = '#f2c200'; ctx.beginPath(); ctx.arc(0, -1.5, 3.6, Math.PI, 0); ctx.fill();
   ctx.restore();
 }
+function drawUte(u) {
+  ctx.save(); ctx.translate(u.x, u.y); ctx.rotate(u.h);
+  for (const sx of [-8.5, 8.5]) for (const wy of [-10, 9]) rect(sx - 1.5, wy - 4, 3, 8, '#111');
+  rect(-8, -17, 16, 34, '#f4f4f4'); rect(-8, -17, 16, 2, '#ddd');
+  rect(-6, -11, 12, 7, '#9cf'); rect(-6, -3, 12, 7, '#e6e6e6');
+  rect(-7, 6, 14, 10, '#cfcfcf'); rect(-6, 7, 12, 8, '#a9a9a9');
+  rect(-7, -17, 3, 2, '#ffe9a0'); rect(4, -17, 3, 2, '#ffe9a0'); rect(-7, 15, 3, 2, '#d33'); rect(4, 15, 3, 2, '#d33');
+  if (Math.sin(beaconClock() * 10) > 0) rect(-2, -2, 4, 3, '#ffa020');
+  ctx.restore();
+}
 function drawYardLife() {
   for (const r of yard.parked) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
-  for (const r of yard.movers) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
+  for (const r of yard.movers) { if (r.ute) drawUte(r); else drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f }); }
   for (const m of yard.mechs) drawMech(m);
   // new tyres on a rack and a heap of old ones outside the tyre bay
   for (let k = 0; k < 3; k++) tyreDisc(TY_RACK.x, TY_RACK.y - k * 3, 9);
