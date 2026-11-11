@@ -48,17 +48,14 @@ function steerAxis() {
   return stickX || padAxis() || kb;
 }
 const beaconClock = () => performance.now() / 1000;
-function drawBeacon(x, y) {
-  const a = beaconClock() * 8;
-  const g = ctx.createRadialGradient(x, y, 1, x, y, 16);
-  g.addColorStop(0, 'rgba(255,150,0,.55)'); g.addColorStop(1, 'rgba(255,150,0,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#5a3200'; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#ff8c00'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#ffd080'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(a) * 14, y - Math.sin(a) * 14); ctx.stroke();
-  ctx.lineCap = 'butt';
+function drawBeacon(x, y, phase = 0) {
+  const on = Math.sin(beaconClock() * 12 + phase * Math.PI) > 0;
+  if (on) {
+    const g = ctx.createRadialGradient(x, y, 1, x, y, 16);
+    g.addColorStop(0, 'rgba(255,150,0,.7)'); g.addColorStop(1, 'rgba(255,150,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = on ? '#ffa020' : '#7a4200'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
 }
 function curBtns() { return state === 'load' ? LB : DB; }
 function syncBtns() {
@@ -96,14 +93,14 @@ addEventListener('blur', () => { ptrs.clear(); for (const k in keys) keys[k] = f
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed;
-let ldr, carrying;
+let ldr, carrying, spills = [];
 let best = +localStorage.oreBest || 0;
-const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
+const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 
 function reset() {
   stickX = 0; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }];
-  ldr = { x: 250, y: 600, angle: 0 }; carrying = false; ptrs.clear(); syncBtns();
+  ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
 reset();
 
@@ -124,12 +121,25 @@ const nearPile = () => ldr.x > PILE.x - 40 && ldr.x < PILE.x + PILE.w + 40 && ld
 const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0) / TR_H); return ldr.x > TR_X - 100 && i >= 0 && i < NT ? i : -1; };
 function action() {
   if (!carrying) {
-    if (nearPile()) { carrying = true; burst(ldr.x + Math.sin(ldr.angle) * 30, ldr.y - Math.cos(ldr.angle) * 30, '#8a5a44', 6); } else flash('Drive up to the ore pile to scoop');
+    if (nearPile()) { carrying = true; burst(ldr.x + Math.sin(ldr.angle + ldr.art) * 35, ldr.y - Math.cos(ldr.angle + ldr.art) * 35, '#8a5a44', 6); } else flash('Drive up to the ore pile to scoop');
   } else {
     const i = trailerAt();
     if (i < 0) flash('Line up beside a trailer to dump');
     else if (fills[i] >= TRAILER_CAP) flash(`Trailer ${i + 1} is full`);
-    else { fills[i]++; carrying = false; burst(TR_X + TR_W / 2, TR_Y0 + i * TR_H + TR_H / 2, '#a8705a', 8); }
+    else {
+      const fa = ldr.angle + ldr.art, cy = TR_Y0 + i * TR_H + TR_H / 2;
+      const bx = ldr.x + Math.sin(fa) * 40, by = ldr.y - Math.cos(fa) * 40;
+      const skew = Math.abs(Math.atan2(Math.sin(fa - Math.PI / 2), Math.cos(fa - Math.PI / 2)));
+      const off = Math.abs(by - cy) / (TR_H / 2);
+      const spill = Math.max(0, Math.min(1, Math.max((skew - .15) / .6, (off - .25) / .75)));
+      fills[i] = Math.min(TRAILER_CAP, fills[i] + 1 - spill); carrying = false;
+      burst(TR_X + TR_W / 2, cy, '#a8705a', Math.round(8 * (1 - spill)));
+      if (spill > .05) {
+        spills.push({ x: bx, y: by, r: 6 + spill * 16, a: Math.random() * 6 });
+        burst(bx, by, '#8a5a44', Math.round(4 + spill * 10));
+        flash(spill > .95 ? 'Missed the trailer! All spilled' : `Not square: ${Math.round(spill * BUCKET)}t spilled on the ground`);
+      }
+    }
   }
 }
 
@@ -166,10 +176,12 @@ function damage(n, what, idx) {
 function updateLoad(dt) {
   const steering = steerAxis();
   const throttle = (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0);
-  ldr.angle += steering * 2 * dt;
+  ldr.art += (steering * .6 - ldr.art) * (1 - Math.exp(-6 * dt));
   const distance = throttle * (carrying ? 120 : 160) * dt;
-  ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(ldr.angle) * distance));
-  ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(ldr.angle) * distance));
+  const mid = ldr.angle + ldr.art / 2;
+  ldr.angle += distance * Math.sin(ldr.art) / 40; // rear section swings round the centre joint
+  ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(mid) * distance));
+  ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
   if (ldr.x > TR_X - 36 && ldr.y < TR_Y0 + NT * TR_H + 20) ldr.x = TR_X - 36; // trailers block the way
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0); msgT -= dt;
@@ -301,7 +313,7 @@ function drawTrailer(x, y, w, h, fill, num) {
 function drawCab(x, y) {
   rect(x - 19, y - 14, 5, 14, '#111'); rect(x + 14, y - 14, 5, 14, '#111');
   rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
-  drawBeacon(x - 8, y + 8); drawBeacon(x + 8, y + 8);
+  drawBeacon(x - 8, y + 8, 0); drawBeacon(x + 8, y + 8, 1);
 }
 function drawTruck() {
   ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
@@ -314,15 +326,22 @@ function drawTruck() {
   drawCab(qx, qy);
 }
 function drawLoader(x, y, loaded) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ldr.angle); ctx.translate(-x, -y);
-  rect(x - 22, y - 12, 9, 18, '#111'); rect(x + 13, y - 12, 9, 18, '#111'); rect(x - 22, y + 10, 9, 18, '#111'); rect(x + 13, y + 10, 9, 18, '#111');
-  rect(x - 14, y - 10, 28, 42, '#f2b200');
-  rect(x - 10, y + 4, 20, 14, '#333'); rect(x - 8, y + 6, 16, 8, '#9cf');
-  drawBeacon(x, y + 11);
-  rect(x - 3, y - 26, 6, 18, '#d49a00');
-  rect(x - 25, y - 38, 50, 14, '#777');
-  if (loaded) { rect(x - 21, y - 44, 42, 12, '#8a5a44'); rect(x - 15, y - 48, 30, 6, '#a8705a'); }
+  // (x, y) is the articulation joint; rear section follows ldr.angle, front section angle + art
+  const turn = a => { ctx.translate(x, y); ctx.rotate(a); ctx.translate(-x, -y); };
+  ctx.save(); turn(ldr.angle);
+  rect(x - 22, y + 8, 9, 18, '#111'); rect(x + 13, y + 8, 9, 18, '#111');
+  rect(x - 14, y - 2, 28, 36, '#f2b200');
+  rect(x - 10, y + 6, 20, 14, '#333'); rect(x - 8, y + 8, 16, 8, '#9cf');
+  drawBeacon(x, y + 13, 0);
   ctx.restore();
+  ctx.save(); turn(ldr.angle + ldr.art);
+  rect(x - 22, y - 20, 9, 18, '#111'); rect(x + 13, y - 20, 9, 18, '#111');
+  rect(x - 14, y - 18, 28, 20, '#f2b200');
+  rect(x - 3, y - 30, 6, 14, '#d49a00');
+  rect(x - 25, y - 42, 50, 14, '#777');
+  if (loaded) { rect(x - 21, y - 48, 42, 12, '#8a5a44'); rect(x - 15, y - 52, 30, 6, '#a8705a'); }
+  ctx.restore();
+  ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
 }
 function drawYard() {
   rect(0, 0, W, H, '#a74626');
@@ -335,8 +354,12 @@ function drawYard() {
     const cy = TR_Y0 + i * TR_H + TR_H / 2;
     rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 12, '#444');
     drawTrailer(TR_X + TR_W / 2, cy, TR_W, TR_H - 14, fills[i] / TRAILER_CAP, i + 1);
-    text(`${fills[i] * BUCKET}/${TRAILER_CAP * BUCKET}t`, TR_X + TR_W / 2, cy + 6, 13, '#fff');
+    text(`${Math.round(fills[i] * BUCKET)}/${TRAILER_CAP * BUCKET}t`, TR_X + TR_W / 2, cy + 6, 13, '#fff');
     if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
+  }
+  for (const p of spills) {
+    ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
   }
   drawLoader(ldr.x, ldr.y, carrying);
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
