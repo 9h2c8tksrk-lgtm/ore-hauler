@@ -32,7 +32,8 @@ function roadOff(s) {
 }
 let warned = 0, hurtByStock = false, wk = null;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
-const WK = { x: 108, y: 160, w: 264, h: 120 }, BAY_W = 44, WK_SC = .62;   // workshop building, six bays across
+const WORLD = { w: 900, h: 1300 };   // workshop yard is larger than the screen; the camera follows the truck
+const WK = { x: 300, y: 330, w: 300, h: 120 }, BAY_W = 50, WK_SC = .62;   // workshop building, six bays across
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
 const PILE = { x: 20, y: 230, w: 170, h: 270 };
@@ -225,15 +226,23 @@ function tipTrailer(i) {
   else t.dir = 1;
 }
 const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 3 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 3;
-function sampleX(s) {
-  if (s <= hist[0].s) return hist[0].x;
-  for (let i = hist.length - 1; i > 0; i--) if (hist[i - 1].s <= s) {
-    const a = hist[i - 1], b = hist[i], f = b.s === a.s ? 0 : (s - a.s) / (b.s - a.s);
-    return a.x + (b.x - a.x) * Math.min(1, f);
+// Articulated chain: joints[0] is the cab's hitch; each following joint is dragged to stay `len` behind the one in front,
+// so every trailer pivots on the joint shared with the unit ahead of it.
+function chainFollow(J, len) {
+  for (let i = 0; i < J.length - 1; i++) {
+    let dx = J[i].x - J[i + 1].x, dy = J[i].y - J[i + 1].y;
+    const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    J[i + 1].x = J[i].x - dx * len; J[i + 1].y = J[i].y - dy * len;
   }
-  return hist[0].x;
 }
-const trailerX = i => sampleX(scroll - OFF(i) * .3);
+// pose (centre + heading) of the trailer between joints i and i+1
+function chainPose(J, i) {
+  const a = J[i], b = J[i + 1];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, a: Math.atan2(a.x - b.x, -(a.y - b.y)) };
+}
+const TRAILER_LEN = 62, HITCH = 26;   // joint-to-joint trailer length and cab hitch distance behind the cab centre
+const straightChain = (x, y, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x, y: y + (HITCH + TRAILER_LEN * k) * sc }));
+let cabAngle = 0;
 
 function damage(n, what, idx) {
   n = Math.round(n * D().dmg); hp -= n; shake = .3; flash(what);
@@ -277,41 +286,31 @@ function updateSkyway(dt) {
 }
 // ---------- workshop yard ----------
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
-const wkTail = i => 38 + 33 * i;   // trailer centre distance behind the cab along the trail
 function wkFresh() {
-  const x = 52, y = 660, trail = [];
-  for (let k = 200; k >= 0; k -= 3) trail.push({ x, y: y + k });
-  return { x, y, h: 0, v: 0, s: 0, trail, lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0 };
+  const x = 130, y = 1180;
+  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0 };
 }
 function toWorkshop() {
   if (state !== 'drive') return;
   state = 'workshop'; wk = wkFresh(); particles = []; ptrs.clear(); syncBtns();
   flash('Drive a lap around the workshop, then line up with a bay');
 }
-function wkPoint(d) {
-  let px = wk.x, py = wk.y, rem = d;
-  for (let k = wk.trail.length - 1; k >= 0; k--) {
-    const q = wk.trail[k], l = Math.hypot(q.x - px, q.y - py);
-    if (l >= rem) { const f = l ? rem / l : 0; return { x: px + (q.x - px) * f, y: py + (q.y - py) * f }; }
-    rem -= l; px = q.x; py = q.y;
-  }
-  return { x: px, y: py };
+// drag the trailer chain behind the cab
+function wkChain() {
+  wk.j[0].x = wk.x - Math.sin(wk.h) * HITCH * WK_SC; wk.j[0].y = wk.y + Math.cos(wk.h) * HITCH * WK_SC;
+  chainFollow(wk.j, TRAILER_LEN * WK_SC);
 }
 function wkParts() {
   const out = [{ x: wk.x, y: wk.y, a: wk.h }];
-  for (let i = 0; i < NT; i++) {
-    const d = wkTail(i), a = wkPoint(d + 10), b = wkPoint(Math.max(0, d - 10));
-    const c = wkPoint(d);
-    out.push({ x: c.x, y: c.y, a: Math.atan2(b.x - a.x, -(b.y - a.y)) });
-  }
+  for (let i = 0; i < NT; i++) out.push(chainPose(wk.j, i));
   return out;
 }
 // nearest bay and whether cab, heading and every trailer are straight enough to enter it
 function wkAlign() {
   const i = Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W))), cx = wkBayX(i);
-  const he = Math.abs(Math.atan2(Math.sin(wk.h), Math.cos(wk.h)));
+  const he = a => Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
   const ps = wkParts();
-  const ok = he < .07 && Math.abs(wk.x - cx) < 6 && ps.slice(1).every(p => Math.abs(p.x - cx) < 8);
+  const ok = he(wk.h) < .07 && Math.abs(wk.x - cx) < 6 && ps.slice(1).every(p => Math.abs(p.x - cx) < 8 && he(p.a) < .1);
   return { i, ok };
 }
 function wkBump(why) {
@@ -322,7 +321,7 @@ const wkInside = (x, y) => x > WK.x && x < WK.x + WK.w && y > WK.y && y < WK.y +
 function wkHome() {
   state = 'drive'; hurtByStock = false; hp = 100; speed = 40; steeringSpeed = 0;
   qx = LANE_X[0] + roadOff(scroll); traffic = []; animals = []; particles = [];
-  hist = [{ s: scroll, x: qx }]; spawnT = 2; wk = null; ptrs.clear(); syncBtns();
+  jts = straightChain(qx, qy, 1); cabAngle = 0; spawnT = 2; wk = null; ptrs.clear(); syncBtns();
   flash('Repaired! Back on the highway');
 }
 function updateWorkshop(dt) {
@@ -333,9 +332,7 @@ function updateWorkshop(dt) {
     const cx = wkBayX(wk.bay);
     wk.v = wk.done ? Math.min(90, wk.v + 80 * dt) : 38;
     wk.h *= 1 - Math.min(1, dt * 6); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
-    wk.y -= wk.v * dt;
-    const l = wk.trail[wk.trail.length - 1]; if (Math.hypot(wk.x - l.x, wk.y - l.y) >= 3) wk.trail.push({ x: wk.x, y: wk.y });
-    if (wk.trail.length > 140) wk.trail.shift();
+    wk.y -= wk.v * dt; wkChain();
     if (!wk.done) {
       const ps = wkParts();
       ps.forEach((p, k) => {
@@ -343,24 +340,22 @@ function updateWorkshop(dt) {
           wk.fixed[k] = 1; hp = Math.min(100, hp + (100 - wk.hp0) / 5); burst(p.x, p.y, '#ffd23a', 14);
         }
       });
-      if (ps[NT].y + 18 < WK.y) { wk.done = true; hp = 100; flash('All fixed! Back to the highway'); }
-    } else if (wk.y < -30) return wkHome();
+      if (ps[NT].y + 24 < WK.y) { wk.done = true; hp = 100; flash('All fixed! Back to the highway'); }
+    } else if (wk.y < WK.y - 220) return wkHome();
     return;
   }
   const up = keys.ArrowUp || keys.KeyW || keys.TG, brake = keys.ArrowDown || keys.KeyS || keys.TB;
-  wk.v += (up ? 60 : brake ? -140 : -30) * dt; wk.v = Math.max(0, Math.min(70, wk.v));
+  wk.v += (up ? 70 : brake ? -140 : -30) * dt; wk.v = Math.max(0, Math.min(90, wk.v));
   wk.s += (steerAxis() - wk.s) * (1 - Math.exp(-8 * dt));
   wk.h += wk.v / 26 * Math.tan(wk.s * .5) * dt;
-  wk.x += Math.sin(wk.h) * wk.v * dt; wk.y -= Math.cos(wk.h) * wk.v * dt;
-  const l = wk.trail[wk.trail.length - 1]; if (Math.hypot(wk.x - l.x, wk.y - l.y) >= 3) wk.trail.push({ x: wk.x, y: wk.y });
-  if (wk.trail.length > 140) wk.trail.shift();
+  wk.x += Math.sin(wk.h) * wk.v * dt; wk.y -= Math.cos(wk.h) * wk.v * dt; wkChain();
 
   const inL = wk.x < WK.x - 8 && wk.y > WK.y && wk.y < WK_MOUTH, inT = wk.y < WK.y - 8 && wk.x > WK.x && wk.x < WK.x + WK.w, inR2 = wk.x > WK.x + WK.w + 8 && wk.y > WK.y && wk.y < WK_MOUTH;
   if (inL) wk.lap |= 1; if (inT) wk.lap |= 2; if (inR2) wk.lap |= 4;
   if (wk.lap === 7 && wk.y > WK_MOUTH + 60) { wk.lap = 15; flash('Lap done! Line up straight with a bay'); }
 
   const fx = wk.x + Math.sin(wk.h) * 14, fy = wk.y - Math.cos(wk.h) * 14;
-  if (fx < 6 || fx > W - 6 || fy < 6 || fy > H - 6) return wkBump('Out of the yard! Start again');
+  if (fx < 8 || fx > WORLD.w - 8 || fy < 8 || fy > WORLD.h - 8) return wkBump('Out of the yard! Start again');
   if (wkInside(fx, fy)) {
     if (fy < WK_MOUTH - 14) return wkBump('Crashed into the workshop!');
     if (wk.lap !== 15) return wkBump('Drive a lap of the yard first!');
@@ -401,14 +396,18 @@ function update(dt) {
   else if (warned < 2 && scroll > TRIP * 4 - CLIMB - 300) { warned = 2; flash('Steep climb ahead!'); }
 
   dist += speed * dt / 4; scroll += speed * dt;
-  if (speed > 0) { hist.push({ s: scroll, x: qx }); while (hist.length > 2 && hist[1].s < scroll - 400) hist.shift(); }
+  // ground slides back under the trailers; the cab leans into its steering and drags the chain after it
+  for (const j of jts) j.y += speed * dt;
+  cabAngle = Math.atan2(steeringSpeed, Math.max(speed, 60));
+  jts[0].x = qx - Math.sin(cabAngle) * HITCH; jts[0].y = qy + Math.cos(cabAngle) * HITCH;
+  chainFollow(jts, TRAILER_LEN);
   spawnT -= dt;
   if (spawnT <= 0) { if (scroll >= HILL) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
 
   for (const t of traffic) { t.y += (speed - t.v) * dt; t.x = t.lx + roadOff(scroll + qy - t.y); }
   for (const a of animals) { a.y += speed * dt; a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
   const parts = [{ x: qx, y: qy, w: 30, h: 44, idx: -1 }];
-  for (let i = 0; i < NT; i++) parts.push({ x: trailerX(i), y: qy + OFF(i), w: 34, h: 54, idx: i });
+  for (let i = 0; i < NT; i++) { const p = chainPose(jts, i); parts.push({ x: p.x, y: p.y, w: 34, h: 54, idx: i }); }
   for (const o of [...traffic, ...animals]) {
     if (o.hit) continue;
     const p = parts.find(p => hit(p, o)); if (!p) continue;
@@ -571,21 +570,20 @@ function drawCab(x, y) {
   ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(ex, ey, 2.7, 0, Math.PI * 2); ctx.fill();
 }
 function drawTruck() {
-  // cab leans into the steering; trailers follow the recorded path and angle along it
-  const ca = Math.atan2(steeringSpeed, Math.max(speed, 60));
-  const pts = [{ x: qx - Math.sin(ca) * 22, y: qy + Math.cos(ca) * 22 }], tp = [];
-  for (let i = 0; i < NT; i++) {
-    const s0 = scroll - OFF(i) * .3, a = Math.atan2(sampleX(s0 + 8) - sampleX(s0 - 8), 16), tx = trailerX(i), ty = qy + OFF(i);
-    tp.push({ x: tx, y: ty, a });
-    pts.push({ x: tx + Math.sin(a) * 28, y: ty - Math.cos(a) * 28 }, { x: tx - Math.sin(a) * 28, y: ty + Math.cos(a) * 28 });
-  }
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
-  for (let i = 0; i < NT; i++) { ctx.beginPath(); ctx.moveTo(pts[i * 2].x, pts[i * 2].y); ctx.lineTo(pts[i * 2 + 1].x, pts[i * 2 + 1].y); ctx.stroke(); }
+  drawRig(jts, qx, qy, cabAngle, 1);
+}
+// cab at (x, y) with heading `ang`, trailers hinged on the chain joints; sc scales the whole rig
+function drawRig(J, x, y, ang, sc) {
+  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4 * sc; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); ctx.lineTo(J[NT].x, J[NT].y); ctx.stroke();
   for (let i = NT - 1; i >= 0; i--) {
-    const p = tp[i]; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+    const p = chainPose(J, i); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
     drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid); ctx.restore();
   }
-  ctx.save(); ctx.translate(qx, qy); ctx.rotate(ca); drawCab(0, 0); ctx.restore();
+  ctx.fillStyle = '#e8b100';
+  for (const j of J) { ctx.beginPath(); ctx.arc(j.x, j.y, 3 * sc, 0, Math.PI * 2); ctx.fill(); }
+  ctx.lineCap = 'butt';
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(sc, sc); drawCab(0, 0); ctx.restore();
 }
 function drawLoader(x, y, loaded) {
   // (x, y) is the articulation joint; rear section follows ldr.angle, front section angle + art
@@ -652,8 +650,11 @@ function drawYard() {
 }
 
 function drawWorkshop() {
-  rect(0, 0, W, H, '#a74626');
-  for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
+  const cx0 = Math.max(0, Math.min(WORLD.w - W, wk.x - W / 2)), cy0 = Math.max(0, Math.min(WORLD.h - H, wk.y - H / 2));
+  ctx.save(); ctx.translate(-Math.round(cx0), -Math.round(cy0));
+  rect(0, 0, WORLD.w, WORLD.h, '#a74626');
+  for (let i = 0; i < 160; i++) rect((i * 97) % WORLD.w, (i * 61) % WORLD.h, 6, 6, '#85371f');
+  ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 10; ctx.setLineDash([24, 12]); ctx.strokeRect(5, 5, WORLD.w - 10, WORLD.h - 10); ctx.setLineDash([]);
   rect(WK.x - 6, WK.y - 6, WK.w + 12, WK.h + 12, '#3b3f44');
   for (let i = 0; i < 6; i++) {
     const x = WK.x + i * BAY_W;
@@ -664,25 +665,18 @@ function drawWorkshop() {
   for (let i = 0; i < 6; i++) {
     const cx = wkBayX(i), on = al && al.i === i && wk.y > WK_MOUTH - 20;
     ctx.strokeStyle = on ? (al.ok ? '#6f6' : '#f66') : 'rgba(255,255,255,.35)'; ctx.lineWidth = on ? 3 : 2; ctx.setLineDash([10, 10]);
-    ctx.beginPath(); ctx.moveTo(cx, WK_MOUTH + 4); ctx.lineTo(cx, WK_MOUTH + 400); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(cx, WK_MOUTH + 4); ctx.lineTo(cx, WK_MOUTH + 500); ctx.stroke(); ctx.setLineDash([]);
     text(String(i + 1), cx, WK_MOUTH + 22, 14, '#fff');
   }
-  for (const [k, x, y] of [[1, 54, WK.y + 60], [2, WK.x + WK.w / 2, 112], [4, W - 54, WK.y + 60]]) {
-    ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+  for (const [k, x, y] of [[1, WK.x / 2, WK.y + WK.h / 2], [2, WK.x + WK.w / 2, WK.y / 2], [4, WORLD.w - WK.x / 2, WK.y + WK.h / 2]]) {
+    ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
-  const ps = wkParts();
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(ps[0].x, ps[0].y);
-  for (const p of ps) ctx.lineTo(p.x, p.y);
-  ctx.stroke();
-  for (let i = NT; i >= 1; i--) {
-    const p = ps[i]; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(WK_SC, WK_SC);
-    drawTrailer(0, 0, 34, 48, fills[i - 1] / TRAILER_CAP, 0, tr[i - 1].lid); ctx.restore();
-  }
-  ctx.save(); ctx.translate(wk.x, wk.y); ctx.rotate(wk.h); ctx.scale(WK_SC, WK_SC); drawCab(0, 0); ctx.restore();
+  drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC);
   rect(WK.x - 6, WK.y - 6, WK.w + 12, 6, '#3b3f44');
   ctx.fillStyle = 'rgba(95,105,115,.5)'; ctx.fillRect(WK.x, WK.y, WK.w, WK.h);
   text('WORKSHOP', WK.x + WK.w / 2, WK.y + WK.h / 2 + 6, 22, '#fff');
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
+  ctx.restore();
   rect(0, 0, W, 64, '#000a');
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
