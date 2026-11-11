@@ -27,17 +27,46 @@ const OFF = i => 57 + i * 62;                           // trailer distance behi
 
 const keys = {};
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
-const DB = { TL: [10, 650, 80, 60, '◀'], TR: [100, 650, 80, 60, '▶'], TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
-const LB = { TL: [10, 640, 80, 70, '◀'], TR: [100, 640, 80, 70, '▶'], TD: [290, 640, 80, 70, 'REV'], TU: [390, 640, 80, 70, 'GAS'] };
+const DB = { TB: [300, 650, 80, 60, 'BRAKE'], TG: [390, 650, 80, 60, 'GAS'] };
+const LB = { TD: [290, 640, 80, 70, 'REV'], TU: [390, 640, 80, 70, 'GAS'] };
 const ACT = [338, 565, 132, 60, 'SCOOP / DUMP'];
 const GO = [140, 580, 180, 50, 'START DRIVING'];
 const ptrs = new Map();
 const inR = (p, r) => p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
+const STICK = { cx: 80, cy: 678, r: 52, zone: [0, 600, 210, 120] };
+let stickX = 0;
+function padAxis() {
+  for (const g of (navigator.getGamepads ? navigator.getGamepads() : [])) {
+    if (!g) continue;
+    const v = Math.abs(g.axes[0]) > .15 ? g.axes[0] : (g.buttons[15]?.pressed ? 1 : 0) - (g.buttons[14]?.pressed ? 1 : 0);
+    if (v) return Math.max(-1, Math.min(1, v));
+  }
+  return 0;
+}
+function steerAxis() {
+  const kb = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
+  return stickX || padAxis() || kb;
+}
+const beaconClock = () => performance.now() / 1000;
+function drawBeacon(x, y) {
+  const a = beaconClock() * 8;
+  const g = ctx.createRadialGradient(x, y, 1, x, y, 16);
+  g.addColorStop(0, 'rgba(255,150,0,.55)'); g.addColorStop(1, 'rgba(255,150,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5a3200'; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ff8c00'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffd080'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(a) * 14, y - Math.sin(a) * 14); ctx.stroke();
+  ctx.lineCap = 'butt';
+}
 function curBtns() { return state === 'load' ? LB : DB; }
 function syncBtns() {
   for (const k of ['TL', 'TR', 'TU', 'TD', 'TB', 'TG']) keys[k] = false;
   const b = curBtns();
-  for (const k in b) keys[k] = [...ptrs.values()].some(p => inR(p, b[k]));
+  for (const k in b) keys[k] = [...ptrs.values()].some(p => !p.stick && inR(p, b[k]));
+  const sp = [...ptrs.values()].find(p => p.stick);
+  stickX = sp ? (Math.abs(sp.x - STICK.cx) < 8 ? 0 : Math.max(-1, Math.min(1, (sp.x - STICK.cx) / STICK.r))) : 0;
 }
 function cpos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
 
@@ -49,6 +78,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => keys[e.code] = false);
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
+  if ((state === 'drive' || state === 'load') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
@@ -58,7 +88,7 @@ cv.addEventListener('pointerdown', e => {
   }
   onKey('Space');
 });
-cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { ptrs.set(e.pointerId, cpos(e)); syncBtns(); } });
+cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { const n = cpos(e); n.stick = ptrs.get(e.pointerId).stick; ptrs.set(e.pointerId, n); syncBtns(); } });
 const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
 cv.addEventListener('lostpointercapture', up);
@@ -71,7 +101,7 @@ let best = +localStorage.oreBest || 0;
 const ore = () => fills.reduce((a, b) => a + b, 0) * BUCKET;
 
 function reset() {
-  fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
+  stickX = 0; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }];
   ldr = { x: 250, y: 600, angle: 0 }; carrying = false; ptrs.clear(); syncBtns();
 }
@@ -134,7 +164,7 @@ function damage(n, what, idx) {
 }
 
 function updateLoad(dt) {
-  const steering = (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0) - (keys.ArrowLeft || keys.KeyA || keys.TL ? 1 : 0);
+  const steering = steerAxis();
   const throttle = (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0);
   ldr.angle += steering * 2 * dt;
   const distance = throttle * (carrying ? 120 : 160) * dt;
@@ -155,7 +185,7 @@ function update(dt) {
   else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 220 * dt;
   else speed -= 40 * dt;
   speed = Math.max(0, Math.min(maxSpeed, speed));
-  const steer = (keys.ArrowLeft || keys.KeyA || keys.TL ? -1 : 0) + (keys.ArrowRight || keys.KeyD || keys.TR ? 1 : 0);
+  const steer = steerAxis();
   const targetSteeringSpeed = steer * (100 + 70 * lf) * Math.min(1, speed / 40);
   steeringSpeed += (targetSteeringSpeed - steeringSpeed) * (1 - Math.exp(-8 * dt));
   qx += steeringSpeed * dt;
@@ -202,6 +232,13 @@ function drawBtn(r, label, on) {
   ctx.globalAlpha = on ? .8 : .5; rect(r[0], r[1], r[2], r[3], '#000');
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(r[0], r[1], r[2], r[3]); ctx.globalAlpha = 1;
   text(label, r[0] + r[2] / 2, r[1] + r[3] / 2 + 6, label.length > 1 ? 15 : 26);
+}
+function drawStick() {
+  const sp = [...ptrs.values()].find(p => p.stick), dx = stickX * STICK.r;
+  ctx.globalAlpha = .5; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(STICK.cx, STICK.cy, STICK.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.globalAlpha = sp ? .9 : .6; ctx.fillStyle = '#ccc'; ctx.beginPath(); ctx.arc(STICK.cx + dx, STICK.cy, 24, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
 }
 function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
 
@@ -264,6 +301,7 @@ function drawTrailer(x, y, w, h, fill, num) {
 function drawCab(x, y) {
   rect(x - 19, y - 14, 5, 14, '#111'); rect(x + 14, y - 14, 5, 14, '#111');
   rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
+  drawBeacon(x - 8, y + 8); drawBeacon(x + 8, y + 8);
 }
 function drawTruck() {
   ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
@@ -280,6 +318,7 @@ function drawLoader(x, y, loaded) {
   rect(x - 22, y - 12, 9, 18, '#111'); rect(x + 13, y - 12, 9, 18, '#111'); rect(x - 22, y + 10, 9, 18, '#111'); rect(x + 13, y + 10, 9, 18, '#111');
   rect(x - 14, y - 10, 28, 42, '#f2b200');
   rect(x - 10, y + 4, 20, 14, '#333'); rect(x - 8, y + 6, 16, 8, '#9cf');
+  drawBeacon(x, y + 11);
   rect(x - 3, y - 26, 6, 18, '#d49a00');
   rect(x - 25, y - 38, 50, 14, '#777');
   if (loaded) { rect(x - 21, y - 44, 42, 12, '#8a5a44'); rect(x - 15, y - 48, 30, 6, '#a8705a'); }
@@ -305,11 +344,11 @@ function drawYard() {
   text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
   text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
   text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
-  text(isTouch ? 'Hold ◀/▶ to turn · GAS / REV to move' : '←→ turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
+  text(isTouch ? 'Stick to steer · GAS / REV to move' : '←→ / pad stick turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
   if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
   if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
   else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
-  if (isTouch) { drawBtns(LB); drawBtn(ACT, ACT[4], false); }
+  if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, ACT[4], false); }
 }
 
 function render() {
@@ -324,7 +363,7 @@ function render() {
     text('Loader + 4 Side-Tippers', W / 2, 165, 20);
     text('Load the trailers, haul the ore, dodge traffic & livestock', W / 2, 205, 13, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
-    text('↑/W throttle   ↓/S brake   ←→/A D steer', W / 2, 620, 14, '#ccc');
+    text('↑/W throttle   ↓/S brake   ←→/A D / pad stick steer', W / 2, 620, 14, '#ccc');
     text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
   } else {
     drawRoad();
@@ -337,7 +376,7 @@ function render() {
     text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore() / MAX_ORE, '#c86');
     text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
     text(`${Math.min(100, Math.round(dist / TRIP * 100))}% to depot`, W - 10, 48, 14, '#ff6', 'right');
-    if (isTouch && state === 'drive') drawBtns(DB);
+    if (isTouch && state === 'drive') { drawStick(); drawBtns(DB); }
     if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
     if (state === 'over' || state === 'win') {
       rect(40, 220, W - 80, 240, '#000d');
