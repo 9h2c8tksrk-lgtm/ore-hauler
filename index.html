@@ -114,11 +114,15 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
   onKey('Space');
 });
-cv.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { const n = cpos(e); n.stick = ptrs.get(e.pointerId).stick; ptrs.set(e.pointerId, n); syncBtns(); } });
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && !e.buttons && ptrs.size) { ptrs.clear(); syncBtns(); return; } if (ptrs.has(e.pointerId)) { const n = cpos(e); n.stick = ptrs.get(e.pointerId).stick; ptrs.set(e.pointerId, n); syncBtns(); } });
 const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
 cv.addEventListener('lostpointercapture', up);
-addEventListener('blur', () => { ptrs.clear(); for (const k in keys) keys[k] = false; });
+function clearInput() { ptrs.clear(); for (const k in keys) keys[k] = false; stickX = 0; }
+addEventListener('blur', clearInput);
+document.addEventListener('visibilitychange', clearInput);
+cv.addEventListener('contextmenu', clearInput);
+let lastState = null;
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let straddleT = 0, state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
@@ -581,6 +585,7 @@ function updateWorkshop(dt) {
 }
 
 function update(dt) {
+  if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } }
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
   if (state === 'workshop') return updateWorkshop(dt);
