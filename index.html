@@ -626,7 +626,7 @@ function update(dt) {
   // overtaking is fine, but sitting on the centre line makes drivers move over to meet you
   const straddle = Math.abs(qx - ro0 - W / 2) < 42 && onHwy();
   straddleT = straddle ? straddleT + dt : Math.max(0, straddleT - dt * 1.5);
-  const squeeze = straddleT > 3;
+  const squeeze = straddleT > 10;
   if (squeeze && traffic.some(t => !t.hit && t.y < qy && qy - t.y < 360) && msgT <= 0) flash('Pick a lane! Stay on your side of the road');
   for (const t of traffic) {
     if (squeeze && !t.hit && t.y < qy && qy - t.y < 360) { const d = qx - ro0 - t.lx; t.lx += Math.sign(d) * Math.min(Math.abs(d), 110 * dt); }
