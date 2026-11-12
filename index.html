@@ -34,7 +34,7 @@ let warned = 0, hurtByStock = false, wk = null;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
 const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
 const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
-const GATE = { y: 1250, w: 140 };   // yard entry/exit gap in the right-hand fence
+const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
@@ -318,7 +318,7 @@ function updateSkyway(dt) {
 }
 // ---------- workshop yard ----------
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
-const TYRE_BAY = 5, TY_RACK = { x: WK.x + WK.w + 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x + WK.w + 28, y: WK.y - 95 };
+const TYRE_BAY = 0, TY_RACK = { x: WK.x - 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x - 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
 const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK_MOUTH - 60 });
 function fitInit() { const p = idleSpot(); return { u: -1, stage: 0, t: 0, st: [0, 0, 0, 0, 0], fx: p.x, fy: p.y, fa: Math.PI / 2, walk: false, rolls: [], piled: 0 }; }
@@ -443,8 +443,8 @@ function tyreWork(dt) {
   } else { f.t += dt; if (f.t >= .25) { f.u++; f.stage = 0; } }
 }
 function wkFresh() {
-  const x = WORLD.w - 10, y = GATE.y;   // just inside the gate, heading left with the trailers still outside
-  return { x, y, h: -Math.PI / 2, v: 0, s: 0, j: Array.from({ length: NT + 1 }, (_, k) => ({ x: x + (HITCH + TRAILER_LEN * k) * WK_SC, y })), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
+  const x = GATE.x, y = WORLD.h - 10;   // just inside the gate, heading up with the trailers still outside
+  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
 }
 function toWorkshop() {
   if (state !== 'drive') return;
@@ -466,7 +466,7 @@ function wkAlign() {
   const i = Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W))), cx = wkBayX(i);
   const he = a => Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
   const ps = wkParts();
-  const ok = he(wk.h - Math.PI) < .07 && Math.abs(wk.x - cx) < 7 && ps.slice(1).every(p => Math.abs(p.x - cx) < 9 && he(p.a - Math.PI) < .1);
+  const ok = he(wk.h - Math.PI) < .09 && Math.abs(wk.x - cx) < 9 && ps.slice(1).every(p => Math.abs(p.x - cx) < 11 && he(p.a - Math.PI) < .13);
   return { i, ok };
 }
 function wkBump(why) {
@@ -528,7 +528,7 @@ function updateWorkshop(dt) {
   if (!wk.done) { if (inR) wk.lap |= 1; if (inT && wk.lap & 1 && wk.lap !== 15) { wk.lap = 15; flash('Line up straight with a bay, then drive in'); } }
 
   const fx = wk.x + Math.sin(wk.h) * 14, fy = wk.y - Math.cos(wk.h) * 14;
-  if (wk.done && fx > WORLD.w - 8 && Math.abs(fy - GATE.y) < GATE.w / 2) return wkHome();
+  if (wk.done && fy > WORLD.h - 8 && Math.abs(fx - GATE.x) < GATE.w / 2) return wkHome();
   if (fx < 8 || fx > WORLD.w - 8 || fy < 8 || fy > WORLD.h - 8) return crash(wk.done ? 'Use the yard gate to leave' : 'Out of the yard! Start again');
   if (wkInside(fx, fy)) {
     if (wk.done) return crash('Crashed into the workshop!');
@@ -964,9 +964,9 @@ function drawWorkshop() {
   rect(0, 0, WORLD.w, WORLD.h, '#a74626');
   for (let i = 0; i < 160; i++) rect((i * 97) % WORLD.w, (i * 61) % WORLD.h, 6, 6, '#85371f');
   ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 10; ctx.setLineDash([24, 12]); ctx.strokeRect(5, 5, WORLD.w - 10, WORLD.h - 10); ctx.setLineDash([]);
-  rect(WORLD.w - 12, GATE.y - GATE.w / 2, 12, GATE.w, '#a74626');
-  rect(WORLD.w - 40, GATE.y - GATE.w / 2 - 6, 40, 6, '#e8b100'); rect(WORLD.w - 40, GATE.y + GATE.w / 2, 40, 6, '#e8b100');
-  text(wk.done ? 'EXIT ►' : 'ENTRY / EXIT', WORLD.w - 60, GATE.y - GATE.w / 2 - 14, 14, wk.done ? '#6f6' : '#ffd23a');
+  rect(GATE.x - GATE.w / 2, WORLD.h - 12, GATE.w, 12, '#a74626');
+  rect(GATE.x - GATE.w / 2 - 6, WORLD.h - 40, 6, 40, '#e8b100'); rect(GATE.x + GATE.w / 2, WORLD.h - 40, 6, 40, '#e8b100');
+  text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', GATE.x, WORLD.h - 50, 14, wk.done ? '#6f6' : '#ffd23a');
   rect(WK.x - 6, WK.y - 6, WK.w + 12, WK.h + 12, '#3b3f44');
   for (let i = 0; i < 6; i++) {
     const x = WK.x + i * BAY_W;
