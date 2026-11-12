@@ -22,7 +22,7 @@ const ROAD_L = 125, ROAD_R = 355;
 const LANE_X = [(ROAD_L + W / 2) / 2, (ROAD_R + W / 2) / 2];
 const BUCKET = 6, TRAILER_CAP = 5, NT = 4;           // tonnes per scoop, scoops per trailer, trailers
 const MAX_ORE = BUCKET * TRAILER_CAP * NT, MIN_ORE = BUCKET * 4;
-const TRIP = 6000;
+const TRIP = 4000;
 // Road centre offset (px) at distance s along the route: winding downhill, then straight highway
 const HILL = 4000;
 function roadOff(s) {
@@ -36,7 +36,8 @@ const WORLD = { w: 900, h: 1300 };   // workshop yard is larger than the screen;
 const WK = { x: 300, y: 330, w: 300, h: 120 }, BAY_W = 50, WK_SC = .62;   // workshop building, six bays across
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
-const PILE = { x: 20, y: 230, w: 170, h: 270 };
+const PILE = { x: 30, y: 130, w: 80, h: 350 };   // long finger pile; solid for the loader
+const LDR_R = 30;
 const OFF = i => 57 + i * 62;                           // trailer distance behind cab centre when driving
 
 const keys = {};
@@ -152,7 +153,7 @@ const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
-  scroll = 0; warned = 0; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; jts = straightChain(qx, qy, 1); cabAngle = 0;
+  scroll = 0; warned = 0; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
 
@@ -242,6 +243,31 @@ function chainPose(J, i) {
 const TRAILER_LEN = 62, HITCH = 26;   // joint-to-joint trailer length and cab hitch distance behind the cab centre
 const straightChain = (x, y, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x, y: y + (HITCH + TRAILER_LEN * k) * sc }));
 let cabAngle = 0, jts;
+// level crossing 10% of the trip before the steep climb; an ore train sweeps across left to right
+const CROSS_S = TRIP * 4 - CLIMB - TRIP * .4, TRAIN_L = 900, TRAIN_V = 280, TRAIN_X0 = ROAD_L - TRAIN_V * 4, CROSS_R = 460;
+let train = { ph: 0, t: 0, g: 0, hit: false };   // ph: 0 waiting, 1 coming/passing, 2 gone; g: gate lowering 0..1
+const crossY = () => scroll + qy - CROSS_S;
+const trainHead = () => TRAIN_X0 + TRAIN_V * train.t;
+const trainClear = () => trainHead() - TRAIN_L > ROAD_R + 40;
+const trainBlocks = () => train.ph === 1 && !trainClear();
+function updateTrain(dt, parts) {
+  const ahead = CROSS_S - scroll;
+  if (train.ph === 0 && ahead < CROSS_R * 2 && ahead > 0) { train.ph = 1; train.t = 0; flash('Train coming! Stop at the crossing'); }
+  if (train.ph === 1) {
+    train.t += dt;
+    if (trainHead() - TRAIN_L > W + 40) train.ph = 2;
+    else if (!train.hit && parts.some(p => hit(p, { x: trainHead() - TRAIN_L / 2, y: crossY(), w: TRAIN_L, h: 30 }))) {
+      train.hit = true; damage(70, 'Hit by the train!', -1); speed = 0;
+    }
+  }
+  train.g = Math.max(0, Math.min(1, train.g + (trainBlocks() ? 1 : -1) * dt * 1.2));
+  const cy = crossY(), hold = trainBlocks();
+  for (const t of traffic) {
+    if (t.oncoming) continue;
+    t.v0 ??= t.v;
+    t.v = hold && t.y > cy && t.y - cy < 110 ? 0 : t.v0;   // queue up behind the gates
+  }
+}
 reset();
 
 function damage(n, what, idx) {
@@ -261,6 +287,9 @@ function updateLoad(dt) {
   ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(mid) * distance));
   ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
   if (ldr.x > TR_X - 36 && ldr.y < TR_Y0 + NT * TR_H + 20) ldr.x = TR_X - 36; // trailers block the way
+  // push the loader out of the pile along the shallowest axis
+  const px = ldr.x - (PILE.x + PILE.w / 2), py = ldr.y - (PILE.y + PILE.h / 2), ox = PILE.w / 2 + LDR_R - Math.abs(px), oy = PILE.h / 2 + LDR_R - Math.abs(py);
+  if (ox > 0 && oy > 0) { if (ox < oy) ldr.x += Math.sign(px || 1) * ox; else ldr.y += Math.sign(py || 1) * oy; }
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0); msgT -= dt;
 }
@@ -279,7 +308,7 @@ function updateSkyway(dt) {
   for (const r of rocks) { r.x += r.vx * dt; r.y += r.vy * dt; r.l -= dt; }
   rocks = rocks.filter(r => r.l > 0); msgT -= dt;
   if (state === 'skyway' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0)) {
-    score = Math.round((arrivalOre * 10 + hp * 5 + Math.max(0, 300 - time) * 2) * D().mult);
+    score = Math.round((arrivalOre * 10 + hp * 5 + Math.max(0, 200 - time) * 2) * D().mult);
     if (score > best) { best = score; localStorage.oreBest = best; }
     state = 'win'; recordRun(true);
   }
@@ -440,6 +469,7 @@ const wkInside = (x, y) => x > WK.x && x < WK.x + WK.w && y > WK.y && y < WK.y +
 function wkHome() {
   state = 'drive'; hurtByStock = false; hp = 100; speed = 40; steeringSpeed = 0;
   qx = LANE_X[0] + roadOff(scroll); traffic = []; animals = []; particles = [];
+  if (train.ph === 1) train.ph = 2;
   jts = straightChain(qx, qy, 1); cabAngle = 0; spawnT = 2; wk = null; ptrs.clear(); syncBtns();
   flash('Repaired! Back on the highway');
 }
@@ -529,25 +559,34 @@ function update(dt) {
   jts[0].x = qx - Math.sin(cabAngle) * HITCH; jts[0].y = qy + Math.cos(cabAngle) * HITCH;
   chainFollow(jts, TRAILER_LEN);
   spawnT -= dt;
-  if (spawnT <= 0) { if (scroll >= HILL) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
+  if (spawnT <= 0) { const cy = crossY(); if (scroll >= HILL && !(cy > -260 && cy < H + 80)) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
 
   for (const t of traffic) { t.y += (speed - t.v) * dt; t.x = t.lx + roadOff(scroll + qy - t.y); }
-  for (const a of animals) { a.y += speed * dt; a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
+  for (const a of animals) {
+    a.y += speed * dt;
+    if (a.hit) { a.x += a.fvx * dt; a.y += a.fvy * dt; a.fvx *= 1 - Math.min(1, dt * 1.5); a.fvy *= 1 - Math.min(1, dt * 1.5); a.rot += a.fw * dt; a.fw *= 1 - Math.min(1, dt * 1.2); a.t += dt; }
+    else { a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
+  }
   const parts = [{ x: qx, y: qy, w: 30, h: 44, idx: -1 }];
   for (let i = 0; i < NT; i++) { const p = chainPose(jts, i); parts.push({ x: p.x, y: p.y, w: 34, h: 54, idx: i }); }
   for (const o of [...traffic, ...animals]) {
     if (o.hit) continue;
-    const p = parts.find(p => hit(p, o)); if (!p) continue;
+    // wildlife can only be struck by the cab; the trailers pass over
+    const p = o.type ? (hit(parts[0], o) ? parts[0] : null) : parts.find(p => hit(p, o)); if (!p) continue;
     o.hit = true;
     if (o.type) {
+      const side = o.x < qx ? -1 : 1;
+      Object.assign(o, { fvx: side * (90 + speed * .5), fvy: -(60 + speed * .6), fw: side * (7 + Math.random() * 4), rot: 0, t: 0 });
+      burst(o.x, o.y, o.type === 'cow' ? o.col : '#c8895a', 12);
       damage(o.type === 'cow' ? 30 : 15, `${o.type === 'cow' ? 'Cow collision' : 'Kangaroo strike'}! ${isTouch ? 'Tap WORKSHOP' : 'H = workshop'}`, p.idx);
       speed *= .4; hurtByStock = true;
     }
     else damage(25, p.idx < 0 ? 'Hit a vehicle!' : `Trailer ${p.idx + 1} clipped!`, p.idx), speed *= .3;
     if (state === 'over') break;
   }
+  updateTrain(dt, parts);
   traffic = traffic.filter(t => t.y < H + 120 && t.y > -300);
-  animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80);
+  animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80 && !(a.hit && a.t > 1.8));
 
   if (state === 'drive' && dist >= TRIP) {
     state = 'skyway'; arrivalOre = ore(); speed = 0; particles = []; ptrs.clear(); syncBtns();
@@ -610,6 +649,45 @@ function drawRoad() {
     for (const x of [ROAD_L - 18, ROAD_R + 18]) { curve(x, y0, y0 + 15, 4, '#eee8d5'); curve(x, y0 + 3, y0 + 7, 4, '#d33'); }
   }
 }
+function drawTrack() {
+  const cy = crossY(); if (cy < -40 || cy > H + 40) return;
+  rect(0, cy - 20, W, 40, '#6b6258');
+  rect(ROAD_L - 13, cy - 20, ROAD_R - ROAD_L + 26, 40, '#4a4540');
+  for (let x = 4; x < W; x += 14) rect(x, cy - 16, 7, 32, x > ROAD_L - 13 && x < ROAD_R + 13 ? '#6a4a30' : '#3a2a1f');
+  rect(0, cy - 9, W, 3, '#b8bcc0'); rect(0, cy + 6, W, 3, '#b8bcc0');
+}
+function drawGates() {
+  const cy = crossY(); if (cy < -60 || cy > H + 60) return;
+  const on = train.ph === 1 && !trainClear(), blink = Math.sin(beaconClock() * 9) > 0, armL = (ROAD_R - ROAD_L) / 2 - 3;
+  for (const side of [-1, 1]) {
+    const px = side < 0 ? ROAD_L - 9 : ROAD_R + 9, py = cy + 30;
+    if (train.g > 0) {
+      ctx.lineCap = 'butt'; ctx.lineWidth = 6; ctx.strokeStyle = '#f2f2f2'; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - side * armL * train.g, py); ctx.stroke();
+      ctx.strokeStyle = '#d22'; ctx.setLineDash([12, 12]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    rect(px - 5, py - 5, 10, 10, '#333');
+    for (const [k, ly] of [[0, py - 9], [1, py + 9]]) {
+      const lit = on && (blink ? k === 0 : k === 1);
+      if (lit) { const g = ctx.createRadialGradient(px, ly, 1, px, ly, 14); g.addColorStop(0, 'rgba(255,40,40,.8)'); g.addColorStop(1, 'rgba(255,40,40,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, ly, 14, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = lit ? '#ff3030' : '#5a1010'; ctx.beginPath(); ctx.arc(px, ly, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+function drawTrain() {
+  drawGates();
+  if (train.ph !== 1) return;
+  const cy = crossY(), hx = trainHead();
+  if (cy < -40 || cy > H + 40) return;
+  rect(hx - 66, cy - 15, 66, 30, '#e8a100'); rect(hx - 66, cy - 15, 66, 4, '#b87a00'); rect(hx - 20, cy - 11, 16, 22, '#2a2a2a'); rect(hx - 17, cy - 8, 10, 16, '#9cf');
+  rect(hx - 60, cy - 8, 30, 16, '#c88400'); for (let k = 0; k < 4; k++) rect(hx - 58 + k * 7, cy - 6, 3, 12, '#6a4400');
+  rect(hx - 70, cy - 10, 5, 20, '#555');
+  for (let x = hx - 70; x > hx - TRAIN_L; x -= 58) {
+    if (x < -60 || x - 54 > W) continue;
+    rect(x - 54, cy - 14, 54, 28, '#5a3022'); rect(x - 52, cy - 11, 50, 22, '#8a5a44');
+    rect(x - 48, cy - 8, 42, 16, '#a8705a'); for (let k = 0; k < 5; k++) rect(x - 46 + k * 9, cy - 7 + (k % 2) * 4, 5, 5, '#7a4a38');
+    rect(x - 4, cy - 2, 6, 4, '#222');
+  }
+}
 function drawCar(t) {
   ctx.save(); ctx.translate(t.x, t.y);
   if (t.oncoming) ctx.rotate(Math.PI);
@@ -621,8 +699,10 @@ function drawCar(t) {
   ctx.restore();
 }
 function drawAnimal(a) {
-  ctx.save(); ctx.translate(a.x, a.y); ctx.scale(a.dir, 1);
-  const s = Math.sin(a.ph) * 3;
+  ctx.save(); ctx.translate(a.x, a.y);
+  if (a.hit) { ctx.rotate(a.rot); ctx.globalAlpha = Math.min(1, 2.2 - a.t * 1.2); ctx.scale(1 + Math.max(0, .35 - a.t) * 1.2, 1); }
+  ctx.scale(a.dir, 1);
+  const s = a.hit ? 0 : Math.sin(a.ph) * 3;
   if (a.type === 'cow') {
     const dark = a.col === '#1e1e1e';
     rect(-20, -10, 32, 20, a.col); rect(-12, -10, 10, 20, dark ? '#2e2e2e' : '#7f4b27');
@@ -631,7 +711,7 @@ function drawAnimal(a) {
     rect(20, -6, 2, 2, '#fff');
     ctx.fillStyle = '#111'; rect(-16, 10, 4, 8 + s, '#111'); rect(-4, 10, 4, 8 - s, '#111'); rect(4, 10, 4, 8 + s, '#111'); rect(8, 10, 4, 8 - s, '#111');
   } else {
-    const hop = -Math.abs(Math.sin(a.ph * .6)) * 8;
+    const hop = a.hit ? 0 : -Math.abs(Math.sin(a.ph * .6)) * 8;
     ctx.translate(0, hop);
     ctx.fillStyle = '#b97a4a'; ctx.beginPath(); ctx.moveTo(-8, 4); ctx.lineTo(-30, 12); ctx.lineTo(-8, 10); ctx.fill();   // tail
     rect(-8, -12, 16, 22, '#c8895a'); rect(-8, 2, 14, 8, '#b97a4a');
@@ -762,10 +842,13 @@ function rockChunks(cx, cy, rx, ry, n, size, seed = 1) {
 function drawYard() {
   rect(0, 0, W, H, '#a74626');
   for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
-  ctx.fillStyle = '#7a4a38'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2, PILE.h / 2, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#9a6a55'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 10, PILE.y + PILE.h / 2 - 20, PILE.w / 3, PILE.h / 3, 0, 0, 7); ctx.fill();
-  rockChunks(PILE.x + PILE.w / 2, PILE.y + PILE.h / 2, PILE.w / 2 - 8, PILE.h / 2 - 8, 120, 9, 7);
-  text('IRON ORE', PILE.x + PILE.w / 2, PILE.y + PILE.h / 2 + 5, 16, '#fff');
+  const pcx = PILE.x + PILE.w / 2, pcy = PILE.y + PILE.h / 2;
+  const finger = (x, y, w, h) => { const r = w / 2; ctx.beginPath(); ctx.arc(x + r, y + r, r, Math.PI, 0); ctx.arc(x + r, y + h - r, r, 0, Math.PI); ctx.closePath(); ctx.fill(); };
+  ctx.fillStyle = '#5a3426'; finger(PILE.x - 6, PILE.y + 6, PILE.w + 12, PILE.h + 4);
+  ctx.fillStyle = '#7a4a38'; finger(PILE.x, PILE.y, PILE.w, PILE.h);
+  ctx.fillStyle = '#9a6a55'; finger(PILE.x + 16, PILE.y + 14, PILE.w - 32, PILE.h - 40);
+  rockChunks(pcx, pcy, PILE.w / 2 - 6, PILE.h / 2 - 8, 170, 8, 7);
+  ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
   drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38);
   for (let i = 0; i < NT; i++) {
     const cy = TR_Y0 + i * TR_H + TR_H / 2;
@@ -903,10 +986,10 @@ function render() {
   } else {
     if (state === 'skyway' || state === 'win') drawSkyway();
     else {
-      drawRoad();
+      drawRoad(); drawTrack();
       for (const a of animals) drawAnimal(a);
       for (const t of traffic) drawCar(t);
-      drawTruck();
+      drawTruck(); drawTrain();
       for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
     }
     rect(0, 0, W, 64, '#000a');
@@ -919,6 +1002,7 @@ function render() {
     if (isTouch && state === 'drive') { drawStick(); drawBtns(DB); }
     if (state === 'drive' && hurtByStock) drawBtn(WS_BTN, isTouch ? 'WORKSHOP' : 'WORKSHOP (H)', false);
     if (state === 'drive' && scroll > TRIP * 4 - CLIMB) text('▲ STEEP CLIMB', W - 10, 88, 15, '#f90', 'right');
+    if (state === 'drive' && trainBlocks() && crossY() < qy + 150 && Math.sin(beaconClock() * 8) > -.3) text('TRAIN CROSSING - STOP!', W / 2, 150, 20, '#f44');
     if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
     if (state === 'over' || state === 'win') {
       rect(30, 120, W - 60, 500, '#000d');
