@@ -31,6 +31,10 @@ function roadOff(s) {
   return 0;
 }
 let warned = 0, hurtByStock = false, wk = null;
+let ret = false;   // false: loaded run out to the Skyway; true: empty return run back to the ROM
+const R = TRIP * 4, roadAt = v => roadOff(ret ? R - v : v);   // v is scroll-space; the return run travels the route backwards
+const grade = () => ret ? (scroll < CLIMB ? 2 : scroll > R - HILL ? -1 : 0) : (scroll < HILL ? 1 : scroll > R - CLIMB ? -2 : 0);   // +down, -up
+const onHwy = () => ret ? scroll < R - HILL : scroll >= HILL;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
 const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
 const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
@@ -117,7 +121,7 @@ cv.addEventListener('lostpointercapture', up);
 addEventListener('blur', () => { ptrs.clear(); for (const k in keys) keys[k] = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
-let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre;
+let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
 let ldr, carrying, spills = [];
 let best = +localStorage.oreBest || 0;
 let playerName = localStorage.oreName || '', runId = 0;
@@ -133,12 +137,14 @@ const diffBtn = i => [14 + i * 114, 516, 108, 38, DIFFS[i].n];
 function setDiff(i) { diff = (i + DIFFS.length) % DIFFS.length; localStorage.oreDiff = diff; }
 let board = [];
 try { board = JSON.parse(localStorage.oreBoard || '[]'); } catch (e) { board = []; }
-const rank = (a, b) => (b.done - a.done) || (a.done ? b.score - a.score : b.pct - a.pct);
-// finished runs rank by score; runs that didn't make it rank by how far they got
+const reached = b => (b.tons ?? (b.done ? 1 : 0)) > 0;
+const rank = (a, b) => (reached(b) - reached(a)) || (reached(a) ? ((b.tons ?? 0) - (a.tons ?? 0)) || b.score - a.score : b.pct - a.pct);
+// runs that reached the Skyway rank by total tons hauled; runs wrecked before it rank by how far they got
+const pctOut = () => tons > 0 ? 100 : Math.min(99, Math.floor(dist / TRIP * 100));
 function recordRun(done) {
   if (runId) return;
   runId = Date.now();
-  board.push({ id: runId, name: playerName || 'Player', done, diff, score: done ? score : 0, pct: done ? 100 : Math.min(99, Math.floor(dist / TRIP * 100)) });
+  board.push({ id: runId, name: playerName || 'Player', done, diff, score: done ? score : 0, tons, pct: pctOut() });
   board.sort(rank); board = board.slice(0, 50);
   try { localStorage.oreBoard = JSON.stringify(board); } catch (e) {}
 }
@@ -148,15 +154,15 @@ function drawBoard(y0, n, hi) {
   board.slice(0, n).forEach((b, i) => {
     const y = y0 + 28 + i * 24, c = b.id === hi ? '#ff6' : b.done ? '#fff' : '#bbb';
     text(`${i + 1}.`, 50, y, 15, c, 'left'); text(`${b.name} · ${(DIFFS[b.diff ?? 1].n)[0]}`, 80, y, 15, c, 'left');
-    text(b.done ? `${b.score}` : `${b.pct}% to Skyway`, W - 50, y, 15, c, 'right');
+    text(b.tons !== undefined ? (b.tons > 0 ? `${b.tons} t hauled` : `${b.pct}% to Skyway`) : b.done ? `${b.score} pts` : `${b.pct}% to Skyway`, W - 50, y, 15, c, 'right');
   });
 }
 const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 
 function reset() {
   runId = 0;
-  stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
-  scroll = 0; warned = 0; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
+  stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
+  scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
 
@@ -214,7 +220,7 @@ function spawn() {
     traffic.push({ x: LANE_X[lane], lx: LANE_X[lane], y: -100, w: 34, h: truck ? 90 : 56, v: (oncoming ? -110 : 40 + Math.random() * 40) * D().vel, col, truck, oncoming });
   } else {
     const dir = Math.random() < .5 ? 1 : -1;
-    animals.push({ x: (dir > 0 ? ROAD_L - 40 : ROAD_R + 40) + roadOff(scroll + qy + 40), y: -40, dir, w: 44, h: 28, type: Math.random() < .5 ? 'cow' : 'roo', col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', vx: (35 + Math.random() * 25) * D().vel, ph: 0 });
+    animals.push({ x: (dir > 0 ? ROAD_L - 40 : ROAD_R + 40) + roadAt(scroll + qy + 40), y: -40, dir, w: 44, h: 28, type: Math.random() < .5 ? 'cow' : 'roo', col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', vx: (35 + Math.random() * 25) * D().vel, ph: 0 });
   }
 }
 
@@ -249,12 +255,13 @@ let cabAngle = 0, jts;
 // level crossing 10% of the trip before the steep climb; an ore train sweeps across left to right
 const CROSS_S = TRIP * 4 - CLIMB - TRIP * .4, TRAIN_L = 900, TRAIN_V = 280, TRAIN_X0 = ROAD_L - TRAIN_V * 4, CROSS_R = 460;
 let train = { ph: 0, t: 0, g: 0, hit: false };   // ph: 0 waiting, 1 coming/passing, 2 gone; g: gate lowering 0..1
-const crossY = () => scroll + qy - CROSS_S;
+const crossAt = () => ret ? R - CROSS_S : CROSS_S;
+const crossY = () => scroll + qy - crossAt();
 const trainHead = () => TRAIN_X0 + TRAIN_V * train.t;
 const trainClear = () => trainHead() - TRAIN_L > ROAD_R + 40;
 const trainBlocks = () => train.ph === 1 && !trainClear();
 function updateTrain(dt, parts) {
-  const ahead = CROSS_S - scroll;
+  const ahead = crossAt() - scroll;
   if (train.ph === 0 && ahead < CROSS_R * 2 && ahead > 0) { train.ph = 1; train.t = 0; flash('Train coming! Stop at the crossing'); }
   if (train.ph === 1) {
     train.t += dt;
@@ -311,10 +318,22 @@ function updateSkyway(dt) {
   for (const r of rocks) { r.x += r.vx * dt; r.y += r.vy * dt; r.l -= dt; }
   rocks = rocks.filter(r => r.l > 0); msgT -= dt;
   if (state === 'skyway' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0)) {
-    score = Math.round((arrivalOre * 10 + hp * 5 + Math.max(0, 200 - time) * 2) * D().mult);
-    if (score > best) { best = score; localStorage.oreBest = best; }
-    state = 'win'; recordRun(true);
+    startReturn();
   }
+}
+function startSecondLoad() {
+  trip = 2; ret = false; state = 'load'; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
+  qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
+  train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
+  ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
+  flash('Back at the ROM! Load up for trip 2');
+}
+function startReturn() {
+  ret = true; state = 'drive'; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
+  qx = LANE_X[0]; traffic = []; animals = []; particles = []; rocks = []; spawnT = 3;
+  for (const t of tr) { t.lid = 0; t.want = 0; t.p = 0; t.dir = 0; t.hold = 0; }
+  train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0; ptrs.clear(); syncBtns();
+  flash('All tipped! Return run: steep descent, then back to the ROM');
 }
 // ---------- workshop yard ----------
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
@@ -442,9 +461,27 @@ function tyreWork(dt) {
     }
   } else { f.t += dt; if (f.t >= .25) { f.u++; f.stage = 0; } }
 }
+function crewInit() {
+  return Array.from({ length: NT + 1 }, (_, k) => {
+    const ix = WK.x + 40 + k * (WK.w - 80) / NT, iy = WK.y + 40 + (k % 2) * 40;
+    return { x: ix, y: iy, ix, iy, a: 0, col: ['#3a9a4a', '#7a4fc2', '#c2a02a', '#d96aa0', '#2a9a9a'][k], side: k % 2 ? 1 : -1, walk: false, work: true, ph: k * 1.3 };
+  });
+}
+// the repair crew: heads for the lined-up bay, then each mechanic works beside their own unit as it rolls through the shed
+function crewUpdate(dt) {
+  const act = wk.auto && wk.bay !== TYRE_BAY && !wk.done, ps = wkParts(), cx = wkBayX(wk.bay);
+  wk.crew.forEach((m, k) => {
+    const live = act && wk.crewReady && !wk.fixed[k] && ps[k].y > WK.y - 24;
+    const tx = live ? ps[k].x + m.side * 22 : act ? cx + m.side * 24 : m.ix, ty = live ? ps[k].y : act ? WK.y + 10 + (k >> 1) * 16 : m.iy;
+    const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+    if (live && d < 8) { m.x = tx; m.y = ty; m.walk = false; m.work = true; m.a = m.side > 0 ? -Math.PI / 2 : Math.PI / 2; }
+    else if (d < 2) { m.walk = false; m.work = !act; if (act) m.a = m.side > 0 ? -Math.PI / 2 : Math.PI / 2; }
+    else { const st = Math.min(d, 110 * dt); m.x += dx / d * st; m.y += dy / d * st; m.a = Math.atan2(dx, -dy); m.walk = true; m.work = false; }
+  });
+}
 function wkFresh() {
   const x = GATE.x, y = WORLD.h - 10;   // just inside the gate, heading up with the trailers still outside
-  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
+  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit(), crew: crewInit(), crewReady: false };
 }
 function toWorkshop() {
   if (state !== 'drive') return;
@@ -476,7 +513,7 @@ function wkBump(why) {
 const wkInside = (x, y) => x > WK.x && x < WK.x + WK.w && y > WK.y && y < WK.y + WK.h;
 function wkHome() {
   state = 'drive'; hurtByStock = false; hp = 100; speed = 40; steeringSpeed = 0;
-  qx = LANE_X[0] + roadOff(scroll); traffic = []; animals = []; particles = [];
+  qx = LANE_X[0] + roadAt(scroll); traffic = []; animals = []; particles = [];
   if (train.ph === 1) train.ph = 2;
   jts = straightChain(qx, qy, 1); cabAngle = 0; spawnT = 2; wk = null; ptrs.clear(); syncBtns();
   flash('Repaired! Back on the highway');
@@ -485,7 +522,7 @@ function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
-  yardUpdate(dt);
+  yardUpdate(dt); crewUpdate(dt);
   const straighten = () => { wk.h = Math.PI + angDiff(wk.h, Math.PI) * (1 - Math.min(1, dt * 6)); };
   if (wk.auto) {
     const cx = wkBayX(wk.bay);
@@ -495,13 +532,14 @@ function updateWorkshop(dt) {
       wkChain(); return tyreWork(dt);
     }
     if (wk.bay === TYRE_BAY) { const p = idleSpot(); if (fitWalk(wk.fit, p.x, p.y, dt)) wk.fit.fa = Math.PI / 2; }
+    if (!wk.done && !wk.crewReady) { wk.crewReady = wk.crew.every(m => !m.walk); wk.v = 0; return; }   // mechanics hurry over first
     wk.v = wk.done ? Math.min(60, wk.v + 60 * dt) : 38;
     straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
     wk.y += wk.v * dt; wkChain();
     const ps = wkParts();
     if (!wk.done) {
       ps.forEach((p, k) => {
-        if (!wk.fixed[k] && p.y > WK.y + WK.h * .45) {
+        if (!wk.fixed[k] && p.y > WK.y + WK.h * .75) {
           wk.fixed[k] = 1; hp = Math.min(100, hp + (100 - wk.hp0) / 5); burst(p.x, p.y, '#ffd23a', 14);
         }
       });
@@ -536,7 +574,7 @@ function updateWorkshop(dt) {
     if (wk.lap !== 15) return wkBump('Go up the right side and round to the top first!');
     const a = wkAlign();
     if (!a.ok) return wkBump('Not straight! Line up with a bay and try again');
-    wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Going through the workshop'); return;
+    wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Mechanics coming over'); return;
   }
   if (wkParts().slice(1).some(p => wkInside(p.x, p.y))) return crash('Trailer clipped the workshop!');
   if (yardHit()) return crash('Hit something in the yard!');
@@ -549,12 +587,15 @@ function update(dt) {
   if (state !== 'drive') return;
   time += dt;
   const lf = 1 - (ore() / MAX_ORE) * .45;
-  const maxSpeed = Math.min(180, 220 * lf + 50);   // 180 px/s shows as 90 km/h
-  const climb = scroll > TRIP * 4 - CLIMB;
+  const gr = grade(), down = gr > 0;
+  const maxSpeed = down ? 400 : Math.min(180, 220 * lf + 50);   // 180 px/s shows as 90 km/h; no limit rolling downhill
+  const climb = gr === -2;
   if (keys.ArrowUp || keys.KeyW || keys.TG) speed += 120 * lf * (climb ? .5 : 1) * dt;
   else if (keys.ArrowDown || keys.KeyS || keys.TB) speed -= 220 * dt;
-  else speed += (scroll < HILL ? 25 : climb ? -90 : -40) * dt;   // coasting downhill gains speed, uphill loses it
-  speed = Math.max(0, Math.min(maxSpeed, speed));
+  else speed += (gr === 2 ? 70 : down ? 45 : climb ? -90 : -40) * dt;   // coasting downhill builds momentum, uphill loses it
+  if (down && speed > 120 && !(keys.ArrowDown || keys.KeyS || keys.TB)) speed += (speed - 120) * .12 * dt;
+  speed = Math.max(0, speed);
+  if (speed > maxSpeed) speed = Math.max(maxSpeed, speed - 160 * dt);
   if (climb) { const cap = 30 + 90 * lf; if (speed > cap) speed = Math.max(cap, speed - 100 * dt); }
   // no overtaking: can't outrun same-direction traffic ahead
   for (const t of traffic) {
@@ -566,10 +607,12 @@ function update(dt) {
   steeringSpeed += (targetSteeringSpeed - steeringSpeed) * (1 - Math.exp(-8 * dt));
   qx += steeringSpeed * dt;
   qx = Math.max(30, Math.min(W - 30, qx));
-  const ro0 = roadOff(scroll);
+  const ro0 = roadAt(scroll);
   if ((qx < ROAD_L + ro0 - 10 || qx > ROAD_R + ro0 + 10) && speed > 90) speed -= 200 * dt;
-  if (warned < 1 && scroll > HILL) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
-  else if (warned < 2 && scroll > TRIP * 4 - CLIMB - 300) { warned = 2; flash('Steep climb ahead!'); }
+  if (!ret && warned < 1 && scroll > HILL) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
+  else if (!ret && warned < 2 && scroll > R - CLIMB - 300) { warned = 2; flash('Steep climb ahead!'); }
+  else if (ret && warned < 1 && scroll > CLIMB) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
+  else if (ret && warned < 2 && scroll > R - HILL) { warned = 2; flash('Uphill to the ROM - keep the throttle on'); }
 
   dist += speed * dt / 4; scroll += speed * dt;
   // ground slides back under the trailers; the cab leans into its steering and drags the chain after it
@@ -578,9 +621,15 @@ function update(dt) {
   jts[0].x = qx - Math.sin(cabAngle) * HITCH; jts[0].y = qy + Math.cos(cabAngle) * HITCH;
   chainFollow(jts, TRAILER_LEN);
   spawnT -= dt;
-  if (spawnT <= 0) { const cy = crossY(); if (scroll >= HILL && !(cy > -260 && cy < H + 80)) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
+  if (spawnT <= 0) { const cy = crossY(); if (onHwy() && !(cy > -260 && cy < H + 80)) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
 
-  for (const t of traffic) { t.y += (speed - t.v) * dt; t.x = t.lx + roadOff(scroll + qy - t.y); }
+  // straddling the centre line: drivers move over to meet you, so you have to pick a lane
+  const straddle = Math.abs(qx - ro0 - W / 2) < 42;
+  if (straddle && onHwy() && traffic.some(t => !t.hit && t.y < qy && qy - t.y < 360)) { if (msgT <= 0) flash('Pick a lane! Stay on your side of the road'); }
+  for (const t of traffic) {
+    if (straddle && !t.hit && t.y < qy && qy - t.y < 360) { const d = qx - ro0 - t.lx; t.lx += Math.sign(d) * Math.min(Math.abs(d), 110 * dt); }
+    t.y += (speed - t.v) * dt; t.x = t.lx + roadAt(scroll + qy - t.y);
+  }
   for (const a of animals) {
     a.y += speed * dt;
     if (a.hit) { a.x += a.fvx * dt; a.y += a.fvy * dt; a.fvx *= 1 - Math.min(1, dt * 1.5); a.fvy *= 1 - Math.min(1, dt * 1.5); a.rot += a.fw * dt; a.fw *= 1 - Math.min(1, dt * 1.2); a.t += dt; }
@@ -607,8 +656,13 @@ function update(dt) {
   traffic = traffic.filter(t => t.y < H + 120 && t.y > -300);
   animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80 && !(a.hit && a.t > 1.8));
 
-  if (state === 'drive' && dist >= TRIP) {
-    state = 'skyway'; arrivalOre = ore(); speed = 0; particles = []; ptrs.clear(); syncBtns();
+  if (state === 'drive' && ret && dist >= TRIP) {
+    if (trip === 1) { startSecondLoad(); return; }
+    score = Math.round((tons * 10 + hp * 5 + Math.max(0, 800 - time) * 2) * D().mult);
+    if (score > best) { best = score; localStorage.oreBest = best; }
+    state = 'win'; speed = 0; recordRun(true);
+  } else if (state === 'drive' && !ret && dist >= TRIP) {
+    state = 'skyway'; arrivalOre = ore(); tons += arrivalOre; speed = 0; particles = []; ptrs.clear(); syncBtns();
     flash('The Skyway! Open each lid, then tip over the ledge');
   }
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
@@ -637,7 +691,7 @@ function drawStick() {
 function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
 
 // road is drawn as smooth paths (not pixel strips) so the curves don't shimmer while scrolling
-const roadX = y => roadOff(scroll + qy - y);
+const roadX = y => roadAt(scroll + qy - y);
 function curve(x, y0, y1, lw, col) {
   ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
   for (let y = y0; ; y = Math.min(y + 8, y1)) { const px = x + roadX(y); if (y === y0) ctx.moveTo(px, y); else ctx.lineTo(px, y); if (y >= y1) break; }
@@ -667,6 +721,18 @@ function drawRoad() {
   for (let y0 = (scroll % 160) - 160; y0 < H; y0 += 160) {
     for (const x of [ROAD_L - 18, ROAD_R + 18]) { curve(x, y0, y0 + 15, 4, '#eee8d5'); curve(x, y0 + 3, y0 + 7, 4, '#d33'); }
   }
+}
+// ROM pad at the end of the return run: ore stockpiles either side of the entrance
+function drawRom() {
+  if (!ret) return;
+  const y = scroll + qy - (R - 120); if (y < -400) return;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, Math.min(H, y)); ctx.clip();
+  rect(0, 0, W, y, '#7a4428'); rect(ROAD_L - 13, 0, ROAD_R - ROAD_L + 26, y, '#8a5230');
+  for (let k = 0; k < 3; k++) { rockChunks(60, y - 90 - k * 150, 52, 44, 30, 6, 5 + k); rockChunks(W - 60, y - 70 - k * 150, 52, 44, 30, 6, 9 + k); }
+  ctx.restore();
+  rect(ROAD_L - 13, y - 3, ROAD_R - ROAD_L + 26, 6, '#e8b100');
+  rect(ROAD_L - 22, y - 30, 8, 36, '#555'); rect(ROAD_R + 14, y - 30, 8, 36, '#555');
+  rect(ROAD_L - 22, y - 44, ROAD_R - ROAD_L + 44, 18, '#222'); text('ROM', W / 2, y - 30, 14, '#ffd23a');
 }
 function drawTrack() {
   const cy = crossY(); if (cy < -40 || cy > H + 40) return;
@@ -989,6 +1055,7 @@ function drawWorkshop() {
   for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK_MOUTH - 14, 7); tyreDisc(x, WK_MOUTH - 17, 7); }
   drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC, wk.auto && wk.bay === TYRE_BAY ? { tyre: wk.fit.st } : null);
   drawFitter();
+  for (const m of wk.crew) drawMech(m);
   rect(WK.x - 6, WK_MOUTH, WK.w + 12, 6, '#3b3f44');
   ctx.fillStyle = 'rgba(95,105,115,.5)'; ctx.fillRect(WK.x, WK.y, WK.w, WK.h);
   text('WORKSHOP', WK.x + WK.w / 2, WK.y + WK.h / 2 + 6, 22, '#fff');
@@ -999,7 +1066,7 @@ function drawWorkshop() {
   rect(0, 0, W, 64, '#000a');
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
-  text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : 'Repairing...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
+  text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
   if (isTouch) { drawStick(); drawBtns(DB); }
 }
@@ -1021,9 +1088,9 @@ function render() {
     text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 620, 14, '#ccc');
     text(`Best: ${best}`, W / 2, 650, 14, '#ccc');
   } else {
-    if (state === 'skyway' || state === 'win') drawSkyway();
+    if (state === 'skyway') drawSkyway();
     else {
-      drawRoad(); drawTrack();
+      drawRoad(); drawRom(); drawTrack();
       for (const a of animals) drawAnimal(a);
       for (const t of traffic) drawCar(t);
       drawTruck(); drawTrain();
@@ -1033,20 +1100,22 @@ function render() {
     text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
     text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore() / MAX_ORE, '#c86');
     if (state === 'drive' || state === 'over') {
+      text(`TRIP ${trip}/2`, W / 2, 22, 14, '#ccc');
       text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
-      text(`${Math.min(100, Math.round(dist / TRIP * 100))}% to the Skyway`, W - 10, 48, 14, '#ff6', 'right');
-    } else text('THE SKYWAY', W - 10, 30, 18, '#ff6', 'right');
+      text(`${Math.min(100, Math.round(dist / TRIP * 100))}% ${ret ? 'back to the ROM' : 'to the Skyway'}`, W - 10, 48, 14, '#ff6', 'right');
+    } else text(state === 'win' ? 'THE ROM' : 'THE SKYWAY', W - 10, 30, 18, '#ff6', 'right');
     if (isTouch && state === 'drive') { drawStick(); drawBtns(DB); }
     if (state === 'drive' && hurtByStock) drawBtn(WS_BTN, isTouch ? 'WORKSHOP' : 'WORKSHOP (H)', false);
-    if (state === 'drive' && scroll > TRIP * 4 - CLIMB) text('▲ STEEP CLIMB', W - 10, 88, 15, '#f90', 'right');
+    if (state === 'drive' && grade() === -2) text('▲ STEEP CLIMB', W - 10, 88, 15, '#f90', 'right');
+    else if (state === 'drive' && grade() === 2) text('▼ STEEP DESCENT', W - 10, 88, 15, '#f90', 'right');
     if (state === 'drive' && trainBlocks() && crossY() < qy + 150 && Math.sin(beaconClock() * 8) > -.3) text('TRAIN CROSSING - STOP!', W / 2, 150, 20, '#f44');
     if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
     if (state === 'over' || state === 'win') {
       rect(30, 120, W - 60, 500, '#000d');
-      if (state === 'over') { text('WRECKED!', W / 2, 175, 38, '#e44'); text(`${Math.min(99, Math.floor(dist / TRIP * 100))}% of the way to the Skyway`, W / 2, 208, 17); }
+      if (state === 'over') { text('WRECKED!', W / 2, 175, 38, '#e44'); text(tons > 0 ? `${tons} t hauled to the Skyway` : `${pctOut()}% of the way to the Skyway`, W / 2, 208, 17); }
       else {
         text('DELIVERED!', W / 2, 175, 38, '#4c4');
-        text(`${D().n}: side-tipped ${arrivalOre} t in ${Math.round(time)}s`, W / 2, 205, 16);
+        text(`${D().n}: ${tons} t hauled in 2 trips, ${Math.round(time)}s`, W / 2, 205, 15);
         text(`Score: ${score}`, W / 2, 238, 24, '#ff6');
       }
       drawBoard(285, 10, runId);
