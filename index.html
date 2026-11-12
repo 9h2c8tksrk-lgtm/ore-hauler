@@ -32,8 +32,11 @@ function roadOff(s) {
 }
 let warned = 0, hurtByStock = false, wk = null;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
-const WORLD = { w: 900, h: 1300 };   // workshop yard is larger than the screen; the camera follows the truck
-const WK = { x: 300, y: 330, w: 300, h: 120 }, BAY_W = 50, WK_SC = .62;   // workshop building, six bays across
+const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
+const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
+const GATE = { y: 1250, w: 140 };   // yard entry/exit gap in the right-hand fence
+const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
+const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
 const PILE = { x: 30, y: 130, w: 80, h: 350 };   // long finger pile; solid for the loader
@@ -257,7 +260,7 @@ function updateTrain(dt, parts) {
     train.t += dt;
     if (trainHead() - TRAIN_L > W + 40) train.ph = 2;
     else if (!train.hit && parts.some(p => hit(p, { x: trainHead() - TRAIN_L / 2, y: crossY(), w: TRAIN_L, h: 30 }))) {
-      train.hit = true; damage(70, 'Hit by the train!', -1); speed = 0;
+      train.hit = true; damage(1000, 'Smashed by the train!', -1); speed = 0;
     }
   }
   train.g = Math.max(0, Math.min(1, train.g + (trainBlocks() ? 1 : -1) * dt * 1.2));
@@ -315,9 +318,9 @@ function updateSkyway(dt) {
 }
 // ---------- workshop yard ----------
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
-const TYRE_BAY = 5, TY_RACK = { x: WK.x + WK.w + 28, y: WK_MOUTH + 20 }, TY_SCRAP = { x: WK.x + WK.w + 28, y: WK_MOUTH + 95 };
+const TYRE_BAY = 5, TY_RACK = { x: WK.x + WK.w + 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x + WK.w + 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
-const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK.y + 60 });
+const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK_MOUTH - 60 });
 function fitInit() { const p = idleSpot(); return { u: -1, stage: 0, t: 0, st: [0, 0, 0, 0, 0], fx: p.x, fy: p.y, fa: Math.PI / 2, walk: false, rolls: [], piled: 0 }; }
 let yard;
 // other trucks parked or shuffling about the yard, plus mechanics who walk to a spot, pause and work
@@ -327,28 +330,31 @@ function makeYard() {
   // start part-way along the leg that ends at pts[i0]
   const start = (pts, i0, k) => { const a = pts[(i0 + pts.length - 1) % pts.length], b = pts[i0]; return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, h: Math.atan2(b.x - a.x, -(b.y - a.y)) }; };
   const truck = (f, pts, i0, k) => { const s0 = start(pts, i0, k); return { ...s0, f, i: i0, v: 0, hold: 0, blk: 0, free: 0, pts, j: chainLine(s0.x, s0.y, s0.h, WK_SC) }; };
-  // clockwise round the workshop like the player: along the top, down the right, back along the bottom, then straight in through a bay and out the top
-  const lap = (bay, long) => {
-    const bx = wkBayX(bay), inBay = [P(bx + 110, 1000), P(bx, 900, { lk: 1 }), P(bx, 372, { lk: 1, stop: 14 })];
-    return [P(bx, 230), P(750, 230), P(750, 1000), ...(long ? [P(150, 1000), P(150, 230), P(750, 230), P(750, 1000)] : []), ...inBay];
+  // anticlockwise round the workshop like the player: up the right, along the top, then
+  // down into a bay from the top, out the bottom and back round to the right
+  const TY = 250, lap = (bay, long) => {
+    const bx = wkBayX(bay);
+    return [P(bx + 100, TY), P(bx, 390, { lk: 1 }), P(bx, WK_MOUTH - 42, { lk: 1, stop: 14 }), P(bx, 860, { lk: 1 }), P(bx + 80, 1000), P(960, 1000), P(960, TY),
+      ...(long ? [P(150, TY), P(150, 1000), P(960, 1000), P(960, TY)] : [])];
   };
   const ute = pts => { const s0 = start(pts, 1, .3); return { ...s0, ute: 1, i: 1, v: 0, hold: 0, blk: 0, free: 0, pts }; };
   const mech = (col, pts, mv, u, side) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6, mv, u, side });
   const pa = lap(1, false), pb = lap(3, true);
   return {
-    parked: [park(860, 1250, Math.PI / 2, .8), park(860, 1195, Math.PI / 2, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
+    parked: [park(55, 1100, 0, .8), park(100, 1100, 0, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
     movers: [
-      truck(.7, pa, 2, .6), truck(0, pb, 4, .6),
-      ute([P(70, 780), P(260, 780), P(260, 1120), P(620, 1120), P(620, 1250), P(70, 1250)])],
+      truck(.7, pa, 1, .5), truck(0, pb, 5, .5),
+      ute([P(380, 1150), P(620, 1150), P(620, 1400), P(380, 1400)])],
     mechs: [
       mech('#2a6fd6', [P(67, 310, { w: 3 }), P(67, 170, { w: 3 })]),
-      mech('#e8721a', [P(710, 1222, { w: 3 }), P(810, 1222, { w: 2 })]),
-      mech('#8a8a8a', [P(640, 600, { w: 2 }), P(640, 860, { w: 3 })]),
+      mech('#e8721a', [P(700, 1460, { w: 3 }), P(860, 1460, { w: 2 })]),
+      mech('#8a8a8a', [P(260, 600, { w: 2 }), P(260, 860, { w: 3 })]),
+      mech('#2a9a9a', [P(745, 690, { w: 3 }), P(870, 705, { w: 2 })]),
       // crews that walk over and work on a truck while it is stopped in its bay
-      mech('#3a9a4a', [P(290, 580, { w: 2.5 }), P(250, 630, { w: 2 })], 0, 2, -1),
-      mech('#7a4fc2', [P(430, 590, { w: 2 }), P(420, 640, { w: 3 })], 0, 4, 1),
-      mech('#c2a02a', [P(545, 570, { w: 3 }), P(585, 625, { w: 2 })], 1, 1, 1),
-      mech('#d96aa0', [P(430, 660, { w: 2 }), P(435, 720, { w: 3 })], 1, 3, -1)]
+      mech('#3a9a4a', [P(380, 380, { w: 2.5 }), P(360, 430, { w: 2 })], 0, 2, -1),
+      mech('#7a4fc2', [P(490, 380, { w: 2 }), P(480, 430, { w: 3 })], 0, 4, 1),
+      mech('#c2a02a', [P(610, 380, { w: 3 }), P(640, 430, { w: 2 })], 1, 1, 1),
+      mech('#d96aa0', [P(510, 440, { w: 2 }), P(515, 480, { w: 3 })], 1, 3, -1)]
   };
 }
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -360,7 +366,9 @@ function rigPoints(r) {
 const wkPoints = () => rigPoints({ x: wk.x, y: wk.y, h: wk.h, j: wk.j });
 function yardHit() {
   const me = wkPoints();
-  return yard.parked.some(r => rigPoints(r).some(a => me.some(b => Math.hypot(a.x - b.x, a.y - b.y) < 15)));
+  const m = 12;
+  return yard.parked.some(r => rigPoints(r).some(a => me.some(b => Math.hypot(a.x - b.x, a.y - b.y) < 15))) ||
+    me.some(b => CONT.some(c => b.x > c.x - m && b.x < c.x + c.w + m && b.y > c.y - m && b.y < c.y + c.h + m) || (b.x > SHELTER.x && b.x < SHELTER.x + SHELTER.w && b.y > SHELTER.y - m && b.y < SHELTER.y + SHELTER.h + m));
 }
 function yardUpdate(dt) {
   const me = wkPoints();
@@ -435,13 +443,13 @@ function tyreWork(dt) {
   } else { f.t += dt; if (f.t >= .25) { f.u++; f.stage = 0; } }
 }
 function wkFresh() {
-  const x = 130, y = 1180;
-  return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
+  const x = WORLD.w - 10, y = GATE.y;   // just inside the gate, heading left with the trailers still outside
+  return { x, y, h: -Math.PI / 2, v: 0, s: 0, j: Array.from({ length: NT + 1 }, (_, k) => ({ x: x + (HITCH + TRAILER_LEN * k) * WK_SC, y })), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit() };
 }
 function toWorkshop() {
   if (state !== 'drive') return;
   state = 'workshop'; wk = wkFresh(); yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
-  flash('Drive a lap around the workshop, then line up with a bay');
+  flash('Up the right side, round to the top, then line up with a bay');
 }
 // drag the trailer chain behind the cab
 function wkChain() {
@@ -458,7 +466,7 @@ function wkAlign() {
   const i = Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W))), cx = wkBayX(i);
   const he = a => Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
   const ps = wkParts();
-  const ok = he(wk.h) < .07 && Math.abs(wk.x - cx) < 6 && ps.slice(1).every(p => Math.abs(p.x - cx) < 8 && he(p.a) < .1);
+  const ok = he(wk.h - Math.PI) < .07 && Math.abs(wk.x - cx) < 7 && ps.slice(1).every(p => Math.abs(p.x - cx) < 9 && he(p.a - Math.PI) < .1);
   return { i, ok };
 }
 function wkBump(why) {
@@ -478,49 +486,60 @@ function updateWorkshop(dt) {
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
   yardUpdate(dt);
+  const straighten = () => { wk.h = Math.PI + angDiff(wk.h, Math.PI) * (1 - Math.min(1, dt * 6)); };
   if (wk.auto) {
     const cx = wkBayX(wk.bay);
     if (wk.bay === TYRE_BAY && !wk.done) {
-      wk.h *= 1 - Math.min(1, dt * 6); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
-      if (wk.y > WK.y + 40) { wk.y -= 38 * dt; wkChain(); fitWalk(wk.fit, cx + 19, WK.y + 70, dt); return; }
+      straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
+      if (wk.y < WK_MOUTH - 40) { wk.y += 38 * dt; wkChain(); fitWalk(wk.fit, cx + 19, WK_MOUTH - 70, dt); return; }
       wkChain(); return tyreWork(dt);
     }
     if (wk.bay === TYRE_BAY) { const p = idleSpot(); if (fitWalk(wk.fit, p.x, p.y, dt)) wk.fit.fa = Math.PI / 2; }
-    wk.v = wk.done ? Math.min(90, wk.v + 80 * dt) : 38;
-    wk.h *= 1 - Math.min(1, dt * 6); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
-    wk.y -= wk.v * dt; wkChain();
+    wk.v = wk.done ? Math.min(60, wk.v + 60 * dt) : 38;
+    straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
+    wk.y += wk.v * dt; wkChain();
+    const ps = wkParts();
     if (!wk.done) {
-      const ps = wkParts();
       ps.forEach((p, k) => {
-        if (!wk.fixed[k] && p.y < WK.y + WK.h * .55) {
+        if (!wk.fixed[k] && p.y > WK.y + WK.h * .45) {
           wk.fixed[k] = 1; hp = Math.min(100, hp + (100 - wk.hp0) / 5); burst(p.x, p.y, '#ffd23a', 14);
         }
       });
-      if (ps[NT].y + 24 < WK.y) { wk.done = true; hp = 100; flash('All fixed! Back to the highway'); }
-    } else if (wk.y < WK.y - 220) return wkHome();
+    }
+    if (ps[NT].y > WK_MOUTH + 20) {   // whole rig clear of the building: hand back control to drive out of the yard
+      wk.auto = false; if (!wk.done) { wk.done = true; hp = 100; }
+      wk.s = 0; flash('All fixed! Drive out through the yard gate');
+    }
     return;
   }
+  const px = wk.x, py = wk.y, ph = wk.h;
   const up = keys.ArrowUp || keys.KeyW || keys.TG, brake = keys.ArrowDown || keys.KeyS || keys.TB;
   wk.v += (up ? 70 : brake ? -140 : -30) * dt; wk.v = Math.max(0, Math.min(90, wk.v));
   wk.s += (steerAxis() - wk.s) * (1 - Math.exp(-8 * dt));
   wk.h += wk.v / 26 * Math.tan(wk.s * .5) * dt;
   wk.x += Math.sin(wk.h) * wk.v * dt; wk.y -= Math.cos(wk.h) * wk.v * dt; wkChain();
+  // before the repair a crash sends you back to the start; afterwards you just bounce off
+  const crash = why => {
+    if (!wk.done) return wkBump(why);
+    wk.x = px; wk.y = py; wk.h = ph; wk.v = 0; wkChain(); shake = .2; flash(why);
+  };
 
-  const inL = wk.x < WK.x - 8 && wk.y > WK.y && wk.y < WK_MOUTH, inT = wk.y < WK.y - 8 && wk.x > WK.x && wk.x < WK.x + WK.w, inR2 = wk.x > WK.x + WK.w + 8 && wk.y > WK.y && wk.y < WK_MOUTH;
-  if (inL) wk.lap |= 1; if (inT) wk.lap |= 2; if (inR2) wk.lap |= 4;
-  if (wk.lap === 7 && wk.y > WK_MOUTH + 60) { wk.lap = 15; flash('Lap done! Line up straight with a bay'); }
+  const inR = wk.x > WK.x + WK.w + 8 && wk.y > WK.y && wk.y < WK_MOUTH, inT = wk.y < WK.y - 8 && wk.x > WK.x && wk.x < WK.x + WK.w;
+  if (!wk.done) { if (inR) wk.lap |= 1; if (inT && wk.lap & 1 && wk.lap !== 15) { wk.lap = 15; flash('Line up straight with a bay, then drive in'); } }
 
   const fx = wk.x + Math.sin(wk.h) * 14, fy = wk.y - Math.cos(wk.h) * 14;
-  if (fx < 8 || fx > WORLD.w - 8 || fy < 8 || fy > WORLD.h - 8) return wkBump('Out of the yard! Start again');
+  if (wk.done && fx > WORLD.w - 8 && Math.abs(fy - GATE.y) < GATE.w / 2) return wkHome();
+  if (fx < 8 || fx > WORLD.w - 8 || fy < 8 || fy > WORLD.h - 8) return crash(wk.done ? 'Use the yard gate to leave' : 'Out of the yard! Start again');
   if (wkInside(fx, fy)) {
-    if (fy < WK_MOUTH - 14) return wkBump('Crashed into the workshop!');
-    if (wk.lap !== 15) return wkBump('Drive a lap of the yard first!');
+    if (wk.done) return crash('Crashed into the workshop!');
+    if (fy > WK.y + 14) return wkBump('Crashed into the workshop!');
+    if (wk.lap !== 15) return wkBump('Go up the right side and round to the top first!');
     const a = wkAlign();
     if (!a.ok) return wkBump('Not straight! Line up with a bay and try again');
     wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Going through the workshop'); return;
   }
-  if (wkParts().slice(1).some(p => wkInside(p.x, p.y))) return wkBump('Trailer clipped the workshop!');
-  if (yardHit()) return wkBump('Hit a parked truck! Start again');
+  if (wkParts().slice(1).some(p => wkInside(p.x, p.y))) return crash('Trailer clipped the workshop!');
+  if (yardHit()) return crash('Hit something in the yard!');
 }
 
 function update(dt) {
@@ -796,7 +815,7 @@ function drawTruck() {
 // cab at (x, y) with heading `ang`, trailers hinged on the chain joints; sc scales the whole rig
 function drawRig(J, x, y, ang, sc, o) {
   ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4 * sc; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); ctx.lineTo(J[NT].x, J[NT].y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); for (let i = 1; i <= NT; i++) ctx.lineTo(J[i].x, J[i].y); ctx.stroke();
   for (let i = NT - 1; i >= 0; i--) {
     const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
     for (const sx of [-18.5, 18.5]) for (const wy of [8, 21]) wheel(sx, wy, 5, 11, st);
@@ -913,6 +932,21 @@ function drawYardLife() {
   for (let k = 0; k < 3; k++) tyreDisc(TY_RACK.x, TY_RACK.y - k * 3, 9);
   for (let k = 0; k < 3 + wk.fit.piled; k++) tyreDisc(TY_SCRAP.x + ((k * 7) % 13) - 6, TY_SCRAP.y + ((k * 5) % 11) - 5 - Math.floor(k / 4) * 3, 8);
 }
+function drawStructures() {
+  for (const c of CONT) {
+    rect(c.x + 3, c.y + 3, c.w, c.h, '#0004'); rect(c.x, c.y, c.w, c.h, c.c);
+    for (let k = 4; k < c.w - 3; k += 5) rect(c.x + k, c.y + 3, 1.5, c.h - 6, '#0003');
+    rect(c.x, c.y, c.w, 4, '#0005'); rect(c.x, c.y + c.h - 6, c.w, 6, '#0006');
+    rect(c.x + c.w / 2 - 1, c.y + c.h - 40, 2, 34, '#ddd8');
+  }
+  const h = SHELTER;   // corrugated arch seen from above: ribs across, shaded towards the sides
+  rect(h.x + 3, h.y + 3, h.w, h.h, '#0004');
+  const g = ctx.createLinearGradient(h.x, 0, h.x + h.w, 0);
+  g.addColorStop(0, '#8d959c'); g.addColorStop(.5, '#e4e8eb'); g.addColorStop(1, '#8d959c');
+  ctx.fillStyle = g; ctx.fillRect(h.x, h.y, h.w, h.h);
+  for (let y = h.y + 8; y < h.y + h.h; y += 12) rect(h.x, y, h.w, 1.5, '#6c747b');
+  rect(h.x, h.y, h.w, 5, '#5a6168'); rect(h.x, h.y + h.h - 5, h.w, 5, '#5a6168');
+}
 function drawFitter() {
   const f = wk.fit, idle = f.u < 0 && !wk.auto, bx = wkBayX(TYRE_BAY);
   if (idle) tyreDisc(f.fx + 20, f.fy, 10, performance.now() / 150);
@@ -930,39 +964,42 @@ function drawWorkshop() {
   rect(0, 0, WORLD.w, WORLD.h, '#a74626');
   for (let i = 0; i < 160; i++) rect((i * 97) % WORLD.w, (i * 61) % WORLD.h, 6, 6, '#85371f');
   ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 10; ctx.setLineDash([24, 12]); ctx.strokeRect(5, 5, WORLD.w - 10, WORLD.h - 10); ctx.setLineDash([]);
+  rect(WORLD.w - 12, GATE.y - GATE.w / 2, 12, GATE.w, '#a74626');
+  rect(WORLD.w - 40, GATE.y - GATE.w / 2 - 6, 40, 6, '#e8b100'); rect(WORLD.w - 40, GATE.y + GATE.w / 2, 40, 6, '#e8b100');
+  text(wk.done ? 'EXIT ►' : 'ENTRY / EXIT', WORLD.w - 60, GATE.y - GATE.w / 2 - 14, 14, wk.done ? '#6f6' : '#ffd23a');
   rect(WK.x - 6, WK.y - 6, WK.w + 12, WK.h + 12, '#3b3f44');
   for (let i = 0; i < 6; i++) {
     const x = WK.x + i * BAY_W;
     rect(x + 1, WK.y, BAY_W - 2, WK.h, '#2a2d30');
     rect(x + 3, WK.y + 4, 3, WK.h - 8, '#e8b100'); rect(x + BAY_W - 6, WK.y + 4, 3, WK.h - 8, '#e8b100');
   }
-  const al = wk.lap === 15 && !wk.auto ? wkAlign() : null;
+  const al = wk.lap === 15 && !wk.auto && !wk.done ? wkAlign() : null;
   for (let i = 0; i < 6; i++) {
-    const cx = wkBayX(i), on = al && al.i === i && wk.y > WK_MOUTH - 20;
+    const cx = wkBayX(i), on = al && al.i === i && wk.y < WK.y + 20;
     ctx.strokeStyle = on ? (al.ok ? '#6f6' : '#f66') : 'rgba(255,255,255,.35)'; ctx.lineWidth = on ? 3 : 2; ctx.setLineDash([10, 10]);
-    ctx.beginPath(); ctx.moveTo(cx, WK_MOUTH + 4); ctx.lineTo(cx, WK_MOUTH + 500); ctx.stroke(); ctx.setLineDash([]);
-    text(String(i + 1), cx, WK_MOUTH + 22, 14, '#fff');
+    ctx.beginPath(); ctx.moveTo(cx, WK.y - 4); ctx.lineTo(cx, WK.y - 500); ctx.stroke(); ctx.setLineDash([]);
+    text(String(i + 1), cx, WK.y - 14, 14, '#fff');
   }
-  for (const [k, x, y] of [[1, WK.x / 2, WK.y + WK.h / 2], [2, WK.x + WK.w / 2, WK.y / 2], [4, WORLD.w - WK.x / 2, WK.y + WK.h / 2]]) {
+  if (!wk.done) for (const [k, x, y] of [[1, 960, WK.y + WK.h / 2], [2, WK.x + WK.w / 2, 330]]) {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
+  drawStructures();
   drawYardLife();
   const tb = wkBayX(TYRE_BAY);
-  for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK.y + 14, 7); tyreDisc(x, WK.y + 11, 7); }
+  for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK_MOUTH - 14, 7); tyreDisc(x, WK_MOUTH - 17, 7); }
   drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC, wk.auto && wk.bay === TYRE_BAY ? { tyre: wk.fit.st } : null);
   drawFitter();
-  rect(WK.x - 6, WK.y - 6, WK.w + 12, 6, '#3b3f44');
+  rect(WK.x - 6, WK_MOUTH, WK.w + 12, 6, '#3b3f44');
   ctx.fillStyle = 'rgba(95,105,115,.5)'; ctx.fillRect(WK.x, WK.y, WK.w, WK.h);
   text('WORKSHOP', WK.x + WK.w / 2, WK.y + WK.h / 2 + 6, 22, '#fff');
-  rect(tb - 24, WK.y - 26, 48, 16, '#222'); text('TYRES', tb, WK.y - 14, 12, '#ffd23a');
-  text('TYRES', tb, WK_MOUTH + 38, 10, '#ffd23a');
+  rect(tb - 24, WK_MOUTH + 8, 48, 16, '#222'); text('TYRES', tb, WK_MOUTH + 20, 12, '#ffd23a');
+  text('TYRES', tb, WK.y - 30, 10, '#ffd23a');
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
   ctx.restore();
   rect(0, 0, W, 64, '#000a');
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
-  const laps = [1, 2, 4].filter(k => wk.lap & k).length;
-  text(wk.auto ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : 'Repairing...') : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : `Lap of the yard: ${laps}/3`, W / 2, 52, 14, '#ddd');
+  text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : 'Repairing...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
   if (isTouch) { drawStick(); drawBtns(DB); }
 }
