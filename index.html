@@ -586,6 +586,7 @@ function updateWorkshop(dt) {
 
 function update(dt) {
   if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } }
+  if (state === 'menu') scroll += 70 * dt;
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
   if (state === 'workshop') return updateWorkshop(dt);
@@ -699,6 +700,345 @@ function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]
 
 // road is drawn as smooth paths (not pixel strips) so the curves don't shimmer while scrolling
 const roadX = y => roadAt(scroll + qy - y);
+
+// ---------- pseudo-3D driving view ----------
+// World coords stay 2D (x across, y down the screen); a perspective camera projects them with a height axis z.
+// `fr` rotates primitives about a point so the cab, trailers and tossed animals can be drawn at any heading.
+const HOR = 92, CAM_Y = H + 400;
+const uOf = y => (y + 120) / (H + 120);
+const sc = y => .22 + 1.15 * uOf(y);
+const sY = y => { const u = uOf(y); return HOR + (H - HOR) * (.22 * u + .575 * u * u) / .795; };
+let camX = W / 2, fr = null;
+function withFrame(cx, cy, a, fn) {
+  const c = Math.cos(a), s = Math.sin(a), dx = camX - cx, dy = CAM_Y - cy;
+  fr = { cx, cy, c, s, lx: cx + dx * c + dy * s };
+  fn(); fr = null;
+}
+const camL = () => fr ? fr.lx : camX;
+const P = (x, y, z = 0) => {
+  if (fr) { const dx = x - fr.cx, dy = y - fr.cy; x = fr.cx + dx * fr.c - dy * fr.s; y = fr.cy + dx * fr.s + dy * fr.c; }
+  const s = sc(y); return [W / 2 + (x - camX) * s, sY(y) - z * s * .9];
+};
+const rgbCache = {};
+function shade(c, f) {
+  let v = rgbCache[c];
+  if (!v) { let s = c.slice(1); if (s.length === 3) s = s.replace(/./g, m => m + m); v = rgbCache[c] = [0, 2, 4].map(i => parseInt(s.substr(i, 2), 16)); }
+  return `rgb(${Math.min(255, v[0] * f) | 0},${Math.min(255, v[1] * f) | 0},${Math.min(255, v[2] * f) | 0})`;
+}
+function poly(pts, col) {
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath(); ctx.fill();
+}
+function box(cx, cy, w, l, z0, z1, col, noTop) {
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - l / 2, y1 = cy + l / 2, cl = camL();
+  if (cl > x1) poly([P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, .6));
+  else if (cl < x0) poly([P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), P(x0, y0, z1)], shade(col, .85));
+  poly([P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, .72));
+  if (!noTop) poly([P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 1.05));
+}
+const rearRect = (y, xa, xb, za, zb, col) => poly([P(xa, y, za), P(xb, y, za), P(xb, y, zb), P(xa, y, zb)], col);
+const topRect = (xa, ya, xb, yb, z, col) => poly([P(xa, ya, z), P(xb, ya, z), P(xb, yb, z), P(xa, yb, z)], col);
+const flatEllipse = (x, y, rx, ry, col, z = 0) => { const [sx, sy] = P(x, y, z), s = sc(y); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sx, sy, rx * s, ry * s, 0, 0, Math.PI * 2); ctx.fill(); };
+const shadow = (cx, cy, w, l) => topRect(cx - w / 2 + 5, cy - l / 2 + 3, cx + w / 2 + 6, cy + l / 2 + 4, 0, 'rgba(0,0,0,.35)');
+function glow(x, y, z, r, col) {
+  const [sx, sy] = P(x, y, z), rr = r * sc(y), g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
+  g.addColorStop(0, col); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(sx - rr, sy - rr, rr * 2, rr * 2);
+}
+// layered ellipses fake a rounded mound (rocks, bushes, canopies, termite hills)
+function dome(x, y, r, hgt, col, z = 0) {
+  const s = sc(y), [sx, sy] = P(x, y, z), rx = r * s, ry = r * s * .6;
+  if (!z) { ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(sx + rx * .3, sy + ry * .15, rx * 1.05, ry, 0, 0, 7); ctx.fill(); }
+  for (let i = 0; i < 5; i++) {
+    const f = i / 4;
+    ctx.fillStyle = shade(col, .55 + .55 * f); ctx.beginPath();
+    ctx.ellipse(sx - rx * .12 * f, sy - hgt * s * .9 * f, rx * Math.sqrt(1 - f * f * .9), ry * Math.sqrt(1 - f * f * .9), 0, 0, 7); ctx.fill();
+  }
+}
+const hash = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, HOR + 2);
+  g.addColorStop(0, '#2467ad'); g.addColorStop(.6, '#7fb2dc'); g.addColorStop(1, '#ecd9bd');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HOR + 2);
+  const sg = ctx.createRadialGradient(W * .72, 54, 2, W * .72, 54, 70);
+  sg.addColorStop(0, 'rgba(255,250,220,1)'); sg.addColorStop(.12, 'rgba(255,240,190,.9)'); sg.addColorStop(1, 'rgba(255,230,170,0)');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, HOR);
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(((i * 163 + beaconClock() * 3) % (W + 160)) - 80, 20 + (i * 23) % 46, 52, 8, 0, 0, 7); ctx.fill(); }
+  const par = (camX - W / 2) * -.12;
+  for (const [col, base, amp, k, off] of [['#9a7088', 22, 12, .018, 1], ['#8a4a3a', 9, 7, .043, 4]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, HOR + 1);
+    for (let x = 0; x <= W; x += 8) { const xx = x - par * (off / 4 + .3); ctx.lineTo(x, HOR - base - amp * (Math.sin(xx * k + off) * .6 + Math.sin(xx * k * 2.7 + off * 2) * .4 + .5)); }
+    ctx.lineTo(W, HOR + 1); ctx.fill();
+  }
+}
+function drawGround() {
+  const g = ctx.createLinearGradient(0, HOR, 0, H);
+  g.addColorStop(0, '#d29a74'); g.addColorStop(.18, '#b4552f'); g.addColorStop(1, '#8c3820');
+  ctx.fillStyle = g; ctx.fillRect(0, HOR, W, H - HOR);
+  for (let y = -240 + (scroll % 160); y < H + 40; y += 160) {
+    if (y < -120) continue;
+    poly([[0, sY(y)], [W, sY(y)], [W, sY(y + 80)], [0, sY(y + 80)]], 'rgba(0,0,0,.06)');
+  }
+}
+// a strip of road-relative x range [xa, xb] between world y's, following the road's bends
+function strip(xa, xb, col, ya = -120, yb = H + 80) {
+  const n = Math.max(1, Math.ceil((yb - ya) / 24)), L = [], Rt = [];
+  for (let k = 0; k <= n; k++) { const y = ya + (yb - ya) * k / n, o = roadX(y); L.push(P(xa + o, y)); Rt.push(P(xb + o, y)); }
+  poly(L.concat(Rt.reverse()), col);
+}
+function drawRoad3D() {
+  const Y0 = -120, Y1 = H + 80;
+  strip(ROAD_L - 16, ROAD_R + 16, '#c27a4c');
+  strip(ROAD_L - 16, ROAD_L, 'rgba(0,0,0,.12)'); strip(ROAD_R, ROAD_R + 16, 'rgba(0,0,0,.12)');
+  strip(ROAD_L, ROAD_R, '#45433f');
+  for (const lx of LANE_X) { strip(lx - 20, lx - 8, 'rgba(0,0,0,.14)'); strip(lx + 8, lx + 20, 'rgba(0,0,0,.14)'); }
+  strip(ROAD_L + 2, ROAD_L + 6, '#eee8d5'); strip(ROAD_R - 6, ROAD_R - 2, '#eee8d5');
+  for (let y = -140 + (scroll % 70); y < Y1; y += 70) if (y + 34 > Y0) strip(W / 2 - 2, W / 2 + 2, '#eee8d5', Math.max(Y0, y), y + 34);
+}
+function drawScenery(list, limitY) {
+  const slot = scroll % 160, base = Math.floor(scroll / 160);
+  for (let j = 0; j < 8; j++) {
+    const y = -160 + slot + j * 160, g = base - j;
+    if (y < -115 || y < limitY) continue;
+    list.push({ y, fn: () => {
+      for (const [xs, xe, side] of [[ROAD_L - 30, 12, 0], [ROAD_R + 30, W - 12, 1]]) {
+        const d = hash(g * 2 + side), lo = Math.min(xs, xe), hi = Math.max(xs, xe), yy = y + hash(g * 3 + side) * 120;
+        const sx = lo + hash(g * 7 + side * 3) * (hi - lo) + roadX(yy), r = hash(g * 11 + side);
+        if (r < .3) { dome(sx, yy, 14 + d * 12, 10 + d * 12, '#9a6a55'); dome(sx + 12, yy + 6, 8, 6, '#7d513f'); }
+        else if (r < .55) { dome(sx, yy, 16 + d * 8, 12, '#6f7d3c'); dome(sx - 10, yy + 5, 9, 7, '#8a9650'); }
+        else if (r < .75) { box(sx, yy, 7, 7, 0, 46, '#d8cdb6'); dome(sx, yy, 24, 20, '#667a38', 40); dome(sx + 12, yy + 3, 16, 14, '#7c9040', 48); }
+        else if (r < .9) { dome(sx, yy, 10, 28, '#b5663a'); dome(sx, yy, 5, 12, '#c9784a', 24); }
+        else dome(sx, yy, 12, 6, '#b39a58');
+      }
+    } });
+    const py = y + 40;
+    if (py < limitY) continue;
+    list.push({ y: py, fn: () => {
+      for (const px of [ROAD_L - 22, ROAD_R + 22]) {
+        const x = px + roadX(py);
+        box(x, py, 3, 3, 0, 18, '#eee8d5'); rearRect(py + 1.5, x - 1.5, x + 1.5, 10, 15, '#d33');
+      }
+    } });
+  }
+}
+
+// ROM pad: bare ground and ore stockpiles beyond the entrance gantry
+function romWorld(ry, list) {
+  const top = Math.min(ry, H + 80);
+  topRect(-1500, -120, W + 1500, top, 0, '#7a4428');
+  strip(ROAD_L - 13, ROAD_R + 13, '#8a5230', -120, top);
+  if (ry < H + 80) topRect(ROAD_L - 13, ry - 3, ROAD_R + 13, ry + 3, 0, '#e8b100');
+  for (let k = 0; k < 3; k++) for (const [px, off, col] of [[60, 90, '#7a4a38'], [W - 60, 70, '#8a5a44']]) {
+    const py = ry - off - k * 150;
+    if (py > -115 && py < H + 100) list.push({ y: py, fn: () => { dome(px, py, 56, 42, col); dome(px + 14, py + 8, 28, 22, '#a8705a'); } });
+  }
+  if (ry > -115 && ry < H + 100) list.push({ y: ry, fn: () => {
+    for (const px of [ROAD_L - 18, ROAD_R + 18]) box(px, ry, 8, 8, 0, 60, '#555');
+    box((ROAD_L + ROAD_R) / 2, ry, ROAD_R - ROAD_L + 44, 8, 52, 74, '#222');
+    const [sx, sy] = P(W / 2, ry + 4.1, 62), s = sc(ry);
+    text('ROM', sx, sy + 5 * s, 15 * s, '#ffd23a');
+  } });
+}
+
+// level crossing: ballast, sleepers and rails lie flat on the ground
+function track3D() {
+  const cy = crossY(); if (cy < -60 || cy > H + 60) return;
+  topRect(-1500, cy - 20, W + 1500, cy + 20, 0, '#6b6258');
+  topRect(ROAD_L - 13, cy - 20, ROAD_R + 13, cy + 20, 0, '#4a4540');
+  for (let x = 4; x < W; x += 14) topRect(x, cy - 16, x + 7, cy + 16, .5, x > ROAD_L - 13 && x < ROAD_R + 13 ? '#6a4a30' : '#3a2a1f');
+  for (const ry of [cy - 9, cy + 6]) { topRect(-1500, ry, W + 1500, ry + 3, 1.5, '#b8bcc0'); topRect(-1500, ry + 3, W + 1500, ry + 4, 1.5, '#7a7e82'); }
+}
+function gates3D() {
+  const cy = crossY(); if (cy < -60 || cy > H + 60) return;
+  const on = train.ph === 1 && !trainClear(), blink = Math.sin(beaconClock() * 9) > 0, armL = (ROAD_R - ROAD_L) / 2 - 3, py = cy + 30;
+  for (const side of [-1, 1]) {
+    const px = side < 0 ? ROAD_L - 9 : ROAD_R + 9;
+    box(px, py, 9, 9, 0, 24, '#333');
+    if (train.g > 0) {
+      const len = armL * train.g;
+      box(px - side * len / 2, py, len, 4, 16, 20, '#f2f2f2');
+      for (let d = 0; d < len; d += 24) { const a = px - side * d, b = px - side * Math.min(len, d + 12); topRect(Math.min(a, b), py - 2, Math.max(a, b), py + 2, 20, '#d22'); }
+    }
+    for (const [k, ly] of [[0, py - 9], [1, py + 9]]) {
+      const lit = on && (blink ? k === 0 : k === 1), [sx, sy] = P(px, ly, 28);
+      if (lit) glow(px, ly, 28, 22, 'rgba(255,40,40,.8)');
+      ctx.fillStyle = lit ? '#ff3030' : '#5a1010'; ctx.beginPath(); ctx.arc(sx, sy, 3.5 * sc(ly), 0, 7); ctx.fill();
+    }
+  }
+}
+function train3D() {
+  if (train.ph !== 1) return;
+  const cy = crossY(), hx = trainHead();
+  if (cy < -40 || cy > H + 40) return;
+  box(hx - 33, cy, 66, 30, 4, 32, '#e8a100');
+  box(hx - 12, cy, 16, 22, 32, 44, '#2a2a2a'); rearRect(cy + 11, hx - 19, hx - 5, 34, 42, '#9cf');
+  box(hx - 45, cy, 30, 16, 32, 38, '#c88400');
+  box(hx - 68, cy, 5, 20, 8, 16, '#555');
+  for (let x = hx - 70; x > hx - TRAIN_L; x -= 58) {
+    if (x < -60 || x - 54 > W) continue;
+    box(x - 27, cy, 54, 28, 3, 24, '#5a3022');
+    topRect(x - 50, cy - 11, x - 4, cy + 11, 23, '#a8705a');
+    for (let k = 0; k < 5; k++) topRect(x - 46 + k * 9, cy - 7 + (k % 2) * 4, x - 41 + k * 9, cy - 2 + (k % 2) * 4, 24, '#7a4a38');
+  }
+}
+
+function car3(t) {
+  const { x, y, w, h } = t, near = y + h / 2;
+  shadow(x, y, w, h);
+  for (const sx of [-1, 1]) for (const oy of [-1, 1]) box(x + sx * (w / 2 - 1), y + oy * (h / 2 - 12), 5, 12, 0, 10, '#141414');
+  if (!t.truck) {
+    box(x, y, w, h, 5, 16, t.col);
+    box(x, y + 3, w - 6, h * .48, 16, 28, t.col);
+    const cn = y + 3 + h * .24;
+    rearRect(cn, x - w / 2 + 5, x + w / 2 - 5, 18, 26, t.oncoming ? '#8fb8d8' : '#5d7b94');
+    if (t.oncoming) {
+      for (const sx of [-1, 1]) rearRect(near, x + sx * 11 - 3, x + sx * 11 + 3, 8, 12, '#fff4c0');
+      glow(x - 11, near, 10, 20, 'rgba(255,245,200,.7)'); glow(x + 11, near, 10, 20, 'rgba(255,245,200,.7)');
+    } else {
+      for (const sx of [-1, 1]) rearRect(near, x + sx * 11 - 3, x + sx * 11 + 3, 8, 12, '#ff3030');
+      glow(x - 11, near, 10, 14, 'rgba(255,40,40,.5)'); glow(x + 11, near, 10, 14, 'rgba(255,40,40,.5)');
+    }
+  } else {
+    const cabL = 30, cargoL = h - cabL, cabY = t.oncoming ? y + h / 2 - cabL / 2 : y - h / 2 + cabL / 2, cargoY = t.oncoming ? y - h / 2 + cargoL / 2 : y + h / 2 - cargoL / 2;
+    const cab = () => {
+      box(x, cabY, w, cabL, 6, 32, t.col);
+      if (t.oncoming) {
+        rearRect(near, x - w / 2 + 3, x + w / 2 - 3, 20, 30, '#8fb8d8');
+        for (const sx of [-1, 1]) rearRect(near, x + sx * 12 - 3, x + sx * 12 + 3, 8, 13, '#fff4c0');
+        glow(x - 12, near, 10, 22, 'rgba(255,245,200,.7)'); glow(x + 12, near, 10, 22, 'rgba(255,245,200,.7)');
+      }
+    };
+    const cargo = () => {
+      box(x, cargoY, w - 2, cargoL, 8, 44, '#e0ddd5');
+      for (let k = 1; k < 4; k++) rearRect(cargoY + cargoL / 2, x - w / 2 + 1, x + w / 2 - 1, 8 + k * 9, 9 + k * 9, 'rgba(0,0,0,.12)');
+      if (!t.oncoming) for (const sx of [-1, 1]) { rearRect(near, x + sx * 12 - 3, x + sx * 12 + 3, 10, 14, '#ff3030'); glow(x + sx * 12, near, 12, 14, 'rgba(255,40,40,.5)'); }
+    };
+    if (t.oncoming) { cargo(); cab(); } else { cab(); cargo(); }
+  }
+}
+function drawBar(ax, ay, bx, by) {
+  const a = P(ax, ay, 8), b = P(bx, by, 8);
+  ctx.strokeStyle = '#1c1a19'; ctx.lineWidth = 3 * sc(ay); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+}
+// cab centred on (x, y): one steer axle at the front and three drive axles behind it, under the first trailer's front
+function cab3(x, y) {
+  shadow(x, y, 36, 50);
+  for (const sx of [-1, 1]) box(x + sx * 17, y - 14, 6, 6, 0, 13, '#131313');
+  for (const sx of [-1, 1]) for (const oy of [34, 41, 48]) box(x + sx * 17, y + oy, 6, 6, 0, 13, '#131313');
+  box(x, y + 16, 26, 68, 4, 12, '#262626');
+  box(x, y - 4, 31, 34, 12, 38, '#f062a4');
+  rearRect(y + 13, x - 11, x + 11, 24, 35, '#2a3b4d');
+  rearRect(y + 13, x - 11, x + 11, 30, 35, 'rgba(255,255,255,.22)');
+  box(x, y - 4, 21, 6, 38, 41, '#2e2e2e');
+  for (const sx of [-1, 1]) { box(x + sx * 18, y - 14, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
+  box(x + 16, y + 10, 5, 5, 12, 54, '#9a9a9a');
+  const t = beaconClock();
+  for (let k = 0; k < 3; k++) {
+    const age = (t * 1.3 + k / 3) % 1;
+    flatEllipse(x + 17 + age * 3, y + 10, 3 + age * 8, 3 + age * 8, `rgba(150,150,150,${.4 * (1 - age)})`, 56 + age * 30);
+  }
+  for (const [bx, ph] of [[x - 8, 0], [x + 8, 1]]) {
+    const on = Math.sin(t * 12 + ph * Math.PI) > 0, [sx, sy] = P(bx, y - 4, 43);
+    if (on) glow(bx, y - 4, 43, 30, 'rgba(255,150,0,.8)');
+    ctx.fillStyle = on ? '#ffb030' : '#7a4200'; ctx.beginPath(); ctx.arc(sx, sy, 3.5 * sc(y), 0, 7); ctx.fill();
+  }
+}
+// trailer 1: 3 rear axles (its front is carried by the cab's drive axles); the others get 4 rear + 3 front
+const trailerAxles = (i, l) => [4, 9.5, 15, 20.5].slice(0, i ? 4 : 3).map(k => l / 2 - k).concat(i ? [-l / 2 + 4, -l / 2 + 9.5, -l / 2 + 15] : []);
+function trailer3(x, y, i, f, lid) {
+  const w = 34, l = 54, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
+  shadow(x, y, w + 4, l);
+  for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 5, 4.5, 0, 11, '#131313');
+  box(x, y + 2, w - 8, l - 10, 4, 10, '#222');
+  if (cl > x1) poly([P(x1, y0, 10), P(x1, y1, 10), P(x1, y1, 27), P(x1, y0, 27)], shade(col, .6));
+  else if (cl < x0) poly([P(x0, y0, 10), P(x0, y1, 10), P(x0, y1, 27), P(x0, y0, 27)], shade(col, .85));
+  topRect(x0, y0, x1, y1, 27, '#4a1a35');
+  rearRect(y0, x0, x1, 12, 27, shade('#b73770', .85));
+  const innerX = cl > x1 ? x0 : x1;
+  poly([P(innerX, y0, 12), P(innerX, y1, 12), P(innerX, y1, 27), P(innerX, y0, 27)], shade('#b73770', cl > x1 ? .8 : .55));
+  if (f > 0) {
+    const top = 12 + f * 12;
+    box(x, y + 1, w - 6, l - 6, 12, top, '#8a5a44');
+    topRect(x - w / 2 + 6, y - l / 2 + 5, x + w / 2 - 6, y + l / 2 - 5, top, '#a8705a');
+    for (let k = 0; k < 6; k++) topRect(x - 12 + hash(i * 9 + k) * 20, y - 20 + hash(i * 5 + k * 3) * 38, x - 9 + hash(i * 9 + k) * 20, y - 17 + hash(i * 5 + k * 3) * 38, top, '#6e4636');
+  }
+  rearRect(y1, x0, x1, 10, 27, shade(col, .72));
+  rearRect(y1, x0, x1, 24, 27, '#ee6aa6');
+  rearRect(y1, x0 + 5, x1 - 5, 15, 17, '#e8b100');
+  for (const sx of [-1, 1]) rearRect(y1, x + sx * 12 - 3, x + sx * 12 + 3, 12, 15, '#ff3030');
+  topRect(x0, y0, x0 + 2, y1, 27, '#f06fb0'); topRect(x1 - 2, y0, x1, y1, 27, '#f06fb0');
+  if (lid < 1) {
+    const lw = w * (1 - lid);
+    box(x0 + lw / 2, y, lw, l, 27, 30, '#c43879');
+    for (let k = 1; k < 5; k++) topRect(x0, y0 + k * l / 5, x0 + lw, y0 + k * l / 5 + 1.5, 30, 'rgba(0,0,0,.25)');
+  }
+}
+function animal3(a) {
+  const d = a.dir, { x, y } = a, s = Math.sin(a.ph);
+  if (a.type === 'cow') {
+    const dark = a.col === '#1e1e1e';
+    shadow(x, y, 42, 20);
+    for (const [ox, oy] of [[-12, -5], [-4, 5], [4, -5], [12, 5]]) box(x + ox, y + oy + s * 3 * (ox > 0 ? 1 : -1), 4, 4, 0, 10, '#151515');
+    box(x - d * 1, y, 32, 20, 9, 26, a.col);
+    topRect(x - 12, y - 8, x - 2, y + 8, 26, dark ? '#3a3a3a' : '#8a5230');
+    box(x + d * 19, y, 12, 12, 17, 29, a.col);
+    box(x + d * 25, y, 3, 8, 18, 22, dark ? '#666' : '#b08052');
+    for (const sy of [-5, 5]) box(x + d * 17, y + sy, 2, 3, 29, 33, '#ddd');
+    box(x - d * 18, y, 3, 3, 14, 26, '#111');
+  } else {
+    const hop = Math.abs(Math.sin(a.ph * .6)) * 10;
+    shadow(x, y, 20, 16);
+    box(x - d * 12, y, 15, 5, 4 + hop, 10 + hop, '#b97a4a');
+    box(x - d * 3, y, 8, 12, hop + 3, hop + 12, '#b97a4a');
+    box(x, y, 12, 12, hop + 8, hop + 30, '#c8895a');
+    box(x + d * 4, y, 9, 9, hop + 30, hop + 38, '#c8895a');
+    box(x + d * 8, y, 4, 6, hop + 31, hop + 35, '#d9a07a');
+    for (const sx of [-2, 2]) box(x + d * 4 + sx * 1.5, y, 2, 3, hop + 38, hop + 47, '#c8895a');
+    box(x + d * 4, y + 5, 6, 3, hop + 18, hop + 21, '#b97a4a');
+  }
+}
+function drawAnimal3(a) {
+  if (!a.hit) return animal3(a);
+  ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, 2.2 - a.t * 1.2));
+  withFrame(a.x, a.y, a.rot, () => animal3(a));
+  ctx.restore();
+}
+// the rig: cab heading `cabAngle`, trailers on the articulated chain; `menu` shows it parked and loaded
+function drawWorld3D(playerX, menu) {
+  camX = W / 2 + (playerX - W / 2) * .55;
+  drawSky(); drawGround(); drawRoad3D();
+  const list = [], ry = !menu && ret ? scroll + qy - (R - 120) : null;
+  if (ry !== null && ry > -130) romWorld(ry, list);
+  if (!menu) track3D();
+  drawScenery(list, ry === null ? -Infinity : ry);
+  if (!menu) {
+    for (const t of traffic) if (t.y > -115) list.push({ y: t.y, fn: () => car3(t) });
+    for (const a of animals) if (a.y > -115) list.push({ y: a.y, fn: () => drawAnimal3(a) });
+    const cy = crossY();
+    if (cy > -60 && cy < H + 60) { list.push({ y: cy, fn: train3D }); list.push({ y: cy + 30, fn: gates3D }); }
+  }
+  const J = menu ? straightChain(W / 2, 360, 1) : jts, cx = menu ? W / 2 : qx, cyy = menu ? 360 : qy, ang = menu ? 0 : cabAngle;
+  list.push({ y: cyy, fn: () => withFrame(cx, cyy, ang, () => cab3(cx, cyy)) });
+  for (let i = 0; i < NT; i++) {
+    const p = chainPose(J, i), q = i ? chainPose(J, i - 1) : { x: J[0].x, y: J[0].y };
+    list.push({ y: p.y - 1, fn: () => {
+      drawBar(q.x, q.y, p.x, p.y);
+      withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, menu ? .8 : fills[i] / TRAILER_CAP, menu ? 1 : tr[i].lid));
+    } });
+  }
+  list.sort((a, b) => a.y - b.y);
+  for (const o of list) o.fn();
+  const fog = ctx.createLinearGradient(0, HOR - 14, 0, HOR + 150);
+  fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
+  ctx.fillStyle = fog; ctx.fillRect(0, HOR - 14, W, 165);
+  if (!menu) for (const p of particles) { const [sx, sy] = P(p.x, p.y, 8), z = 4 * sc(p.y); ctx.fillStyle = p.col; ctx.fillRect(sx, sy, z, z); }
+  const vg = ctx.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
 function curve(x, y0, y1, lw, col) {
   ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
   for (let y = y0; ; y = Math.min(y + 8, y1)) { const px = x + roadX(y); if (y === y0) ctx.moveTo(px, y); else ctx.lineTo(px, y); if (y >= y1) break; }
@@ -869,8 +1209,9 @@ function wheel(x, y, w, h, st = -1) {
   rect(x - w / 2, y - h / 2, w, h, st === 0 ? '#3d3835' : '#111');
   if (st === 0) rect(x - w / 2, y - .5, w, 1, '#777');
 }
-function drawCab(x, y, st = -1) {
-  wheel(x - 16.5, y - 7, 5, 14, st); wheel(x + 16.5, y - 7, 5, 14, st);
+function drawCab(x, y, st = -1, drive = true) {
+  wheel(x - 16.5, y - 7, 5, 14, st); wheel(x + 16.5, y - 7, 5, 14, st);   // steer axle
+  if (drive) for (const wy of [34, 41, 48]) { wheel(x - 16.5, y + wy, 5, 5, st); wheel(x + 16.5, y + wy, 5, 5, st); }   // 3 drive axles under the first trailer's front
   rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
   drawBeacon(x - 8, y + 8, 0); drawBeacon(x + 8, y + 8, 1);
   const ex = x + 20, ey = y + 12, c = beaconClock();   // single exhaust stack, right side
@@ -891,7 +1232,7 @@ function drawRig(J, x, y, ang, sc, o) {
   ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); for (let i = 1; i <= NT; i++) ctx.lineTo(J[i].x, J[i].y); ctx.stroke();
   for (let i = NT - 1; i >= 0; i--) {
     const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
-    for (const sx of [-18.5, 18.5]) for (const wy of [8, 21]) wheel(sx, wy, 5, 11, st);
+    for (const sx of [-18.5, 18.5]) for (const wy of trailerAxles(i, 54)) wheel(sx, wy, 5, 5, st);
     if (o && o.fill !== undefined) drawTrailer(0, 0, 34, 56, o.fill, 0, 0); else drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid);
     ctx.restore();
   }
@@ -931,6 +1272,37 @@ function rockChunks(cx, cy, rx, ry, n, size, seed = 1) {
     ctx.fillStyle = '#ffffff22'; ctx.fillRect(x - r * .3, y - r * .4, r * .4, r * .25);
   }
 }
+// loading-yard trailer: slimmer open-top bin drawn with an oblique 3D lean, lid folded up on the hinge side
+function yardTrailer(cx, cy, i) {
+  const w = 52, l = TR_H - 24, dx = 9, dy = -17, f = fills[i] / TRAILER_CAP, col = '#d94a8c';
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - l / 2, y1 = cy + l / 2;
+  const q = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill(); };
+  const Q = (ax, ay, bx, by, k = 1) => [[ax + dx * k, ay + dy * k], [bx + dx * k, ay + dy * k], [bx + dx * k, by + dy * k], [ax + dx * k, by + dy * k]];
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x0 + 8, y0 + 8, w, l);
+  const axles = trailerAxles(i, l).map(a => cy + a - 3.5);   // trailer 1: 3 rear axles; its front three are the cab's drive axles
+  for (const wx of [x0 - 5, x1 - 1]) for (const wy of axles) { ctx.fillStyle = '#111'; ctx.fillRect(wx, wy, 6, 7); }
+  rect(x0 + 6, y0, w - 12, l, '#222');
+  q([[x0, y0], [x0, y1], [x0 + dx, y1 + dy], [x0 + dx, y0 + dy]], shade(col, .8));
+  q([[x0, y1], [x1, y1], [x1 + dx, y1 + dy], [x0 + dx, y1 + dy]], shade(col, .62));
+  rect(x0 + 4, y1 - 9, w - 8, 3, '#e8b100');
+  const T = Q(x0, y0, x1, y1), I = Q(x0, y0, x1, y1, .3);
+  ctx.save(); ctx.beginPath(); ctx.moveTo(T[0][0], T[0][1]); for (const p of T.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.clip();
+  q(I, '#3a1429');
+  q([T[0], T[1], I[1], I[0]], shade('#b73770', .75));
+  q([T[1], T[2], I[2], I[1]], shade('#b73770', .5));
+  if (f > 0) {
+    const a = Q(x0 + 5, y0 + 6, x1 - 5, y1 - 6, .3), b = Q(x0 + 8, y0 + 9, x1 - 8, y1 - 9, .3 + .6 * f);
+    q([a[0], a[3], b[3], b[0]], '#6e4636'); q([a[3], a[2], b[2], b[3]], '#7d513f');
+    q(b, '#a8705a');
+    rockChunks((b[0][0] + b[2][0]) / 2, (b[0][1] + b[2][1]) / 2, (w - 26) / 2, (l - 22) / 2, 10, 4.5, 3 + i);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#f06fb0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(T[3][0], T[3][1]); ctx.lineTo(T[0][0], T[0][1]); ctx.lineTo(T[1][0], T[1][1]); ctx.lineTo(T[2][0], T[2][1]); ctx.lineTo(T[3][0], T[3][1]); ctx.stroke();
+  q([[x1 + dx, y0 + dy], [x1 + dx, y1 + dy], [x1 + dx + 9, y1 + dy - 20], [x1 + dx + 9, y0 + dy - 20]], '#f06fb0');
+  for (let k = 1; k < 5; k++) { const yy = y0 + dy + k * l / 5; q([[x1 + dx, yy], [x1 + dx + 9, yy - 20], [x1 + dx + 9, yy - 18], [x1 + dx, yy + 2]], '#a83570'); }
+  text(`${i + 1}  ${Math.round(fills[i] * BUCKET)}/${TRAILER_CAP * BUCKET}t`, cx + 4, y1 - 10, 11, '#fff');
+}
+const lift = fn => { ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowOffsetX = 5; ctx.shadowOffsetY = 6; ctx.shadowBlur = 7; fn(); ctx.restore(); };
 function drawYard() {
   rect(0, 0, W, H, '#a74626');
   for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
@@ -941,12 +1313,11 @@ function drawYard() {
   ctx.fillStyle = '#9a6a55'; finger(PILE.x + 16, PILE.y + 14, PILE.w - 32, PILE.h - 40);
   rockChunks(pcx, pcy, PILE.w / 2 - 6, PILE.h / 2 - 8, 170, 8, 7);
   ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
-  drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38);
+  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38, -1, false));
   for (let i = 0; i < NT; i++) {
     const cy = TR_Y0 + i * TR_H + TR_H / 2;
-    rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 12, '#444');
-    drawTrailer(TR_X + TR_W / 2, cy, TR_W, TR_H - 14, fills[i] / TRAILER_CAP, i + 1);
-    text(`${Math.round(fills[i] * BUCKET)}/${TRAILER_CAP * BUCKET}t`, TR_X + TR_W / 2, cy + 6, 13, '#fff');
+    rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 30, '#444');
+    lift(() => yardTrailer(TR_X + TR_W / 2, cy, i));
     if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
   }
   for (const p of spills) {
@@ -1084,8 +1455,7 @@ function render() {
   if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
   else if (state === 'menu') {
-    drawRoad();
-    drawCab(W / 2, 360); for (let i = 0; i < NT; i++) drawTrailer(W / 2, 360 + OFF(i), 34, 56, .8, 0, 0);
+    drawWorld3D(W / 2, true);
     rect(40, 70, W - 80, 180, '#000b'); rect(40, 316, W - 80, 190, '#000b');
     drawBoard(344, 5, 0);
     for (let i = 0; i < DIFFS.length; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
@@ -1097,11 +1467,7 @@ function render() {
   } else {
     if (state === 'skyway') drawSkyway();
     else {
-      drawRoad(); drawRom(); drawTrack();
-      for (const a of animals) drawAnimal(a);
-      for (const t of traffic) drawCar(t);
-      drawTruck(); drawTrain();
-      for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
+      drawWorld3D(qx);
     }
     rect(0, 0, W, 64, '#000a');
     text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
