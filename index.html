@@ -34,8 +34,8 @@ let warned = 0, hurtByStock = false, wk = null;
 let ret = false;   // false: loaded run out to the Skyway; true: empty return run back to the ROM
 const R = TRIP * 4, roadAt = v => roadOff(ret ? R - v : v);   // v is scroll-space; the return run travels the route backwards
 const grade = () => ret ? (scroll < CLIMB ? 2 : scroll > R - HILL ? -1 : 0) : (scroll < HILL ? 1 : scroll > R - CLIMB ? -2 : 0);   // +down, -up
-// lay-bys: flat pull-in pads either side of the highway, BAY_L long, every BAY_GAP of road (not near the level crossing)
-const BAY_L = 170, BAY_GAP = 1100, LAYBY_W = 42;
+// lay-bys: big half-oval pull-ins either side of the highway, every BAY_GAP of road (not near the level crossing)
+const BAY_L = 640, BAY_GAP = 1100, BAY_D = 110;   // half-oval pull-in: BAY_L along the road, BAY_D deep
 const bayStarts = [];
 for (let b = HILL + 500; b < R - HILL - 300; b += BAY_GAP) bayStarts.push(b);
 const bayAtS = (v, pad = 0) => bayStarts.some(b => v > b - pad && v < b + BAY_L + pad && Math.abs(b + BAY_L / 2 - crossAt()) > 420);
@@ -103,9 +103,13 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => keys[e.code] = false);
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
-  if ((state === 'drive' || state === 'load' || state === 'workshop') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' && bayReady) {
+    if (inR(p, FIT_BTN)) { startFitter(); return; }
+    if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
+  }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
-  if (state === 'drive' || state === 'workshop') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -132,6 +136,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
 let ldr, carrying, spills = [];
+let bayReady = 0, bf = null;   // bayReady: -1/1 = parked in a lay-by on that side; bf: fitter visit in progress
 let best = +localStorage.oreBest || 0;
 let playerName = localStorage.oreName || '', runId = 0;
 nameIn.value = playerName;
@@ -169,6 +174,7 @@ function drawBoard(y0, n, hi) {
 const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 
 function reset() {
+  bayReady = 0; bf = null;
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
@@ -176,6 +182,11 @@ function reset() {
 }
 
 function onKey(code) {
+  if (state === 'drive' && bayReady) {
+    if (code === 'KeyF') { startFitter(); return; }
+    if (code === 'KeyC') { bayReady = 0; toUte(); return; }
+  }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Scoop ore from the pile, dump it in the trailers'); return; }
@@ -595,8 +606,16 @@ function update(dt) {
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
   if (state === 'workshop') return updateWorkshop(dt);
+  if (state === 'ute') return updateUte(dt);
   if (state !== 'drive') return;
   time += dt;
+  if (bf) {
+    const tw = BF.arrive + BF.out + BF.walk, was = bf.t;
+    bf.t += dt;
+    if (bf.t > tw && bf.t < tw + BF.work) hp = Math.min(100, bf.hp0 + (100 - bf.hp0) * (bf.t - tw) / BF.work);
+    if (was < tw + BF.work && bf.t >= tw + BF.work) { hp = 100; hurtByStock = false; flash('Repaired!'); }
+    if (bf.t >= BF_END) bf = null;
+  }
   const lf = 1 - (ore() / MAX_ORE) * .45;
   const gr = grade(), down = gr > 0;
   const maxSpeed = down ? 400 : Math.min(180, 220 * lf + 50);   // 180 px/s shows as 90 km/h; no limit rolling downhill
@@ -613,11 +632,13 @@ function update(dt) {
     if (t.oncoming || t.hit || t.y > qy || Math.abs(t.x - qx) > 50) continue;
     if (qy - 22 - (t.y + t.h / 2) < 12) speed = Math.min(speed, t.v);
   }
-  const steer = steerAxis();
+  if (bf) speed = 0;
+  const steer = bf ? 0 : steerAxis();
   const targetSteeringSpeed = steer * (100 + 70 * lf) * Math.min(1, speed / 40);
   steeringSpeed += (targetSteeringSpeed - steeringSpeed) * (1 - Math.exp(-8 * dt));
   qx += steeringSpeed * dt;
   qx = Math.max(30, Math.min(W - 30, qx));
+  bayReady = bf ? 0 : rigInBay();
   const ro0 = roadAt(scroll);
   if ((qx < ROAD_L + ro0 - 10 || qx > ROAD_R + ro0 + 10) && speed > 90 && !bayAtS(scroll)) speed -= 200 * dt;
   if (!ret && warned < 1 && scroll > HILL) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
@@ -698,7 +719,7 @@ function drawStick() {
 function drawBtns(set) { for (const k in set) drawBtn(set[k], set[k][4], keys[k]); }
 
 // road is drawn as smooth paths (not pixel strips) so the curves don't shimmer while scrolling
-const roadX = y => roadAt(scroll + qy - y);
+const roadX = y => state === 'ute' || state === 'uteend' ? uOff(us + UTE_Y - y) : roadAt(scroll + qy - y);
 
 // ---------- pseudo-3D driving view ----------
 // World coords stay 2D (x across, y down the screen); a perspective camera projects them with a height axis z.
@@ -800,19 +821,18 @@ function drawRoad3D() {
 function drawBays(list) {
   for (const b of bayStarts) {
     if (!bayAtS(b + 1)) continue;
-    const y1 = scroll + qy - b, y0 = y1 - BAY_L;
-    if (y1 < -120 || y0 > H + 80) continue;
-    const a = Math.max(y0, -120), z = Math.min(y1, H + 80);
-    for (const [xa, xb, edge] of [[ROAD_L - 13 - LAYBY_W, ROAD_L - 13, ROAD_L - 13 - LAYBY_W], [ROAD_R + 13, ROAD_R + 13 + LAYBY_W, ROAD_R + 13 + LAYBY_W - 2]]) {
-      strip(xa, xb, '#5e5a54', a, z); strip(edge, edge + 2, '#eee8d5', a, z);
-      for (const yy of [y0, y1 - 2]) if (yy > -120 && yy < H + 80) strip(xa, xb, '#eee8d5', yy, yy + 2);
+    const yc = scroll + qy - b - BAY_L / 2;
+    if (yc + BAY_L / 2 < -120 || yc - BAY_L / 2 > H + 80) continue;
+    for (const side of [-1, 1]) {
+      const edge = side < 0 ? ROAD_L - 13 : ROAD_R + 13;
+      const oval = (rd, rl) => { const o = []; for (let i = 0; i <= 32; i++) { const a = -Math.PI / 2 + Math.PI * i / 32; o.push(P(edge + side * rd * Math.cos(a), Math.max(-118, Math.min(H + 80, yc + rl * Math.sin(a))))); } return o; };
+      poly(oval(BAY_D, BAY_L / 2), '#eee8d5'); poly(oval(BAY_D - 3, BAY_L / 2 - 3), '#5e5a54');
     }
-    const sy = y0 + 18;
-    list.push({ y: sy, fn: () => {
-      for (const sx of [ROAD_L - 13 - LAYBY_W / 2, ROAD_R + 13 + LAYBY_W / 2]) {
-        const x = sx + roadX(sy);
-        box(x, sy, 2, 2, 0, 30, '#ccc'); box(x, sy, 14, 2, 30, 44, '#1d5fb4');
-        const [px, py] = P(x, sy + 1.2, 37); text('P', px, py + 4 * sc(sy), 12 * sc(sy), '#fff');
+    const sy = yc + BAY_L / 2 - 24;
+    if (sy > -115 && sy < H + 80) list.push({ y: sy, fn: () => {
+      for (const sx of [ROAD_L - 22, ROAD_R + 22]) {
+        box(sx, sy, 2, 2, 0, 30, '#ccc'); box(sx, sy, 14, 2, 30, 44, '#1d5fb4');
+        const [px, py] = P(sx, sy + 1.2, 37); text('P', px, py + 4 * sc(sy), 12 * sc(sy), '#fff');
       }
     } });
   }
@@ -1026,6 +1046,14 @@ function drawAnimal3(a) {
   ctx.restore();
 }
 // the rig: cab heading `cabAngle`, trailers on the articulated chain; `menu` shows it parked and loaded
+function atmosphere() {
+  const fog = ctx.createLinearGradient(0, HOR - 14, 0, HOR + 150);
+  fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
+  ctx.fillStyle = fog; ctx.fillRect(0, HOR - 14, W, 165);
+  const vg = ctx.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
 function drawWorld3D(playerX, menu) {
   camX = W / 2 + (playerX - W / 2) * .55;
   drawSky(); drawGround(); drawRoad3D();
@@ -1049,15 +1077,197 @@ function drawWorld3D(playerX, menu) {
       withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, menu ? .8 : fills[i] / TRAILER_CAP, menu ? 1 : tr[i].lid));
     } });
   }
+  if (bf && !menu) { const fp = fitPose(); if (fp.ute) list.push({ y: fp.ute.y, fn: () => ute3(fp.ute.x, fp.ute.y, '#f4f4f4', -1) }); if (fp.man) list.push({ y: fp.man.y, fn: () => person3(fp.man) }); }
   list.sort((a, b) => a.y - b.y);
   for (const o of list) o.fn();
-  const fog = ctx.createLinearGradient(0, HOR - 14, 0, HOR + 150);
-  fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
-  ctx.fillStyle = fog; ctx.fillRect(0, HOR - 14, W, 165);
   if (!menu) for (const p of particles) { const [sx, sy] = P(p.x, p.y, 8), z = 4 * sc(p.y); ctx.fillStyle = p.col; ctx.fillRect(sx, sy, z, z); }
-  const vg = ctx.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
-  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  atmosphere();
+}
+// ---------- lay-by services: fitter visit ----------
+const FIT_BTN = [40, 300, 190, 56, 'FITTER (F)'], CHG_BTN = [250, 300, 190, 56, 'CHANGE OVER (C)'];
+const BF = { arrive: 2.2, out: .6, walk: 1, work: 3.8, back: 1, inn: .5, leave: 1.3 };
+const BF_END = Object.values(BF).reduce((a, b) => a + b, 0);
+const ease = t => t * t * (3 - 2 * t);
+// returns -1 / 1 for the side of the road when the whole rig is stopped inside a lay-by oval, else 0
+function rigInBay() {
+  if (speed > 4 || !onHwy()) return 0;
+  const left = qx < W / 2, d = left ? ROAD_L - 13 - qx : qx - ROAD_R - 13;
+  if (d < 24 || d > 52) return 0;
+  for (const b of bayStarts) {
+    if (!bayAtS(b + 1)) continue;
+    const half = BAY_L / 2 * Math.sqrt(1 - ((d + 22) / BAY_D) ** 2), mid = b + BAY_L / 2;
+    if (scroll + 25 <= mid + half && scroll - 310 >= mid - half) return left ? -1 : 1;
+  }
+  return 0;
+}
+function startFitter() { bf = { t: 0, hp0: hp, side: bayReady }; bayReady = 0; flash('Fitter on the way...'); }
+// where the white ute and the fitter are at time bf.t
+function fitPose() {
+  const { side, t } = bf, xu = side < 0 ? ROAD_L + 14 : ROAD_R - 14, yPark = qy + 150, xw = qx - side * 26, dir = Math.sign(xw - xu), door = xu + dir * 14;
+  let T = BF.arrive;
+  if (t < T) return { ute: { x: xu, y: H + 90 + (yPark - H - 90) * ease(t / BF.arrive) } };
+  const ute = { x: xu, y: yPark };
+  T += BF.out; if (t < T) return { ute, man: { x: door, y: yPark, dir } };
+  let t0 = T; T += BF.walk; if (t < T) return { ute, man: { x: door + (xw - door) * (t - t0) / BF.walk, y: yPark, dir, walk: t * 9 } };
+  T += BF.work; if (t < T) return { ute, man: { x: xw, y: yPark, dir, work: t } };
+  t0 = T; T += BF.back; if (t < T) return { ute, man: { x: xw + (door - xw) * (t - t0) / BF.back, y: yPark, dir: -dir, walk: t * 9 } };
+  T += BF.inn; if (t < T) return { ute };
+  return { ute: { x: xu, y: yPark - (yPark + 140) * ease(Math.min(1, (t - T) / BF.leave)) } };
+}
+function person3(m) {
+  const { x, y } = m, st = m.walk ? Math.sin(m.walk) * 2 : 0, lean = m.work ? 5 : 0, dz = m.work ? -3 : 0;
+  shadow(x, y, 8, 6);
+  box(x - 1.5, y + st, 3, 3, 0, 9, '#e6e6e6'); box(x + 1.5, y - st, 3, 3, 0, 9, '#e6e6e6');
+  box(x + m.dir * lean * .4, y, 8, 5, 9 + dz, 20 + dz, '#f4f4f4');
+  box(x + m.dir * lean, y, 5, 5, 20 + dz, 25 + dz, '#d9a07a'); box(x + m.dir * lean, y, 6, 6, 25 + dz, 28 + dz, '#fff');
+  if (m.work) { box(x + m.dir * 9, y, 7, 2, 11, 13, '#777'); if (Math.sin(m.work * 40) > 0) glow(x + m.dir * 14, y, 11, 14, 'rgba(255,230,140,.9)'); }
+}
+// dual-cab ute (also used for the camp vehicles): every one has an orange flashing light and a flag. face -1: nose up the screen
+function ute3(x, y, col, face) {
+  const w = 22, t = beaconClock();
+  shadow(x, y, w + 4, 50);
+  for (const sx of [-1, 1]) for (const oy of [-16, 16]) box(x + sx * (w / 2), y + oy, 4, 9, 0, 9, '#141414');
+  box(x, y, w - 4, 50, 4, 9, '#2a2a2a');
+  [[y + face * 15, () => box(x, y + face * 15, w, 18, 8, 16, col)], [y - face * 4, () => box(x, y - face * 4, w, 20, 8, 28, col)], [y - face * 20, () => box(x, y - face * 20, w, 12, 8, 14, shade(col, .8))]]
+    .sort((a, b) => a[0] - b[0]).forEach(p => p[1]());
+  if (face > 0) {
+    rearRect(y + 6, x - 8, x + 8, 17, 26, '#7fa6c4');
+    for (const sx of [-1, 1]) { rearRect(y + 24, x + sx * 7 - 2, x + sx * 7 + 2, 9, 12, '#fff4c0'); glow(x + sx * 7, y + 24, 11, 14, 'rgba(255,245,200,.55)'); }
+  } else for (const sx of [-1, 1]) rearRect(y + 26, x + sx * 8 - 2, x + sx * 8 + 2, 9, 12, '#ff3030');
+  const on = Math.sin(t * 10 + x * .37) > 0, by = y - face * 4, [bx, bsy] = P(x, by, 31);
+  if (on) glow(x, by, 31, 26, 'rgba(255,150,0,.8)');
+  ctx.fillStyle = on ? '#ffb030' : '#7a4200'; ctx.beginPath(); ctx.arc(bx, bsy, 3 * sc(by), 0, 7); ctx.fill();
+  const px = x + w / 2 - 2, py = y - face * 22, wv = Math.sin(t * 7 + x) * 1.6;
+  box(px, py, 1.5, 1.5, 14, 53, '#555');
+  poly([P(px + .75, py, 53), P(px + 13, py, 53 + wv), P(px + 13, py, 44 + wv), P(px + .75, py, 44)], '#ff6a00');
+  poly([P(px + .75, py, 50), P(px + 13, py, 50 + wv), P(px + 13, py, 47 + wv), P(px + .75, py, 47)], '#fff');
+}
+
+// ---------- change over: dual-cab ute down the dirt road to Camp ----------
+const UTE_Y = 480, CP0 = 6400, UHW = 72;
+let us = 0, ux = 0, uv = 0, usteer = 0, ucows = [], uoncoming = [], ucars = [], uslots = [], uT = 0, uBump = 0, uBumps = 0, uSpawn = 0, uPark = 0, uHint = 0;
+const ys = s => UTE_Y - (s - us);
+// dirt-road centre offset at distance s: bends build up from the start and ease out before the car park
+function uOff(s) {
+  if (s <= 0) return 0;
+  const ramp = Math.min(1, s / 600) * Math.min(1, Math.max(0, (CP0 - 150 - s) / 500));
+  return ramp * (95 * Math.sin(s / 520) + 45 * Math.sin(s / 190 + 1));
+}
+function toUte() {
+  state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; usteer = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uoncoming = []; particles = []; ptrs.clear(); syncBtns();
+  ucows = [];
+  for (let s = 800; s < CP0 - 600; s += 600 + Math.random() * 500) {
+    const n = 2 + Math.floor(Math.random() * 3), dir = Math.random() < .5 ? 1 : -1;
+    for (let k = 0; k < n; k++) ucows.push({ s: s + k * 24 + Math.random() * 8, rel: -dir * (UHW + 55 + Math.random() * 10), dir, go: false, done: false, ph: Math.random() * 6, col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', x: 0 });
+  }
+  uslots = []; ucars = [];
+  for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
+  const cols = ['#f4f4f4', '#f4f4f4', '#d8d8d8', '#c33', '#3a6fc4', '#b8a37a', '#2e8b57'];
+  const order = uslots.map((_, i) => i).sort(() => Math.random() - .5);
+  for (const i of order.slice(0, 14)) { uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
+  flash('Dual-cab ute: follow the dirt road to Camp');
+}
+function updateUte(dt) {
+  uT += dt; msgT -= dt; shake = Math.max(0, shake - dt); uBump = Math.max(0, uBump - dt);
+  const gas = keys.ArrowUp || keys.KeyW || keys.TG, brk = keys.ArrowDown || keys.KeyS || keys.TB;
+  const cx = W / 2 + uOff(us), onRoad = us > CP0 - 40 || Math.abs(ux - cx) < UHW + 6, vmax = onRoad ? 150 : 70;
+  if (gas) uv += 90 * dt; else if (brk) uv -= 200 * dt; else uv -= Math.sign(uv) * Math.min(Math.abs(uv), 40 * dt);
+  if (uv > vmax) uv = Math.max(vmax, uv - 200 * dt);
+  uv = Math.max(-45, uv);
+  const tgt = steerAxis() * 110 * Math.min(1, Math.abs(uv) / 30);
+  usteer += (tgt - usteer) * (1 - Math.exp(-8 * dt));
+  ux = Math.max(14, Math.min(W - 14, ux + usteer * dt));
+  us += uv * dt;
+  if (us < 0) { us = 0; uv = Math.max(0, uv); }
+  if (us > CP0 + 270) { us = CP0 + 270; uv = 0; }
+  const bump = msg => { if (uBump > 0) return; uBump = .8; uBumps++; uv = Math.min(uv, 0) - 15; shake = .3; flash(msg); };
+  for (const c of ucows) {
+    if (!c.go && us > c.s - 430) c.go = true;
+    if (c.go && !c.done) { c.rel += c.dir * 42 * dt; c.ph += dt * 7; if (c.dir * c.rel > UHW + 55) c.done = true; }
+    c.x = W / 2 + uOff(c.s) + c.rel;
+    if (Math.abs(c.x - ux) < 24 && Math.abs(c.s - us) < 30) bump('Mind the cattle!');
+  }
+  uSpawn -= dt;
+  if (uSpawn <= 0 && us < CP0 - 900) { uoncoming.push({ s: us + 720, rel: 38, v: 120 + Math.random() * 30 }); uSpawn = 6 + Math.random() * 6; }
+  for (const o of uoncoming) {
+    o.s -= o.v * dt; o.x = W / 2 + uOff(o.s) + o.rel;
+    if (Math.abs(o.x - ux) < 22 && Math.abs(o.s - us) < 48) bump('Head-on! Keep left');
+  }
+  uoncoming = uoncoming.filter(o => o.s > us - 160);
+  for (const c of ucars) if (Math.abs(c.x - ux) < 20 && Math.abs(c.s - us) < 48) bump('Bump! Mind the parked cars');
+  if (!uHint && us > CP0 - 300) { uHint = 1; flash('Camp ahead - park in a free bay'); }
+  const sl = uslots.find(q => q.free && Math.abs(ux - q.x) < 12 && Math.abs(us - (q.s0 + 32)) < 22);
+  uPark = sl && Math.abs(uv) < 3 ? uPark + dt : 0;
+  if (uPark > .8) { state = 'uteend'; ptrs.clear(); syncBtns(); }
+}
+function drawUteWorld() {
+  camX = W / 2 + (ux - W / 2) * .55; scroll = us;
+  drawSky(); drawGround();
+  const ye = ys(CP0), ya = Math.max(-120, ye);
+  if (ya < H + 80) {
+    strip(W / 2 - UHW - 14, W / 2 + UHW + 14, '#a8683f', ya); strip(W / 2 - UHW, W / 2 + UHW, '#c08a58', ya);
+    for (const rx of [-38, 38]) { strip(W / 2 + rx - 14, W / 2 + rx - 6, 'rgba(0,0,0,.10)', ya); strip(W / 2 + rx + 6, W / 2 + rx + 14, 'rgba(0,0,0,.10)', ya); }
+  }
+  const clampY = y => Math.max(-118, Math.min(H + 80, y));
+  const gT = clampY(ys(CP0 + 300)), gB = clampY(ys(CP0 - 20));
+  if (gT < gB) topRect(-80, gT, W + 80, gB, 0, '#9a8368');
+  for (const q of uslots) {
+    const yT = ys(q.s0 + 64), yB = ys(q.s0);
+    if (yB < -118 || yT > H + 80) continue;
+    if (q.free) topRect(q.x - 18, clampY(yT), q.x + 18, clampY(yB), .2, 'rgba(120,255,140,.16)');
+    for (const lx of [q.x - 18, q.x + 18]) topRect(lx - 1, clampY(yT), lx + 1, clampY(yB), .3, 'rgba(255,255,255,.75)');
+    topRect(q.x - 18, clampY(yT) - 1, q.x + 18, clampY(yT) + 1, .3, 'rgba(255,255,255,.75)');
+  }
+  const list = [];
+  for (let g = Math.floor((us - 340) / 150); g <= Math.ceil((us + 620) / 150); g++) {
+    const s = g * 150 + hash(g * 3.1) * 100, y = ys(s);
+    if (y < -115 || y > H + 60 || s < 0 || s > CP0 - 60) continue;
+    list.push({ y, fn: () => {
+      for (const side of [-1, 1]) {
+        const d = hash(g * 2 + side), r = hash(g * 11 + side), sx = W / 2 + uOff(s) + side * (UHW + 28 + hash(g * 5 + side) * 170);
+        if (r < .3) { dome(sx, y, 14 + d * 12, 10 + d * 12, '#9a6a55'); dome(sx + 12, y + 6, 8, 6, '#7d513f'); }
+        else if (r < .55) { dome(sx, y, 16 + d * 8, 12, '#6f7d3c'); dome(sx - 10, y + 5, 9, 7, '#8a9650'); }
+        else if (r < .8) { box(sx, y, 7, 7, 0, 46, '#d8cdb6'); dome(sx, y, 24, 20, '#667a38', 40); dome(sx + 12, y + 3, 16, 14, '#7c9040', 48); }
+        else dome(sx, y, 12, 6, '#b39a58');
+      }
+    } });
+  }
+  for (const c of ucows) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => animal3({ x: c.x, y, dir: c.dir, ph: c.ph, type: 'cow', col: c.col }) }); }
+  for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(o.x, y, '#f4f4f4', 1) }); }
+  for (const c of ucars) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(c.x, y, c.col, -1) }); }
+  const sB = CP0 + 330, yB = ys(sB);
+  if (yB > -115 && yB < H + 120) for (const bx of [80, 240, 400]) list.push({ y: yB, fn: () => {
+    box(bx, yB, 120, 46, 0, 34, '#d9d4c4'); box(bx, yB, 126, 52, 34, 39, '#8c3b2a');
+    for (const wx of [-36, 36]) rearRect(yB + 23, bx + wx - 9, bx + wx + 9, 12, 26, '#2a3b4d');
+    rearRect(yB + 23, bx - 8, bx + 8, 0, 28, '#5a3a22');
+    if (bx === 240) { const [sx, sy] = P(bx, yB + 23, 31), k = sc(yB); rect(sx - 30 * k, sy - 8 * k, 60 * k, 16 * k, '#1d5fb4'); text('CAMP', sx, sy + 5 * k, 14 * k, '#fff'); }
+  } });
+  const yS = ys(CP0 - 10);
+  if (yS > -115 && yS < H + 80) list.push({ y: yS, fn: () => {
+    const x = W / 2 + UHW + 30; box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 44, 3, 30, 44, '#1d5fb4');
+    const [sx, sy] = P(x, yS + 1.6, 37), k = sc(yS); text('CAR PARK', sx, sy + 3 * k, 8 * k, '#fff');
+  } });
+  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, usteer / 300, () => ute3(ux, UTE_Y, '#3a6fc4', -1)) });
+  list.sort((a, b) => a.y - b.y);
+  for (const o of list) o.fn();
+  atmosphere();
+}
+function drawUteScreen() {
+  drawUteWorld();
+  rect(0, 0, W, 64, '#000a');
+  text('DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
+  text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
+  text(us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
+  text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
+  if (uPark > 0) bar(W / 2 - 60, 80, 120, 12, uPark / .8, '#4c4');
+  if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
+  if (state === 'ute' && isTouch) { drawStick(); drawBtns(DB); }
+  if (state === 'uteend') {
+    rect(30, 200, W - 60, 300, '#000d');
+    text('ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
+    text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
+    text(isTouch ? 'Tap for the menu' : 'Press SPACE for the menu', W / 2, 440, 18, '#ff6');
+  }
 }
 function curve(x, y0, y1, lw, col) {
   ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
@@ -1474,6 +1684,7 @@ function render() {
   if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
   if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
+  else if (state === 'ute' || state === 'uteend') drawUteScreen();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
     rect(40, 70, W - 80, 180, '#000b'); rect(40, 316, W - 80, 190, '#000b');
@@ -1502,6 +1713,11 @@ function render() {
     if (state === 'drive' && grade() === -2) text('▲ STEEP CLIMB', W - 10, 88, 15, '#f90', 'right');
     else if (state === 'drive' && grade() === 2) text('▼ STEEP DESCENT', W - 10, 88, 15, '#f90', 'right');
     if (state === 'drive' && trainBlocks() && crossY() < qy + 150 && Math.sin(beaconClock() * 8) > -.3) text('TRAIN CROSSING - STOP!', W / 2, 150, 20, '#f44');
+    if (state === 'drive' && bayReady) {
+      rect(30, 250, W - 60, 130, '#000c'); text('LAY-BY', W / 2, 280, 18, '#fff');
+      drawBtn(FIT_BTN, FIT_BTN[4], false); drawBtn(CHG_BTN, CHG_BTN[4], false);
+    }
+    if (state === 'drive' && bf) bar(W / 2 - 80, 130, 160, 12, Math.min(1, bf.t / BF_END), '#4c4');
     if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
     if (state === 'over' || state === 'win') {
       rect(30, 120, W - 60, 500, '#000d');
