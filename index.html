@@ -166,7 +166,7 @@ const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 function reset() { straddleT = 0;
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
-  scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
+  scroll = 0; wrongT = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
 
@@ -216,9 +216,10 @@ function action() {
   }
 }
 
+let wrongT = 0;   // seconds spent on or over the centre line; oncoming traffic only appears once it builds up
 function spawn() {
   if (D().noWildlife || Math.random() < .6) {
-    const lane = Math.floor(Math.random() * LANE_X.length), oncoming = lane === 1;
+    const lane = wrongT > 1.5 ? Math.floor(Math.random() * LANE_X.length) : 0, oncoming = lane === 1;
     const col = ['#c33', '#36c', '#ccc', '#e8b100', '#3a3'][Math.floor(Math.random() * 5)];
     const truck = Math.random() < .25;
     traffic.push({ x: LANE_X[lane], lx: LANE_X[lane], y: -100, w: 34, h: truck ? 90 : 56, v: (oncoming ? -110 : 40 + Math.random() * 40) * D().vel, col, truck, oncoming });
@@ -592,6 +593,7 @@ function update(dt) {
   if (state === 'workshop') return updateWorkshop(dt);
   if (state !== 'drive') return;
   time += dt;
+  wrongT = Math.max(0, Math.min(4, wrongT + (qx - roadAt(scroll + qy) > W / 2 - 22 ? dt : -dt * .5)));
   const lf = 1 - (ore() / MAX_ORE) * .45;
   const gr = grade(), down = gr > 0;
   const maxSpeed = down ? 400 : Math.min(180, 220 * lf + 50);   // 180 px/s shows as 90 km/h; no limit rolling downhill
