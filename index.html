@@ -49,9 +49,10 @@ const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
-const TR_Y0 = 100, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
+const TR_Y0 = 150, TR_H = 108, TR_X = 280, TR_W = 76;   // loading-yard trailer layout
 const PILE = { x: 30, y: 130, w: 80, h: 350 };   // long finger pile; solid for the loader
 const LDR_R = 30;
+let hitCd = 0, ldrHp = 100, trDmg = [0, 0, 0, 0];   // loader hit points and per-trailer damage from yard collisions
 const OFF = i => 57 + i * 62;                           // trailer distance behind cab centre when driving
 
 const keys = {};
@@ -181,7 +182,7 @@ function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
+  ldr = { x: 250, y: 600, angle: 0, art: 0 }; ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; ptrs.clear(); syncBtns();
 }
 
 function onKey(code) {
@@ -215,12 +216,12 @@ function skipLoad() {
   jts = straightChain(qx, qy, 1); cabAngle = 0; state = 'drive'; ptrs.clear(); syncBtns();
   bayReady = rigInBay(); flash('Loaded and parked: use the Fitter, Change Over, or drive off');
 }
-function start() { state = 'drive'; ptrs.clear(); syncBtns(); flash('Steep hill ahead - watch your speed!'); }
+function start() { hp = Math.max(30, 100 - Math.round(trDmg.reduce((a, b) => a + b, 0) / 4)); state = 'drive'; ptrs.clear(); syncBtns(); flash('Steep hill ahead - watch your speed!'); }
 function flash(t) { msg = t; msgT = 2.5; }
 function burst(x, y, col, n) { for (let i = 0; i < n; i++) particles.push({ x, y, vx: (Math.random() - .5) * 120, vy: (Math.random() - .8) * 120, l: .6, col }); }
 
 const nearPile = () => ldr.x > PILE.x - 40 && ldr.x < PILE.x + PILE.w + 40 && ldr.y > PILE.y - 40 && ldr.y < PILE.y + PILE.h + 40;
-const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0) / TR_H); return ldr.x > TR_X - 100 && i >= 0 && i < NT ? i : -1; };
+const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0) / TR_H); return ldr.x > TR_X - 100 && ldr.x < TR_X + TR_W + 100 && i >= 0 && i < NT ? i : -1; };
 function action() {
   if (!carrying) {
     if (nearPile()) { carrying = true; burst(ldr.x + Math.sin(ldr.angle + ldr.art) * 35, ldr.y - Math.cos(ldr.angle + ldr.art) * 35, '#8a5a44', 6); } else flash('Drive up to the ore pile to scoop');
@@ -329,7 +330,16 @@ function updateLoad(dt) {
   ldr.angle += distance * Math.sin(ldr.art) / 40; // rear section swings round the centre joint
   ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(mid) * distance));
   ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
-  if (ldr.x > TR_X - 36 && ldr.y < TR_Y0 + NT * TR_H + 20) ldr.x = TR_X - 36; // trailers block the way
+  // trailers are solid: bumping them hurts both the loader and that trailer
+  if (ldr.y > TR_Y0 - 30 && ldr.y < TR_Y0 + NT * TR_H + 20 && ldr.x > TR_X - 36 && ldr.x < TR_X + TR_W + 36) {
+    ldr.x = ldr.x < TR_X + TR_W / 2 ? TR_X - 36 : TR_X + TR_W + 36;
+    if (hitCd <= 0 && Math.abs(distance) > 0) {
+      const i = Math.max(0, Math.min(NT - 1, Math.floor((ldr.y - TR_Y0) / TR_H)));
+      hitCd = 1; ldrHp = Math.max(0, ldrHp - 8); trDmg[i] = Math.min(100, trDmg[i] + 10); shake = .25;
+      burst(ldr.x, ldr.y, '#bbb', 8); flash(`Crunch! Loader and trailer ${i + 1} damaged`);
+    }
+  }
+  hitCd -= dt;
   // push the loader out of the pile along the shallowest axis
   const px = ldr.x - (PILE.x + PILE.w / 2), py = ldr.y - (PILE.y + PILE.h / 2), ox = PILE.w / 2 + LDR_R - Math.abs(px), oy = PILE.h / 2 + LDR_R - Math.abs(py);
   if (ox > 0 && oy > 0) { if (ox < oy) ldr.x += Math.sign(px || 1) * ox; else ldr.y += Math.sign(py || 1) * oy; }
@@ -358,7 +368,7 @@ function startSecondLoad() {
   trip = 2; ret = false; state = 'load'; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
   qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
   train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 250, y: 600, angle: 0, art: 0 }; carrying = false; spills = []; ptrs.clear(); syncBtns();
+  ldr = { x: 250, y: 600, angle: 0, art: 0 }; ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; ptrs.clear(); syncBtns();
   flash('Back at the ROM! Load up for trip 2');
 }
 function startReturn() {
@@ -983,10 +993,10 @@ function cab3(x, y) {
   for (const sx of [-1, 1]) for (const oy of [34, 41, 48]) box(x + sx * 17, y + oy, 6, 6, 0, 13, '#131313');
   box(x, y + 7, 26, 94, 4, 12, '#262626');
   // C509-style: long bonnet with raised grille, chrome bull bar, upright sleeper cab behind
-  box(x, y - 24, 24, 32, 12, 29, '#f062a4');
-  box(x, y - 24, 20, 28, 29, 30.5, '#d94a8c');
-  for (const sx of [-1, 1]) { box(x + sx * 13.5, y - 27, 3.5, 26, 13, 24, '#3a3a3a'); box(x + sx * 12.5, y - 38, 4, 6, 6, 17, '#262626'); }
-  box(x, y - 40.5, 21, 3, 14, 30, '#c9ccd0');
+  box(x, y - 24, 27, 32, 12, 29, '#f062a4');
+  box(x, y - 24, 23, 28, 29, 30.5, '#d94a8c');
+  for (const sx of [-1, 1]) { box(x + sx * 15, y - 27, 3, 26, 13, 24, '#3a3a3a'); box(x + sx * 12.5, y - 38, 4, 6, 6, 17, '#262626'); }
+  box(x, y - 40.5, 25, 3, 14, 30, '#c9ccd0');
   for (let k = 0; k < 4; k++) box(x - 7.5 + k * 5, y - 40.8, 1, 1, 14, 28, '#4a4d52');
   box(x, y - 43.5, 27, 2.2, 14, 17, '#d9dce0'); box(x, y - 43.5, 27, 2.2, 22, 25, '#d9dce0');
   for (const sx of [-1, 1]) { box(x + sx * 11, y - 43.5, 2, 2, 8, 28, '#d9dce0'); box(x + sx * 7, y - 42, 4, 2, 19, 22, '#fff4c0'); }
@@ -996,7 +1006,7 @@ function cab3(x, y) {
   rearRect(y + 13, x - 11, x + 11, 31, 36, 'rgba(255,255,255,.22)');
   box(x, y + 2, 25, 20, 40, 43, '#2e2e2e');
   for (const sx of [-1, 1]) { box(x + sx * 18, y - 8, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
-  for (const sx of [-1, 1]) box(x + sx * 17.5, y + 8, 4, 4, 12, 62, '#d9dce0');   // twin exhaust stacks behind the cab
+  box(x + 17.5, y + 8, 4, 4, 12, 62, '#d9dce0');   // single exhaust stack behind the cab
   const t = beaconClock();
   for (let k = 0; k < 3; k++) {
     const age = (t * 1.3 + k / 3) % 1;
@@ -1606,6 +1616,7 @@ function yardTrailer(cx, cy, i) {
   const q = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill(); };
   const Q = (ax, ay, bx, by, k = 1) => [[ax + dx * k, ay + dy * k], [bx + dx * k, ay + dy * k], [bx + dx * k, by + dy * k], [ax + dx * k, by + dy * k]];
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x0 + 8, y0 + 8, w, l);
+  if (trDmg[i] > 0) { ctx.fillStyle = 'rgba(30,20,20,.55)'; for (let k = 0; k < Math.ceil(trDmg[i] / 10); k++) ctx.fillRect(x0 + 2 + (k * 17) % (w - 14), y0 + 6 + (k * 29) % (l - 14), 9, 3); }
   const axles = trailerAxles(i, l).map(a => cy + a - 3.5);   // trailer 1: 3 rear axles; its front three are the cab's drive axles
   for (const wx of [x0 - 5, x1 - 1]) for (const wy of axles) { ctx.fillStyle = '#111'; ctx.fillRect(wx, wy, 6, 7); }
   rect(x0 + 6, y0, w - 12, l, '#222');
@@ -1647,7 +1658,7 @@ function drawYard() {
     lift(() => yardTrailer(TR_X + TR_W / 2, cy, i));
     if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
   }
-  lift(() => { for (const wy of [100, 109, 118]) { wheel(TR_X + 8, wy, 5, 6); wheel(TR_X + TR_W - 2, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
+  lift(() => { for (const wy of [150, 159, 168]) { wheel(TR_X + 8, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
   for (const p of spills) {
     ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
@@ -1658,6 +1669,7 @@ function drawYard() {
   rect(0, 0, W, 56, '#000a');
   text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
   text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
+  text(`Loader ${ldrHp}%  ·  Trailers ${trDmg.map(d => 100 - d).join('/')}%`, 230, 14, 11, ldrHp < 50 ? '#f66' : '#aaa', 'center');
   text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
   text(isTouch ? 'Stick to steer · GAS / REV to move' : '←→ / pad stick turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
   if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
