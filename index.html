@@ -978,31 +978,40 @@ function drawBar(ax, ay, bx, by) {
 }
 // cab centred on (x, y): one steer axle at the front and three drive axles behind it, under the first trailer's front
 function cab3(x, y) {
-  shadow(x, y, 36, 50);
-  for (const sx of [-1, 1]) box(x + sx * 17, y - 14, 6, 6, 0, 13, '#131313');
+  shadow(x, y, 36, 62);
+  for (const sx of [-1, 1]) box(x + sx * 17, y - 30, 6, 6, 0, 13, '#131313');
   for (const sx of [-1, 1]) for (const oy of [34, 41, 48]) box(x + sx * 17, y + oy, 6, 6, 0, 13, '#131313');
-  box(x, y + 16, 26, 68, 4, 12, '#262626');
-  box(x, y - 4, 31, 34, 12, 38, '#f062a4');
-  rearRect(y + 13, x - 11, x + 11, 24, 35, '#2a3b4d');
-  rearRect(y + 13, x - 11, x + 11, 30, 35, 'rgba(255,255,255,.22)');
-  box(x, y - 4, 21, 6, 38, 41, '#2e2e2e');
-  for (const sx of [-1, 1]) { box(x + sx * 18, y - 14, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
-  box(x + 16, y + 10, 5, 5, 12, 54, '#9a9a9a');
+  box(x, y + 7, 26, 94, 4, 12, '#262626');
+  // C509-style: long bonnet with raised grille, chrome bull bar, upright sleeper cab behind
+  box(x, y - 24, 24, 32, 12, 29, '#f062a4');
+  box(x, y - 24, 20, 28, 29, 30.5, '#d94a8c');
+  for (const sx of [-1, 1]) { box(x + sx * 13.5, y - 27, 3.5, 26, 13, 24, '#3a3a3a'); box(x + sx * 12.5, y - 38, 4, 6, 6, 17, '#262626'); }
+  box(x, y - 40.5, 21, 3, 14, 30, '#c9ccd0');
+  for (let k = 0; k < 4; k++) box(x - 7.5 + k * 5, y - 40.8, 1, 1, 14, 28, '#4a4d52');
+  box(x, y - 43.5, 27, 2.2, 14, 17, '#d9dce0'); box(x, y - 43.5, 27, 2.2, 22, 25, '#d9dce0');
+  for (const sx of [-1, 1]) { box(x + sx * 11, y - 43.5, 2, 2, 8, 28, '#d9dce0'); box(x + sx * 7, y - 42, 4, 2, 19, 22, '#fff4c0'); }
+  box(x, y - 43.5, 4, 2, 14, 28, '#d9dce0');
+  box(x, y + 2, 31, 22, 12, 40, '#f062a4');
+  rearRect(y + 13, x - 11, x + 11, 24, 36, '#2a3b4d');
+  rearRect(y + 13, x - 11, x + 11, 31, 36, 'rgba(255,255,255,.22)');
+  box(x, y + 2, 25, 20, 40, 43, '#2e2e2e');
+  for (const sx of [-1, 1]) { box(x + sx * 18, y - 8, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
+  for (const sx of [-1, 1]) box(x + sx * 17.5, y + 8, 4, 4, 12, 62, '#d9dce0');   // twin exhaust stacks behind the cab
   const t = beaconClock();
   for (let k = 0; k < 3; k++) {
     const age = (t * 1.3 + k / 3) % 1;
-    flatEllipse(x + 17 + age * 3, y + 10, 3 + age * 8, 3 + age * 8, `rgba(150,150,150,${.4 * (1 - age)})`, 56 + age * 30);
+    flatEllipse(x + 17.5 + age * 3, y + 8, 3 + age * 8, 3 + age * 8, `rgba(150,150,150,${.4 * (1 - age)})`, 64 + age * 30);
   }
   for (const [bx, ph] of [[x - 8, 0], [x + 8, 1]]) {
-    const on = Math.sin(t * 12 + ph * Math.PI) > 0, [sx, sy] = P(bx, y - 4, 43);
-    if (on) glow(bx, y - 4, 43, 30, 'rgba(255,150,0,.8)');
+    const on = Math.sin(t * 12 + ph * Math.PI) > 0, [sx, sy] = P(bx, y + 2, 47);
+    if (on) glow(bx, y + 2, 47, 30, 'rgba(255,150,0,.8)');
     ctx.fillStyle = on ? '#ffb030' : '#7a4200'; ctx.beginPath(); ctx.arc(sx, sy, 3.5 * sc(y), 0, 7); ctx.fill();
   }
 }
 // trailer 1: 3 rear axles (its front is carried by the cab's drive axles); the others get 4 rear + 3 front
 const trailerAxles = (i, l) => [4, 9.5, 15, 20.5].slice(0, i ? 4 : 3).map(k => l / 2 - k).concat(i ? [-l / 2 + 4, -l / 2 + 9.5, -l / 2 + 15] : []);
 function trailer3(x, y, i, f, lid) {
-  const w = 34, l = 54, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
+  const last = i === NT - 1, w = 34, l = 54, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
   shadow(x, y, w + 4, l);
   for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 5, 4.5, 0, 11, '#131313');
   box(x, y + 2, w - 8, l - 10, 4, 10, '#222');
@@ -1020,7 +1029,13 @@ function trailer3(x, y, i, f, lid) {
   }
   rearRect(y1, x0, x1, 10, 27, shade(col, .72));
   rearRect(y1, x0, x1, 24, 27, '#ee6aa6');
-  rearRect(y1, x0 + 5, x1 - 5, 15, 17, '#e8b100');
+  if (last) {
+    rearRect(y1, x0 + 2, x1 - 2, 15.5, 26, '#111'); rearRect(y1, x0 + 2.8, x1 - 2.8, 16.3, 25.2, '#f2c200');
+    const [a1, a2] = P(x, y1, 22.8), [b1, b2] = P(x, y1, 18.2), k = sc(y1);
+    ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif';
+    const fs = 10 * (w - 8) * k * .8 / ctx.measureText('DO NOT OVERTAKE').width; ctx.font = `bold ${fs}px sans-serif`;
+    ctx.fillText('LONG VEHICLE', a1, a2 + k); ctx.fillText('DO NOT OVERTAKE', b1, b2 + k);
+  } else rearRect(y1, x0 + 5, x1 - 5, 15, 17, '#e8b100');
   for (const sx of [-1, 1]) rearRect(y1, x + sx * 12 - 3, x + sx * 12 + 3, 12, 15, '#ff3030');
   topRect(x0, y0, x0 + 2, y1, 27, '#f06fb0'); topRect(x1 - 2, y0, x1, y1, 27, '#f06fb0');
   if (lid < 1) {
@@ -1166,7 +1181,7 @@ function person3(m) {
   box(hx, y, 5.2, 5.2, 21.5 + dz, 26.4 + dz, '#d29a73');
   box(hx, y, 6.6, 6.6, 26 + dz, 29.2 + dz, '#f4f4f4'); box(hx + dir * 2.2, y, 7.2, 8.4, 26 + dz, 27.2 + dz, '#f4f4f4');
 }
-// tray-back dual cab with a mine-site ROPS frame behind the cab: beacon on the frame, whip aerial and orange flag at the tray corner.
+// tray-back dual cab with a mine-site ROPS frame behind the cab: beacon, short flag and tail lights on the frame.
 // face -1: nose up the screen. o.toolbox adds a steel service toolbox on the tray.
 function ute3(x, y, col, face, o = {}) {
   const w = 22, t = beaconClock(), f = face, fy = d => y + f * d, glass = '#27323d', rops = '#dcdfe2', parts = [];
@@ -1200,12 +1215,16 @@ function ute3(x, y, col, face, o = {}) {
   parts.sort((a, b) => a[0] - b[0]).forEach(p => p[1]());
   const nr = y + 34;
   if (f > 0) for (const sx of [-1, 1]) { rearRect(nr, x + sx * 7 - 2.2, x + sx * 7 + 2.2, 9, 12.5, '#fff4c0'); glow(x + sx * 7, nr, 11, 14, 'rgba(255,245,200,.55)'); }
-  else { for (const sx of [-1, 1]) { rearRect(nr - 1, x + sx * 8.6 - 1.6, x + sx * 8.6 + 1.6, 11, 14, '#ff3030'); glow(x + sx * 8.6, nr - 1, 12, 8, 'rgba(255,50,40,.45)'); } rearRect(nr - 1, x - 4, x + 4, 10, 13, '#e8e8e8'); }
+  else { for (const sx of [-1, 1]) { rearRect(nr - 1, x + sx * 8.4 - 2.4, x + sx * 8.4 + 2.4, 10.5, 15, '#ff2a20'); glow(x + sx * 8.4, nr - 1, 12.5, 14, 'rgba(255,50,40,.6)'); } rearRect(nr - 1, x - 4, x + 4, 10, 13, '#e8e8e8'); }
   box(x, fy(-11), 5, 5, 41, 43, '#444'); beaconAt(x, fy(-11), 45);
-  const px = x + w / 2 - 1, py = fy(-30), wv = Math.sin(t * 7 + x) * 1.8;
-  box(px, py, 1.2, 1.2, 10, 76, '#333');
-  poly([P(px + .6, py, 76), P(px + 17, py, 76 + wv), P(px + 17, py, 64 + wv), P(px + .6, py, 64)], '#ff6a00');
-  poly([P(px + .6, py, 72), P(px + 17, py, 72 + wv), P(px + 17, py, 68 + wv), P(px + .6, py, 68)], '#fff');
+  const px = x + w / 2 - 2.5, py = fy(-11), wv = Math.sin(t * 7 + x) * 1.2;
+  box(px, py, 1, 1, 41, 58, '#333');
+  poly([P(px + .5, py, 58), P(px + 9, py, 58 + wv), P(px + 9, py, 51 + wv), P(px + .5, py, 51)], '#ff6a00');
+  poly([P(px + .5, py, 56), P(px + 9, py, 56 + wv), P(px + 9, py, 53.5 + wv), P(px + .5, py, 53.5)], '#fff');
+  if (f < 0) for (const sx of [-1, 1]) {   // ROPS tail lights
+    const lx = x + sx * (w / 2 - 2.5);
+    rearRect(py + 1.4, lx - 1.6, lx + 1.6, 33, 38, '#ff2a20'); glow(lx, py + 1.4, 35.5, 10, 'rgba(255,50,40,.55)');
+  }
 }
 
 // ---------- change over: dual-cab ute down the dirt road to Camp ----------
@@ -1621,13 +1640,14 @@ function drawYard() {
   ctx.fillStyle = '#9a6a55'; finger(PILE.x + 16, PILE.y + 14, PILE.w - 32, PILE.h - 40);
   rockChunks(pcx, pcy, PILE.w / 2 - 6, PILE.h / 2 - 8, 170, 8, 7);
   ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
-  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38, -1, false));
+  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38, -1, true));
   for (let i = 0; i < NT; i++) {
     const cy = TR_Y0 + i * TR_H + TR_H / 2;
     rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 30, '#444');
     lift(() => yardTrailer(TR_X + TR_W / 2, cy, i));
     if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
   }
+  lift(() => { for (const wy of [100, 109, 118]) { wheel(TR_X + 8, wy, 5, 6); wheel(TR_X + TR_W - 2, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
   for (const p of spills) {
     ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
