@@ -982,10 +982,6 @@ function car3(t) {
     if (t.oncoming) { cargo(); cab(); } else { cab(); cargo(); }
   }
 }
-function drawBar(ax, ay, bx, by) {
-  const a = P(ax, ay, 8), b = P(bx, by, 8);
-  ctx.strokeStyle = '#1c1a19'; ctx.lineWidth = 3 * sc(ay); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-}
 // cab centred on (x, y): one steer axle at the front and three drive axles behind it, under the first trailer's front
 function cab3(x, y) {
   shadow(x, y, 36, 62);
@@ -1006,6 +1002,7 @@ function cab3(x, y) {
   rearRect(y + 13, x - 11, x + 11, 31, 36, 'rgba(255,255,255,.22)');
   box(x, y + 2, 25, 20, 40, 43, '#2e2e2e');
   for (const sx of [-1, 1]) { box(x + sx * 18, y - 8, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
+  fifthWheel(x, y + HITCH);
   box(x + 17.5, y + 8, 4, 4, 12, 62, '#d9dce0');   // single exhaust stack behind the cab
   const t = beaconClock();
   for (let k = 0; k < 3; k++) {
@@ -1020,11 +1017,40 @@ function cab3(x, y) {
 }
 // trailer 1: 3 rear axles (its front is carried by the cab's drive axles); the others get 4 rear + 3 front
 const trailerAxles = (i, l) => [4, 9.5, 15, 20.5].slice(0, i ? 4 : 3).map(k => l / 2 - k).concat(i ? [-l / 2 + 4, -l / 2 + 9.5, -l / 2 + 15] : []);
+const line3 = (pts, lw, col) => {
+  ctx.strokeStyle = col; ctx.lineWidth = lw * sc(pts[0][1]); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath();
+  pts.forEach((q, k) => { const [sx, sy] = P(q[0], q[1], q[2]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.stroke();
+};
+// ring feeder (towing ring) on the rear of a trailer; the next gooseneck's eye drops over it at the joint
+function ringFeeder(x, jy) {
+  box(x, jy - 3.5, 6, 7, 9, 12, '#2b2b2b');
+  line3([[x - 3.2, jy, 13], [x, jy + 3.2, 13], [x + 3.2, jy, 13], [x, jy - 3.2, 13], [x - 3.2, jy, 13]], 2.4, '#e8b100');
+}
+// dolly under the front of trailer i>0: axle frame + turntable, with an arched gooseneck reaching up and over to the ring feeder
+function dolly(x, y, w, l) {
+  const jy = y - l / 2 - 6, py = y - l / 2 + 10;
+  box(x, py, w - 14, 18, 3, 7, '#2a2a2a');
+  for (const sx of [-1, 1]) box(x + sx * (w / 2 - 8), py, 2.5, 20, 3, 8, '#1d1d1d');
+  flatEllipse(x, py, 9, 9, '#e8b100', 9); flatEllipse(x, py, 5, 5, '#3a3a3a', 9.1);
+}
+function gooseneck(x, y, l) {
+  const y0 = y - l / 2, jy = y0 - 6;
+  for (const sx of [-1, 1]) line3([[x + sx * 9, y0 + 4, 12], [x + sx * 8, y0 - 1, 24], [x + sx * 5, y0 - 4, 33], [x + sx * 2, jy + 1.5, 26], [x, jy, 14]], 3, '#f2b800');
+  line3([[x - 8.5, y0 + 1, 22], [x + 8.5, y0 + 1, 22]], 2.4, '#c99a00');
+  line3([[x - 6, y0 - 3, 31], [x + 6, y0 - 3, 31]], 2.2, '#c99a00');
+}
+// the cab's fifth-wheel turntable that trailer 1 pivots on
+function fifthWheel(x, jy) {
+  box(x, jy + 1, 26, 24, 12, 14, '#3a3a3a');
+  flatEllipse(x, jy, 12.5, 12.5, '#e8b100', 14.2); flatEllipse(x, jy, 8, 8, '#2e2e2e', 14.4);
+  topRect(x - 1.5, jy - 14, x + 1.5, jy - 1, 14.6, '#111'); flatEllipse(x, jy, 3, 3, '#ccc', 14.8);
+}
 function trailer3(x, y, i, f, lid) {
-  const last = i === NT - 1, w = 34, l = 54, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
+  const last = i === NT - 1, w = 34, l = 50, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
   shadow(x, y, w + 4, l);
   for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 5, 4.5, 0, 11, '#131313');
   box(x, y + 2, w - 8, l - 10, 4, 10, '#222');
+  if (i) dolly(x, y, w, l);
   if (cl > x1) poly([P(x1, y0, 10), P(x1, y1, 10), P(x1, y1, 27), P(x1, y0, 27)], shade(col, .6));
   else if (cl < x0) poly([P(x0, y0, 10), P(x0, y1, 10), P(x0, y1, 27), P(x0, y0, 27)], shade(col, .85));
   topRect(x0, y0, x1, y1, 27, '#4a1a35');
@@ -1039,6 +1065,7 @@ function trailer3(x, y, i, f, lid) {
   }
   rearRect(y1, x0, x1, 10, 27, shade(col, .72));
   rearRect(y1, x0, x1, 24, 27, '#ee6aa6');
+  if (!last) ringFeeder(x, y1 + 6);
   if (last) {
     rearRect(y1, x0 + 2, x1 - 2, 15.5, 26, '#111'); rearRect(y1, x0 + 2.8, x1 - 2.8, 16.3, 25.2, '#f2c200');
     const [a1, a2] = P(x, y1, 22.8), [b1, b2] = P(x, y1, 18.2), k = sc(y1);
@@ -1048,6 +1075,7 @@ function trailer3(x, y, i, f, lid) {
   } else rearRect(y1, x0 + 5, x1 - 5, 15, 17, '#e8b100');
   for (const sx of [-1, 1]) rearRect(y1, x + sx * 12 - 3, x + sx * 12 + 3, 12, 15, '#ff3030');
   topRect(x0, y0, x0 + 2, y1, 27, '#f06fb0'); topRect(x1 - 2, y0, x1, y1, 27, '#f06fb0');
+  if (i) gooseneck(x, y, l);
   if (lid < 1) {
     const lw = w * (1 - lid);
     box(x0 + lw / 2, y, lw, l, 27, 30, '#c43879');
@@ -1124,7 +1152,6 @@ function drawWorld3D(playerX, menu) {
   for (let i = 0; i < NT; i++) {
     const p = chainPose(J, i), q = i ? chainPose(J, i - 1) : { x: J[0].x, y: J[0].y };
     list.push({ y: p.y - 1, fn: () => {
-      drawBar(q.x, q.y, p.x, p.y);
       withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, menu ? .8 : fills[i] / TRAILER_CAP, menu ? 1 : tr[i].lid));
     } });
   }
@@ -1587,6 +1614,9 @@ function drawRig(J, x, y, ang, sc, o) {
     const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
     for (const sx of [-18.5, 18.5]) for (const wy of trailerAxles(i, 54)) wheel(sx, wy, 5, 5, st);
     if (o && o.fill !== undefined) drawTrailer(0, 0, 34, 56, o.fill, 0, 0); else drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid);
+    ctx.strokeStyle = '#f2b800'; ctx.fillStyle = '#e8b100'; ctx.lineWidth = 2.4;
+    if (i) { ctx.beginPath(); ctx.moveTo(-9, -22); ctx.lineTo(0, -31); ctx.lineTo(9, -22); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -17, 5, 0, 7); ctx.fill(); }   // dolly gooseneck to the ring feeder
+    else { ctx.beginPath(); ctx.arc(0, -31, 6, 0, 7); ctx.fill(); }   // cab turntable
     ctx.restore();
   }
   ctx.fillStyle = '#e8b100';
