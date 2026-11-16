@@ -17,7 +17,7 @@
 <input id="nm" maxlength="12" placeholder="Enter your name" autocomplete="off" spellcheck="false">
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d'), nameIn = document.getElementById('nm');
-const W = 480, H = 720, SS = 2;   // logical size; the canvas backing store is SS x for crisp, smooth edges
+const W = 480, H = 720; let SS = 2;   // logical size; the canvas backing store is SS x for crisp, smooth edges
 cv.width = W * SS; cv.height = H * SS; ctx.scale(SS, SS); ctx.imageSmoothingQuality = 'high';
 const ROAD_L = 125, ROAD_R = 355;
 const LANE_X = [(ROAD_L + W / 2) / 2, (ROAD_R + W / 2) / 2];
@@ -68,7 +68,7 @@ let stickX = 0;
 function padAxis() {
   for (const g of (navigator.getGamepads ? navigator.getGamepads() : [])) {
     if (!g) continue;
-    const v = Math.abs(g.axes[0]) > .15 ? g.axes[0] : (g.buttons[15]?.pressed ? 1 : 0) - (g.buttons[14]?.pressed ? 1 : 0);
+    const v = Math.abs(g.axes[0]) > .3 ? g.axes[0] : (g.buttons[15]?.pressed ? 1 : 0) - (g.buttons[14]?.pressed ? 1 : 0);
     if (v) return Math.max(-1, Math.min(1, v));
   }
   return 0;
@@ -103,7 +103,7 @@ addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
   if (!e.repeat) onKey(e.code);
 });
-addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('keyup', e => { if (e.code === 'MetaLeft' || e.code === 'MetaRight') clearInput(); else keys[e.code] = false; });   // macOS swallows keyups while Cmd is held
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
   if (state === 'drive' && bayReady) {
@@ -131,6 +131,8 @@ cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && !e.bu
 const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
 cv.addEventListener('lostpointercapture', up);
+const touchEnd = e => { if (!e.touches.length) clearInput(); };
+addEventListener('touchend', touchEnd); addEventListener('touchcancel', touchEnd);
 function clearInput() { ptrs.clear(); for (const k in keys) keys[k] = false; stickX = 0; }
 addEventListener('blur', clearInput);
 document.addEventListener('visibilitychange', clearInput);
@@ -991,15 +993,13 @@ function cab3(x, y) {
   for (const sx of [-1, 1]) box(x + sx * 17, y - 30, 6, 6, 0, 13, '#131313');
   for (const sx of [-1, 1]) for (const oy of [34, 41, 48]) box(x + sx * 17, y + oy, 6, 6, 0, 13, '#131313');
   box(x, y + 7, 26, 94, 4, 12, '#262626');
-  // C509-style: long bonnet with raised grille, chrome bull bar, upright sleeper cab behind
+  // C509-style: long bonnet with raised grille, upright sleeper cab behind
   box(x, y - 24, 27, 32, 12, 29, '#f062a4');
   box(x, y - 24, 23, 28, 29, 30.5, '#d94a8c');
   for (const sx of [-1, 1]) { box(x + sx * 15, y - 27, 3, 26, 13, 24, '#3a3a3a'); box(x + sx * 12.5, y - 38, 4, 6, 6, 17, '#262626'); }
   box(x, y - 40.5, 25, 3, 14, 30, '#c9ccd0');
   for (let k = 0; k < 4; k++) box(x - 7.5 + k * 5, y - 40.8, 1, 1, 14, 28, '#4a4d52');
-  box(x, y - 43.5, 27, 2.2, 14, 17, '#d9dce0'); box(x, y - 43.5, 27, 2.2, 22, 25, '#d9dce0');
-  for (const sx of [-1, 1]) { box(x + sx * 11, y - 43.5, 2, 2, 8, 28, '#d9dce0'); box(x + sx * 7, y - 42, 4, 2, 19, 22, '#fff4c0'); }
-  box(x, y - 43.5, 4, 2, 14, 28, '#d9dce0');
+  for (const sx of [-1, 1]) box(x + sx * 7, y - 42, 4, 2, 19, 22, '#fff4c0');
   box(x, y + 2, 31, 22, 12, 40, '#f062a4');
   rearRect(y + 13, x - 11, x + 11, 24, 36, '#2a3b4d');
   rearRect(y + 13, x - 11, x + 11, 31, 36, 'rgba(255,255,255,.22)');
@@ -1049,25 +1049,35 @@ function fifthWheel(x, jy) {
   topRect(x - 1.5, jy - 14, x + 1.5, jy - 1, 14.6, '#111'); flatEllipse(x, jy, 3, 3, '#ccc', 14.8);
 }
 function trailer3(x, y, i, f, lid) {
-  const last = i === NT - 1, w = 34, l = 50, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL();
+  const last = i === NT - 1, w = 34, l = 50, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL(), TOP = 33;
   shadow(x, y, w + 4, l);
   for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 5, 4.5, 0, 11, '#131313');
   box(x, y + 2, w - 8, l - 10, 4, 10, '#222');
+  for (const sx of [-1, 1]) box(x + sx * (w / 2 - 3), y, 2.5, l, 7, 11, '#2a2a2a');   // chassis rails under the bin
   if (i) dolly(x, y, w, l);
-  if (cl > x1) poly([P(x1, y0, 10), P(x1, y1, 10), P(x1, y1, 27), P(x1, y0, 27)], shade(col, .6));
-  else if (cl < x0) poly([P(x0, y0, 10), P(x0, y1, 10), P(x0, y1, 27), P(x0, y0, 27)], shade(col, .85));
-  topRect(x0, y0, x1, y1, 27, '#4a1a35');
-  rearRect(y0, x0, x1, 12, 27, shade('#b73770', .85));
+  // tall straight bin sides; the visible outer side gets pressed ribs and a hinge rail low down
+  const side = cl > x1 ? x1 : cl < x0 ? x0 : null;
+  if (side !== null) {
+    const sh = cl > x1 ? .6 : .85, n = 7;
+    poly([P(side, y0, 10), P(side, y1, 10), P(side, y1, TOP), P(side, y0, TOP)], shade(col, sh));
+    for (let k = 0; k <= n; k++) { const yy = y0 + (l - 3) * k / n; poly([P(side, yy, 10), P(side, yy + 3, 10), P(side, yy + 3, TOP), P(side, yy, TOP)], shade(col, sh * .72)); }
+    poly([P(side, y0, 17), P(side, y1, 17), P(side, y1, 19), P(side, y0, 19)], shade(col, sh * .8));
+    poly([P(side, y0, 10), P(side, y1, 10), P(side, y1, 13), P(side, y0, 13)], shade('#e8b100', sh));
+    poly([P(side, y0, TOP - 3), P(side, y1, TOP - 3), P(side, y1, TOP), P(side, y0, TOP)], shade('#f06fb0', sh));
+  }
+  topRect(x0, y0, x1, y1, TOP, '#4a1a35');
+  rearRect(y0, x0, x1, 12, TOP, shade('#b73770', .85));
   const innerX = cl > x1 ? x0 : x1;
-  poly([P(innerX, y0, 12), P(innerX, y1, 12), P(innerX, y1, 27), P(innerX, y0, 27)], shade('#b73770', cl > x1 ? .8 : .55));
+  poly([P(innerX, y0, 12), P(innerX, y1, 12), P(innerX, y1, TOP), P(innerX, y0, TOP)], shade('#b73770', cl > x1 ? .8 : .55));
   if (f > 0) {
-    const top = 12 + f * 12;
+    const top = 12 + f * 17;
     box(x, y + 1, w - 6, l - 6, 12, top, '#8a5a44');
     topRect(x - w / 2 + 6, y - l / 2 + 5, x + w / 2 - 6, y + l / 2 - 5, top, '#a8705a');
     for (let k = 0; k < 6; k++) topRect(x - 12 + hash(i * 9 + k) * 20, y - 20 + hash(i * 5 + k * 3) * 38, x - 9 + hash(i * 9 + k) * 20, y - 17 + hash(i * 5 + k * 3) * 38, top, '#6e4636');
   }
-  rearRect(y1, x0, x1, 10, 27, shade(col, .72));
-  rearRect(y1, x0, x1, 24, 27, '#ee6aa6');
+  rearRect(y1, x0, x1, 10, TOP, shade(col, .72));
+  for (let k = 0; k < 3; k++) rearRect(y1, x0 + 2 + k * (w - 4) / 3, x0 + 3.5 + k * (w - 4) / 3, 12, TOP - 2, shade(col, .55));   // rear panel ribs
+  rearRect(y1, x0, x1, TOP - 3, TOP, '#ee6aa6');
   if (!last) ringFeeder(x, y1 + 6);
   if (last) {
     rearRect(y1, x0 + 2, x1 - 2, 15.5, 26, '#111'); rearRect(y1, x0 + 2.8, x1 - 2.8, 16.3, 25.2, '#f2c200');
@@ -1077,12 +1087,13 @@ function trailer3(x, y, i, f, lid) {
     ctx.fillText('LONG VEHICLE', a1, a2 + k); ctx.fillText('DO NOT OVERTAKE', b1, b2 + k);
   } else rearRect(y1, x0 + 5, x1 - 5, 15, 17, '#e8b100');
   for (const sx of [-1, 1]) rearRect(y1, x + sx * 12 - 3, x + sx * 12 + 3, 12, 15, '#ff3030');
-  topRect(x0, y0, x0 + 2, y1, 27, '#f06fb0'); topRect(x1 - 2, y0, x1, y1, 27, '#f06fb0');
+  topRect(x0, y0, x0 + 2, y1, TOP, '#f06fb0'); topRect(x1 - 2, y0, x1, y1, TOP, '#f06fb0');
+  for (let k = 1; k < 7; k++) { const yy = y0 + l * k / 7; topRect(x0, yy, x1, yy + 1, TOP, '#f06fb0'); }   // cross-bracing over the bin
   if (i) gooseneck(x, y, l);
   if (lid < 1) {
     const lw = w * (1 - lid);
-    box(x0 + lw / 2, y, lw, l, 27, 30, '#c43879');
-    for (let k = 1; k < 5; k++) topRect(x0, y0 + k * l / 5, x0 + lw, y0 + k * l / 5 + 1.5, 30, 'rgba(0,0,0,.25)');
+    box(x0 + lw / 2, y, lw, l, TOP, TOP + 3, '#c43879');
+    for (let k = 1; k < 5; k++) topRect(x0, y0 + k * l / 5, x0 + lw, y0 + k * l / 5 + 1.5, TOP + 3, 'rgba(0,0,0,.25)');
   }
 }
 function animal3(a) {
@@ -1125,16 +1136,23 @@ function drawAnimal3(a) {
   ctx.restore();
 }
 // the rig: cab heading `cabAngle`, trailers on the articulated chain; `menu` shows it parked and loaded
+// fog, vignette and sun glow never change, so they're painted once and stamped each frame (full-screen gradients are costly on phones)
+let atmoCv = null;
 function atmosphere() {
-  const fog = ctx.createLinearGradient(0, HOR - 14, 0, HOR + 150);
-  fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
-  ctx.fillStyle = fog; ctx.fillRect(0, HOR - 14, W, 165);
-  const vg = ctx.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
-  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-  const sun = ctx.createRadialGradient(W * .78, HOR - 30, 0, W * .78, HOR - 30, 360);
-  sun.addColorStop(0, 'rgba(255,220,160,.28)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
-  ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+  if (!atmoCv) {
+    atmoCv = document.createElement('canvas'); atmoCv.width = W * SS; atmoCv.height = H * SS;
+    const c = atmoCv.getContext('2d'); c.scale(SS, SS);
+    const fog = c.createLinearGradient(0, HOR - 14, 0, HOR + 150);
+    fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
+    c.fillStyle = fog; c.fillRect(0, HOR - 14, W, 165);
+    const vg = c.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
+    c.fillStyle = vg; c.fillRect(0, 0, W, H);
+    const sun = c.createRadialGradient(W * .78, HOR - 30, 0, W * .78, HOR - 30, 360);
+    sun.addColorStop(0, 'rgba(255,220,160,.2)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
+    c.fillStyle = sun; c.fillRect(0, 0, W, H);
+  }
+  ctx.drawImage(atmoCv, 0, 0, W, H);
 }
 function drawWorld3D(playerX, menu) {
   camX = W / 2 + (playerX - W / 2) * .55;
@@ -1566,6 +1584,8 @@ function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
     if (lw > 6) for (let k = 1; k < 4; k++) rect(x - w / 2 + 3, y - h / 2 + 3 + k * (h - 6) / 4, lw, 2, '#a83570');
   }
   if (lid > 0 && lid < 1) rect(x - w / 2 - 7 * lid, y - h / 2 + 3, 7 * lid, h - 6, '#f062a4');
+  for (let k = 1; k < 7; k++) rect(x - w / 2, y - h / 2 + k * h / 7, w, 1.5, '#ee5c9d');   // bin side ribs
+  rect(x - w / 2, y - h / 2, 3, h, '#f06fb0');                    // raised rails along the bin
   rect(x + w / 2 - 3, y - h / 2, 3, h, '#e8b100');               // tipping hinge rail
   if (num) text(String(num), x - w / 2 + 12, y - h / 2 + 16, 12, '#ccd');
   ctx.restore();
@@ -1921,8 +1941,11 @@ function placeName() {
   if (!show) return;
   Object.assign(nameIn.style, { left: r.left + (W / 2 - 120) * k + 'px', top: r.top + 262 * k + 'px', width: 240 * k + 'px', height: 38 * k + 'px', fontSize: 18 * k + 'px' });
 }
+let slowT = 0;
 function loop(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(.05, raw); last = now;
+  // sustained slow frames: halve the backing-store resolution (4x fewer pixels) so the scroll stays smooth
+  if (SS > 1 && state !== 'menu') { slowT = raw > .03 ? slowT + raw : Math.max(0, slowT - raw * 2); if (slowT > 1.5) { SS = 1; cv.width = W; cv.height = H; ctx.setTransform(1, 0, 0, 1, 0, 0); atmoCv = null; slowT = 0; } }
   requestAnimationFrame(loop);   // scheduled first so one bad frame can't freeze the game
   try { update(dt); render(); placeName(); } catch (e) { console.error(e); }
 }
