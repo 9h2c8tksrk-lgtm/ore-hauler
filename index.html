@@ -365,7 +365,7 @@ function updateSkyway(dt) {
   }
 }
 function startSecondLoad() {
-  trip = 2; ret = false; state = 'load'; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
+  trip = 2; ret = false; state = 'load'; shake = 0; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
   qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
   train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 250, y: 600, angle: 0, art: 0 }; ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; ptrs.clear(); syncBtns();
@@ -625,6 +625,7 @@ function updateWorkshop(dt) {
 
 function update(dt) {
   if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } }
+  if (state !== 'drive' && state !== 'workshop' && state !== 'ute') shake = Math.max(0, shake - dt);   // those three decay it themselves; load/skyway/end screens never did, so a bump kept the screen shaking
   if (state === 'menu') scroll += 70 * dt;
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
@@ -749,7 +750,7 @@ const roadX = y => state === 'ute' || state === 'uteend' ? uOff(us + UTE_Y - y) 
 // `fr` rotates primitives about a point so the cab, trailers and tossed animals can be drawn at any heading.
 const HOR = 92, CAM_Y = H + 400;
 const uOf = y => (y + 120) / (H + 120);
-const sc = y => .22 + 1.15 * uOf(y);
+const sc = y => Math.max(.02, .22 + 1.15 * uOf(y));   // never negative: far objects would crash arc()/gradients and freeze the loop
 const sY = y => { const u = uOf(y); return HOR + (H - HOR) * (.22 * u + .575 * u * u) / .795; };
 let camX = W / 2, fr = null;
 function withFrame(cx, cy, a, fn) {
@@ -785,7 +786,9 @@ const topRect = (xa, ya, xb, yb, z, col) => poly([P(xa, ya, z), P(xb, ya, z), P(
 const flatEllipse = (x, y, rx, ry, col, z = 0) => { const [sx, sy] = P(x, y, z), s = sc(y); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sx, sy, rx * s, ry * s, 0, 0, Math.PI * 2); ctx.fill(); };
 const shadow = (cx, cy, w, l) => { for (let k = 0; k < 3; k++) { const e = (2 - k) * 2.5; topRect(cx - w / 2 + 5 - e, cy - l / 2 + 3 - e, cx + w / 2 + 6 + e, cy + l / 2 + 4 + e, 0, 'rgba(0,0,0,.15)'); } };   // stacked layers give a soft edge
 function glow(x, y, z, r, col) {
-  const [sx, sy] = P(x, y, z), rr = r * sc(y), g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
+  const [sx, sy] = P(x, y, z), rr = r * sc(y);
+  if (!(rr > 0)) return;   // far off-screen objects give a negative scale
+  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
   g.addColorStop(0, col); g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g; ctx.fillRect(sx - rr, sy - rr, rr * 2, rr * 2);
 }
@@ -1900,7 +1903,8 @@ function placeName() {
 }
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
-  update(dt); render(); placeName(); requestAnimationFrame(loop);
+  requestAnimationFrame(loop);   // scheduled first so one bad frame can't freeze the game
+  try { update(dt); render(); placeName(); } catch (e) { console.error(e); }
 }
 requestAnimationFrame(loop);
 </script>
