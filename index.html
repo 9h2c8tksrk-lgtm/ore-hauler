@@ -1318,7 +1318,10 @@ function ute3(x, y, col, face, o = {}) {
     box(x, fy(-21), w, 26, 8, 10, '#2b2b2b');
     for (const sx of [-1, 1]) box(x + sx * (w / 2 - .9), fy(-21), 1.8, 26, 10, 16, col);
     box(x, fy(-33), w, 1.8, 10, 16, col); box(x, fy(-9), w, 1.8, 10, 17, col);
-    if (o.toolbox) {
+    if (o.tank) {
+      box(x, fy(-21), w - 4, 22, 10, 22, '#2f78c4'); box(x, fy(-21), w - 8, 20, 22, 25, '#4a93dc');
+      topRect(x - w / 2 + 4, fy(-30), x + w / 2 - 4, fy(-12), 25.2, '#8cc4f2'); box(x, fy(-21), w - 3.6, 2, 14, 18, '#e8e8e8');
+    } else if (o.toolbox) {
       box(x, fy(-17), w - 5, 14, 10, 19, '#4d5359'); topRect(x - w / 2 + 3.5, fy(-24), x + w / 2 - 3.5, fy(-10), 19.2, '#9aa1a8');
       box(x, fy(-17), w - 4.8, 2, 15, 16.4, '#e07a10');
     } else box(x + 4, fy(-20), 9, 9, 10, 12.5, '#1a1a1a');
@@ -1344,7 +1347,7 @@ function ute3(x, y, col, face, o = {}) {
 
 // ---------- change over: dual-cab ute down the dirt road to Camp ----------
 const UTE_Y = 480, CP0 = 6400, UHW = 72;
-let udust = [], us = 0, ux = 0, uv = 0, uh = 0, ud = 0, ucows = [], uoncoming = [], ucars = [], uslots = [], uT = 0, uBump = 0, uBumps = 0, uSpawn = 0, uPark = 0, uHint = 0;
+let udust = [], us = 0, ux = 0, uv = 0, uh = 0, ud = 0, ucows = [], uoncoming = [], ucars = [], uslots = [], uT = 0, uBump = 0, uBumps = 0, uSpawn = 0, uPark = 0, uHint = 0, uTank = 0;
 const ys = s => UTE_Y - (s - us);
 // dirt-road centre offset at distance s: bends build up from the start and ease out before the car park
 function uOff(s) {
@@ -1353,7 +1356,7 @@ function uOff(s) {
   return ramp * (95 * Math.sin(s / 520) + 45 * Math.sin(s / 190 + 1));
 }
 function toUte() {
-  state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; uh = 0; ud = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uoncoming = []; udust = []; particles = []; ptrs.clear(); syncBtns();
+  state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; uh = 0; ud = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uTank = 0; uoncoming = []; udust = []; particles = []; ptrs.clear(); syncBtns();
   ucows = [];
   for (let s = 800; s < CP0 - 600; s += 380 + Math.random() * 380) {   // lone cows, well spaced
     const dir = Math.random() < .5 ? 1 : -1;
@@ -1371,7 +1374,7 @@ function updateUte(dt) {
   udust = udust.filter(d => d.l < d.life).slice(-260);
   const puff = (x, s, sp) => { if (Math.random() < Math.min(1, Math.abs(sp) / 60 * 60 * dt * .5)) udust.push({ x: x + (Math.random() - .5) * 16, s, vx: (Math.random() - .3) * 14, l: 0, life: 1.1 + Math.random() * .9, r: 5 + Math.random() * 4 }); };
   puff(ux, us - 32, uv);
-  for (const o of uoncoming) puff(o.x, o.s + 32, o.v);
+  for (const o of uoncoming) if (!o.tank) puff(o.x, o.s + 32, o.v);   // water cart keeps its own dust down
   uT += dt; msgT -= dt; shake = Math.max(0, shake - dt); uBump = Math.max(0, uBump - dt);
   const gas = keys.ArrowUp || keys.KeyW || keys.TG, brk = keys.ArrowDown || keys.KeyS || keys.TB;
   const cx = W / 2 + uOff(us), onRoad = us > CP0 - 40 || Math.abs(ux - cx) < UHW + 6, vmax = onRoad ? 150 : 70;
@@ -1394,10 +1397,10 @@ function updateUte(dt) {
     if (Math.abs(c.x - ux) < 24 && Math.abs(c.s - us) < 30) bump('Mind the cattle!');
   }
   uSpawn -= dt;
-  if (uSpawn <= 0 && us < CP0 - 900) { uoncoming.push({ s: us + 720, rel: 38, v: 120 + Math.random() * 30, tb: Math.random() < .5 }); uSpawn = 6 + Math.random() * 6; }
+  if (uSpawn <= 0 && us < CP0 - 900) { const tank = !uTank && us > 2000; uTank ||= tank; uoncoming.push({ s: us + 720, rel: 38, v: 120 + Math.random() * 30, tb: Math.random() < .5, tank }); uSpawn = 6 + Math.random() * 6; }
   for (const o of uoncoming) {
     o.s -= o.v * dt; o.x = W / 2 + uOff(o.s) + o.rel;
-    if (Math.abs(o.x - ux) < 22 && Math.abs(o.s - us) < 48) bump('Head-on! Keep left');
+    if (Math.abs(o.x - ux) < 22 && Math.abs(o.s - us) < 48) bump(o.tank ? 'Water cart! Keep left' : 'Head-on! Keep left');
   }
   uoncoming = uoncoming.filter(o => o.s > us - 160);
   for (const c of ucars) if (Math.abs(c.x - ux) < 20 && Math.abs(c.s - us) < 48) bump('Bump! Mind the parked cars');
@@ -1439,7 +1442,7 @@ function drawUteWorld() {
     } });
   }
   for (const c of ucows) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => animal3({ x: c.x, y, dir: c.dir, ph: c.ph, go: c.go && !c.done, type: 'cow', col: c.col }) }); }
-  for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb }) }); }
+  for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb && !o.tank, tank: o.tank }) }); }
   for (const c of ucars) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(c.x, y, c.col, -1) }); }
   const sB = CP0 + 330, yB = ys(sB);
   if (yB > -115 && yB < H + 120) for (const bx of [80, 240, 400]) list.push({ y: yB, fn: () => {
