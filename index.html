@@ -49,8 +49,8 @@ const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
-const TR_Y0 = 150, TR_H = 108, TR_X = 330, TR_W = 76;   // loading-yard trailer layout
-const PILE = { x: 16, y: 200, w: 150, h: 280 };   // one big mound; solid for the loader
+const TR_Y0 = 150, TR_H = 108, TR_X = 340, TR_W = 76;   // loading-yard trailer layout
+const PILE = { x: 10, y: 200, w: 110, h: 280 };   // one big mound; solid for the loader
 const LDR_R = 30, SEG_N = 10, SEG_H = PILE.h / SEG_N, SCOOP_CUT = .25;
 const segY = k => PILE.y + (k + .5) * SEG_H;
 const segProf = k => Math.pow(Math.sin(Math.PI * (k + .5) / SEG_N), .7);   // bell profile so the slices read as one mound
