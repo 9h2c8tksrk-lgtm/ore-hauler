@@ -169,7 +169,29 @@ function recordRun(done) {
   board.push({ id: runId, name: playerName || 'Player', done, diff, score: done ? score : 0, tons, pct: pctOut() });
   board.sort(rank); board = board.slice(0, 50);
   try { localStorage.oreBoard = JSON.stringify(board); } catch (e) {}
+  const mine = board.find(b => b.id === runId);
+  if (SB_URL && mine) fetch(`${SB_URL}/rest/v1/scores`, { method: 'POST', headers: { ...SB_HEAD, Prefer: 'return=minimal' }, body: JSON.stringify({ run_id: mine.id, name: mine.name, done: mine.done, diff: mine.diff, score: mine.score, tons: mine.tons, pct: mine.pct }) }).then(loadShared).catch(() => {});
 }
+// Shared scoreboard on Supabase: set the project URL and its public anon key (safe in client code; row-level security limits it to read + insert).
+// Leave SB_URL empty to keep scores local. Table setup SQL:
+// create table scores (id bigint generated always as identity primary key, run_id bigint not null, name text not null check (char_length(name) between 1 and 12), done boolean not null default false, diff int not null check (diff between 0 and 3), score int not null check (score between 0 and 1000000), tons int not null check (tons between 0 and 1000), pct int not null check (pct between 0 and 100), created_at timestamptz not null default now());
+// alter table scores enable row level security;
+// create policy "read scores" on scores for select to anon using (true);
+// create policy "add scores" on scores for insert to anon with check (true);
+const SB_URL = 'https://aaadytlpkdyxfynzvcbe.supabase.co', SB_KEY = 'sb_publishable_eFO6847kDQUsj-nouCFDsw_G5GcUqxw';
+const SB_HEAD = { apikey: SB_KEY, 'Content-Type': 'application/json' };
+const boardKey = b => `${b.id}|${b.name}`;
+async function loadShared() {
+  if (!SB_URL) return;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/scores?select=run_id,name,done,diff,score,tons,pct&order=created_at.desc&limit=300`, { headers: SB_HEAD });
+    const remote = (await r.json()).map(b => ({ id: b.run_id, name: b.name, done: b.done, diff: b.diff, score: b.score, tons: b.tons, pct: b.pct }));
+    const seen = new Set(), merged = [];
+    for (const b of remote.concat(board)) if (!seen.has(boardKey(b))) { seen.add(boardKey(b)); merged.push(b); }
+    board = merged.sort(rank).slice(0, 50);
+  } catch (e) {}
+}
+loadShared(); setInterval(loadShared, 30000);
 function drawBoard(y0, n, hi) {
   text('SCOREBOARD', W / 2, y0, 16, '#f60');
   if (!board.length) { text('No runs yet', W / 2, y0 + 30, 14, '#bbb'); return; }
