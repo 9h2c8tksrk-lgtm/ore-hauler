@@ -2104,15 +2104,32 @@ function drawWorkshopChase() {
   wall(GATE.x - GATE.w / 2 - 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100'); wall(GATE.x + GATE.w / 2 + 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100');
   { const [vx, vy] = V(GATE.x, WORLD.h - 50); if (near(vy)) list.push({ y: vy, fn: () => { const [sx, sy] = P(vx, vy, 30); text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', sx, sy, 14 * sc(vy), wk.done ? '#6f6' : '#ffd23a'); } }); }
   // workshop side walls, sea containers and the arched shelter
-  wall(WK.x - 3, WK.y + WK.h / 2, 6, WK.h, 0, 52, '#6a7076'); wall(WK.x + WK.w + 3, WK.y + WK.h / 2, 6, WK.h, 0, 52, '#6a7076');
+  // workshop shell: side walls, then a front and back wall with a doorway for every bay
+  const WH = 70, DW = 48;
+  wall(WK.x - 3, WK.y + WK.h / 2, 6, WK.h, 0, WH, '#aeb5bb'); wall(WK.x + WK.w + 3, WK.y + WK.h / 2, 6, WK.h, 0, WH, '#aeb5bb');
+  for (const wy of [WK.y - 3, WK_MOUTH + 3]) {
+    wall(WK.x + 3, wy, 6, 6, 0, WH, '#aeb5bb'); wall(WK.x + WK.w - 3, wy, 6, 6, 0, WH, '#aeb5bb');
+    for (let i = 0; i < 6; i++) {
+      const cx = wkBayX(i), px = (BAY_W - DW) / 2;
+      wall(cx - DW / 2 - px / 2, wy, px, 6, 0, WH, '#aeb5bb'); wall(cx + DW / 2 + px / 2, wy, px, 6, 0, WH, '#aeb5bb');   // pillars between doorways
+      wall(cx, wy, DW, 6, 50, WH, '#7d8790');                                                                             // lintel over the door
+      wall(cx, wy, DW, 7, 46, 50, '#e8b100');                                                                             // roller door housing
+      wall(cx - DW / 2 - .5, wy, 2, 7, 0, 50, '#e8b100'); wall(cx + DW / 2 + .5, wy, 2, 7, 0, 50, '#e8b100');          // door frame
+    }
+  }
   for (const k of CONT) wall(k.x + k.w / 2, k.y + k.h / 2, k.w, k.h, 0, 52, k.c);
   for (const [dx, dy] of [[2, 2], [SHELTER.w - 2, 2], [2, SHELTER.h - 2], [SHELTER.w - 2, SHELTER.h - 2]]) wall(SHELTER.x + dx, SHELTER.y + dy, 4, 4, 0, 40, '#8d959c');
   wall(SHELTER.x + SHELTER.w / 2, SHELTER.y + SHELTER.h / 2, SHELTER.w, SHELTER.h, 40, 44, '#cfd5da');
-  for (let i = 0; i < 6; i++) for (let r = 0; r < 3; r++) {   // translucent roof over the bays
-    const x0 = WK.x + i * BAY_W, y0 = WK.y + r * WK.h / 3, q = [V(x0, y0), V(x0 + BAY_W, y0), V(x0 + BAY_W, y0 + WK.h / 3), V(x0, y0 + WK.h / 3)], vy = (q[0][1] + q[2][1]) / 2;
-    if (q.every(p => near(p[1]))) list.push({ y: vy, fn: () => poly(q.map(p => P(p[0], p[1], 62)), 'rgba(95,105,115,.4)') });
+  const inside = wkParts().some(p => p.x > WK.x - 30 && p.x < WK.x + WK.w + 30 && p.y > WK.y - 30 && p.y < WK_MOUTH + 30);
+  const roofA = inside ? .3 : .96;   // see-through while the rig is in or at the building
+  for (let i = 0; i < 6; i++) for (let r = 0; r < 3; r++) {   // corrugated roof, a ridge down the middle of each bay
+    const x0 = WK.x + i * BAY_W, y0 = WK.y + r * WK.h / 3, y1 = y0 + WK.h / 3, xm = x0 + BAY_W / 2, vq = (xa, xb) => [V(xa, y0), V(xb, y0), V(xb, y1), V(xa, y1)];
+    const l = vq(x0, xm), rr = vq(xm, x0 + BAY_W), vy = (l[0][1] + l[2][1]) / 2;
+    if (l.every(p => near(p[1])) && rr.every(p => near(p[1]))) list.push({ y: vy + 2, fn: () => {
+      ctx.globalAlpha = roofA; poly(l.map(p => P(p[0], p[1], WH + 6)), '#b3bac1'); poly(rr.map(p => P(p[0], p[1], WH + 6)), '#cdd3d8'); ctx.globalAlpha = 1;
+    } });
   }
-  { const [vx, vy] = V(WK.x + WK.w / 2, WK.y + WK.h / 2); if (near(vy)) list.push({ y: vy + 1, fn: () => { const [sx, sy] = P(vx, vy, 64); text('WORKSHOP', sx, sy, 22 * sc(vy), '#fff'); } }); }
+  { const [vx, vy] = V(WK.x + WK.w / 2, WK.y + WK.h / 2); if (near(vy)) list.push({ y: vy + 1, fn: () => { const [sx, sy] = P(vx, vy, WH + 6); ctx.globalAlpha = roofA; text('WORKSHOP', sx, sy, 22 * sc(vy), '#2a3b4d'); ctx.globalAlpha = 1; } }); }
   { const [vx, vy] = V(wkBayX(TYRE_BAY), WK_MOUTH + 16); if (near(vy)) list.push({ y: vy, fn: () => { const [sx, sy] = P(vx, vy, 0); text('TYRES', sx, sy, 12 * sc(vy), '#ffd23a'); } }); }
   // tyres on the rack, in the scrap heap, in the bay mouth and rolling about
   const tyre = (x, y) => { const [vx, vy] = V(x, y); if (near(vy)) list.push({ y: vy, fn: () => wheel3(vx, vy, 8, 7, 0) }); };
