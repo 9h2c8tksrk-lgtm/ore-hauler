@@ -21,7 +21,7 @@ const W = 480, H = 720; let SS = 2;   // logical size; the canvas backing store 
 cv.width = W * SS; cv.height = H * SS; ctx.scale(SS, SS); ctx.imageSmoothingQuality = 'high';
 const ROAD_L = 125, ROAD_R = 355;
 const LANE_X = [(ROAD_L + W / 2) / 2, (ROAD_R + W / 2) / 2];
-const BUCKET = 6, TRAILER_CAP = 5, NT = 4;           // tonnes per scoop, scoops per trailer, trailers
+const BUCKET = 10, TRAILER_CAP = 4, NT = 4;           // tonnes per scoop, scoops per trailer, trailers
 const MAX_ORE = BUCKET * TRAILER_CAP * NT, MIN_ORE = BUCKET * 4;
 const TRIP = 4000;
 // Road centre offset (px) at distance s along the route: winding downhill, then straight highway
@@ -49,8 +49,8 @@ const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
-const TR_Y0 = 150, TR_H = 108, TR_X = 340, TR_W = 76;   // loading-yard trailer layout
-const PILE = { x: 10, y: 200, w: 110, h: 280 };   // one big mound; solid for the loader
+const TR_Y0 = 150, TR_H = 108, TR_X = 390, TR_W = 76;   // loading-yard trailer layout
+const PILE = { x: 6, y: 200, w: 160, h: 280 };   // one big mound; solid for the loader
 const LDR_R = 30, SEG_N = 10, SEG_H = PILE.h / SEG_N, SCOOP_CUT = .25;
 const segY = k => PILE.y + (k + .5) * SEG_H;
 const segProf = k => Math.pow(Math.sin(Math.PI * (k + .5) / SEG_N), .7);   // bell profile so the slices read as one mound
@@ -368,7 +368,7 @@ function updateLoad(dt) {
   ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
   // trailers are solid: bumping them hurts both the loader and that trailer
   if (ldr.y > TR_Y0 - 30 && ldr.y < TR_Y0 + NT * TR_H + 20 && ldr.x > TR_X - 36 && ldr.x < TR_X + TR_W + 36) {
-    ldr.x = ldr.x < TR_X + TR_W / 2 ? TR_X - 36 : TR_X + TR_W + 36;
+    ldr.x = TR_X - 36;   // the trailers sit against the right edge, so the loader is always kept on the pile side
     if (hitCd <= 0 && Math.abs(distance) > 0) {
       const i = Math.max(0, Math.min(NT - 1, Math.floor((ldr.y - TR_Y0) / TR_H)));
       hitCd = 1; ldrHp = Math.max(0, ldrHp - 8); trDmg[i] = Math.min(100, trDmg[i] + 10); shake = .25;
