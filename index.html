@@ -51,7 +51,9 @@ const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between t
 const LADDER = { x: 180, y: 550 };   // against the west wall of the top-left building
 const BLDG = [[185, 520], [265, 520], [185, 610], [265, 610]].map(([x, y]) => ({ x, y, w: 50, h: 60, c: '#6d7f8f' }));   // four buildings at the tyre-bay end of the workshop, a cross-shaped open space between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
-const TR_Y0 = 150, TR_H = 108, TR_X = 390, TR_W = 76;   // loading-yard trailer layout
+const TR_Y0 = 150, TR_X = 390, TR_W = 76, BUCKET_W = 58, TR_H = BUCKET_W * 3 + 24;   // loading-yard trailer layout: each bin is three loader buckets long
+let trShift = 0;   // how far the whole truck has rolled forward (up the screen) so the next empty trailer sits at the loading spot
+const trCy = i => TR_Y0 + i * TR_H + TR_H / 2 - trShift;
 const PILE = { x: 6, y: 200, w: 160, h: 280 };   // one big mound; solid for the loader
 const LDR_R = 30, SEG_N = 10, SEG_H = PILE.h / SEG_N, SCOOP_CUT = .25;
 const segY = k => PILE.y + (k + .5) * SEG_H;
@@ -253,7 +255,7 @@ function flash(t) { msg = t; msgT = 2.5; }
 function burst(x, y, col, n) { for (let i = 0; i < n; i++) particles.push({ x, y, vx: (Math.random() - .5) * 120, vy: (Math.random() - .8) * 120, l: .6, col }); }
 
 const nearPile = () => ldr.x > PILE.x - 40 && ldr.x < PILE.x + PILE.w + 40 && ldr.y > PILE.y - 40 && ldr.y < PILE.y + PILE.h + 40;
-const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0) / TR_H); return ldr.x > TR_X - 100 && ldr.x < TR_X + TR_W + 100 && i >= 0 && i < NT ? i : -1; };
+const trailerAt = () => { const i = Math.floor((ldr.y - TR_Y0 + trShift) / TR_H); return ldr.x > TR_X - 100 && ldr.x < TR_X + TR_W + 100 && i >= 0 && i < NT ? i : -1; };
 function action() {
   if (!carrying) {
     if (nearPile()) {
@@ -270,7 +272,7 @@ function action() {
     if (i < 0) flash('Line up beside a trailer to dump');
     else if (fills[i] >= TRAILER_CAP) flash(`Trailer ${i + 1} is full`);
     else {
-      const fa = ldr.angle + ldr.art, cy = TR_Y0 + i * TR_H + TR_H / 2;
+      const fa = ldr.angle + ldr.art, cy = trCy(i);
       const bx = ldr.x + Math.sin(fa) * 40, by = ldr.y - Math.cos(fa) * 40;
       const skew = Math.abs(Math.atan2(Math.sin(fa - Math.PI / 2), Math.cos(fa - Math.PI / 2)));
       const off = Math.abs(by - cy) / (TR_H / 2);
@@ -362,6 +364,8 @@ function damage(n, what, idx) {
 }
 
 function updateLoad(dt) {
+  const first = fills.findIndex(f => f < TRAILER_CAP), want = (first < 0 ? NT - 1 : first) * TR_H;   // roll forward as each trailer fills
+  if (fills.every(f => f === 0)) trShift = 0; else trShift += Math.max(-1, Math.min(1, (want - trShift) / 4)) * Math.min(Math.abs(want - trShift), 90 * dt);
   const steering = steerAxis();
   const throttle = (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0);
   ldr.art += (steering * .6 - ldr.art) * (1 - Math.exp(-6 * dt));
@@ -371,10 +375,10 @@ function updateLoad(dt) {
   ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(mid) * distance));
   ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
   // trailers are solid: bumping them hurts both the loader and that trailer
-  if (ldr.y > TR_Y0 - 30 && ldr.y < TR_Y0 + NT * TR_H + 20 && ldr.x > TR_X - 36 && ldr.x < TR_X + TR_W + 36) {
+  if (ldr.y > TR_Y0 - trShift - 30 && ldr.y < TR_Y0 - trShift + NT * TR_H + 20 && ldr.x > TR_X - 36 && ldr.x < TR_X + TR_W + 36) {
     ldr.x = TR_X - 36;   // the trailers sit against the right edge, so the loader is always kept on the pile side
     if (hitCd <= 0 && Math.abs(distance) > 0) {
-      const i = Math.max(0, Math.min(NT - 1, Math.floor((ldr.y - TR_Y0) / TR_H)));
+      const i = Math.max(0, Math.min(NT - 1, Math.floor((ldr.y - TR_Y0 + trShift) / TR_H)));
       hitCd = 1; ldrHp = Math.max(0, ldrHp - 8); trDmg[i] = Math.min(100, trDmg[i] + 10); shake = .25;
       burst(ldr.x, ldr.y, '#bbb', 8); flash(`Crunch! Loader and trailer ${i + 1} damaged`);
     }
@@ -568,13 +572,26 @@ function wkFresh() {
 }
 function toWorkshop() {
   if (state !== 'drive') return;
-  state = 'workshop'; wk = wkFresh(); yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
+  state = 'workshop'; wk = wkFresh(); marks = []; yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
   flash('Up the right side, round to the top, then line up with a bay');
 }
 // drag the trailer chain behind the cab
 function wkChain() {
   wk.j[0].x = wk.x - Math.sin(wk.h) * HITCH * WK_SC; wk.j[0].y = wk.y + Math.cos(wk.h) * HITCH * WK_SC;
   chainFollow(wk.j, TRAILER_LEN * WK_SC);
+}
+// tyre marks left in the dirt by the cab and each trailer
+let marks = [];
+function trackMarks() {
+  wkParts().forEach((p, k) => {
+    const last = marks.last && marks.last[k];
+    if (!marks.last) marks.last = [];
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) < 4) return;
+    marks.last[k] = { x: p.x, y: p.y };
+    if (!last) return;
+    for (const s of [-1, 1]) marks.push({ x: p.x + Math.cos(p.a) * 8 * s, y: p.y + Math.sin(p.a) * 8 * s });
+  });
+  if (marks.length > 3000) marks.splice(0, marks.length - 3000);
 }
 function wkParts() {
   const out = [{ x: wk.x, y: wk.y, a: wk.h }];
@@ -605,7 +622,7 @@ function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
-  yardUpdate(dt); crewUpdate(dt);
+  yardUpdate(dt); crewUpdate(dt); trackMarks();
   const straighten = () => { wk.h = Math.PI + angDiff(wk.h, Math.PI) * (1 - Math.min(1, dt * 6)); };
   if (wk.auto) {
     const cx = wkBayX(wk.bay);
@@ -1962,10 +1979,10 @@ function drawYardChase() {
       }
     } });
   }
-  const cabX = TR_X + TR_W / 2 - 1, cabY = TR_Y0 - 38, [cvx, cvy] = V(cabX, cabY);
+  const cabX = TR_X + TR_W / 2 - 1, cabY = TR_Y0 - 38 - trShift, [cvx, cvy] = V(cabX, cabY);
   if (near(cvy)) list.push({ y: cvy, fn: () => chaseCab(cvx, cvy, ang) });
   for (let i = 0; i < NT; i++) {
-    const cy = TR_Y0 + i * TR_H + TR_H / 2, [vx, vy] = V(TR_X + TR_W / 2, cy), w = 52, l = TR_H - 24, f = fills[i] / TRAILER_CAP;
+    const cy = trCy(i), [vx, vy] = V(TR_X + TR_W / 2, cy), w = 52, l = TR_H - 24, f = fills[i] / TRAILER_CAP;
     if (!near(vy)) continue;
     list.push({ y: vy, fn: () => chaseTrailer(vx, vy, ang, i, f, w, l, trailerAt() === i && carrying, true) });
   }
@@ -1989,600 +2006,14 @@ function drawYard() {
   });
   sl.forEach((o, k) => { if (o.m > .02) rockChunks(pcx, o.y, o.hw - 6, SEG_H * .6, Math.ceil(9 * o.m), 7, 7 + k); });
   ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
-  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38, -1, true));
+  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38 - trShift, -1, true));
   for (let i = 0; i < NT; i++) {
-    const cy = TR_Y0 + i * TR_H + TR_H / 2;
+    const cy = trCy(i);
     rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 30, '#444');
     lift(() => yardTrailer(TR_X + TR_W / 2, cy, i));
     if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
   }
-  lift(() => { for (const wy of [150, 159, 168]) { wheel(TR_X + 8, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
-  for (const p of spills) {
-    ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
-    rockChunks(p.x, p.y, p.r, p.r * .7, Math.round(p.r / 2) + 2, 3.5, Math.round(p.a * 100) + 1);
-  }
-  drawLoader(ldr.x, ldr.y, carrying);
-  for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
-  }
-  rect(0, 0, W, 56, '#000a');
-  text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
-  text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
-  bar(150, 4, 110, 14, ldrHp / 100, ldrHp > 50 ? '#4c4' : ldrHp > 25 ? '#fc3' : '#e44');
-  text(`Loader ${ldrHp}%`, 205, 15, 10, '#fff', 'center');
-  text(`Trailers ${trDmg.map(d => 100 - d).join('/')}%`, W - 12, 13, 10, '#aaa', 'right');
-  text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
-  text(isTouch ? 'Stick to steer · GAS / REV to move' : '←→ / pad stick turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
-  if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
-  if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
-  else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
-  if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, ACT[4], false); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
-}
-
-function tyreDisc(x, y, r, spin = 0) {
-  ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#8a8d90'; ctx.beginPath(); ctx.arc(x, y, r * .55, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#444'; ctx.lineWidth = 1.2; ctx.beginPath();
-  for (let k = 0; k < 4; k++) { const a = spin + k * Math.PI / 2; ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * r * .5, y + Math.sin(a) * r * .5); }
-  ctx.stroke();
-}
-// top-down mechanic facing "up" before rotation: boots, shoulders, reaching arms, hard hat
-function drawUteWorld() {
-  camX = W / 2 + (ux - W / 2) * .55; scroll = us;
-  drawSky(); drawGround();
-  const ye = ys(CP0), ya = Math.max(-120, ye);
-  if (ya < H + 80) {
-    strip(W / 2 - UHW - 14, W / 2 + UHW + 14, '#a8683f', ya); strip(W / 2 - UHW, W / 2 + UHW, '#c08a58', ya);
-    for (const rx of [-38, 38]) { strip(W / 2 + rx - 14, W / 2 + rx - 6, 'rgba(0,0,0,.10)', ya); strip(W / 2 + rx + 6, W / 2 + rx + 14, 'rgba(0,0,0,.10)', ya); }
-  }
-  const clampY = y => Math.max(-118, Math.min(H + 80, y));
-  const gT = clampY(ys(CP0 + 300)), gB = clampY(ys(CP0 - 20));
-  if (gT < gB) topRect(-80, gT, W + 80, gB, 0, '#9a8368');
-  for (const q of uslots) {
-    const yT = ys(q.s0 + 64), yB = ys(q.s0);
-    if (yB < -118 || yT > H + 80) continue;
-    if (q.free) topRect(q.x - 18, clampY(yT), q.x + 18, clampY(yB), .2, 'rgba(120,255,140,.16)');
-    for (const lx of [q.x - 18, q.x + 18]) topRect(lx - 1, clampY(yT), lx + 1, clampY(yB), .3, 'rgba(255,255,255,.75)');
-    topRect(q.x - 18, clampY(yT) - 1, q.x + 18, clampY(yT) + 1, .3, 'rgba(255,255,255,.75)');
-  }
-  const list = [];
-  for (let g = Math.floor((us - 340) / 150); g <= Math.ceil((us + 620) / 150); g++) {
-    const s = g * 150 + hash(g * 3.1) * 100, y = ys(s);
-    if (y < -115 || y > H + 60 || s < 0 || s > CP0 - 60) continue;
-    list.push({ y, fn: () => {
-      for (const side of [-1, 1]) {
-        const d = hash(g * 2 + side), r = hash(g * 11 + side), sx = W / 2 + uOff(s) + side * (UHW + 28 + hash(g * 5 + side) * 170);
-        if (r < .3) { dome(sx, y, 14 + d * 12, 10 + d * 12, '#9a6a55'); dome(sx + 12, y + 6, 8, 6, '#7d513f'); }
-        else if (r < .55) { dome(sx, y, 16 + d * 8, 12, '#6f7d3c'); dome(sx - 10, y + 5, 9, 7, '#8a9650'); }
-        else if (r < .8) { box(sx, y, 7, 7, 0, 46, '#d8cdb6'); dome(sx, y, 24, 20, '#667a38', 40); dome(sx + 12, y + 3, 16, 14, '#7c9040', 48); }
-        else dome(sx, y, 12, 6, '#b39a58');
-      }
-    } });
-  }
-  for (const c of ucows) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => animal3({ x: c.x, y, dir: c.dir, ph: c.ph, go: c.go && !c.done, type: 'cow', col: c.col }) }); }
-  for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb && !o.tank, tank: o.tank }) }); }
-  for (const c of ucars) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(c.x, y, c.col, -1) }); }
-  const sB = CP0 + 330, yB = ys(sB);
-  if (yB > -115 && yB < H + 120) for (const bx of [80, 240, 400]) list.push({ y: yB, fn: () => {
-    box(bx, yB, 120, 46, 0, 34, '#d9d4c4'); box(bx, yB, 126, 52, 34, 39, '#8c3b2a');
-    for (const wx of [-36, 36]) rearRect(yB + 23, bx + wx - 9, bx + wx + 9, 12, 26, '#2a3b4d');
-    rearRect(yB + 23, bx - 8, bx + 8, 0, 28, '#5a3a22');
-    if (bx === 240) { const [sx, sy] = P(bx, yB + 23, 31), k = sc(yB); rect(sx - 30 * k, sy - 8 * k, 60 * k, 16 * k, '#1d5fb4'); text('CAMP', sx, sy + 5 * k, 14 * k, '#fff'); }
-  } });
-  const yS = ys(CP0 - 10);
-  if (yS > -115 && yS < H + 80) list.push({ y: yS, fn: () => {
-    const x = W / 2 + UHW + 30; box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 44, 3, 30, 44, '#1d5fb4');
-    const [sx, sy] = P(x, yS + 1.6, 37), k = sc(yS); text('CAR PARK', sx, sy + 3 * k, 8 * k, '#fff');
-  } });
-  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud })) });
-  list.sort((a, b) => a.y - b.y);
-  for (const o of list) o.fn();
-  for (const d of udust) {
-    const y = ys(d.s);
-    if (y < -110 || y > H + 80) continue;
-    const k = d.l / d.life, [sx, sy] = P(d.x + d.vx * d.l, y, 3 + k * 18), r = (d.r + k * 16) * sc(y);
-    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-    g.addColorStop(0, `rgba(214,172,128,${.5 * (1 - k)})`); g.addColorStop(1, 'rgba(214,172,128,0)');
-    ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
-  }
-  atmosphere();
-}
-function drawUteScreen() {
-  drawUteWorld();
-  rect(0, 0, W, 64, '#000a');
-  text('DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
-  text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
-  text(us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
-  text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
-  if (uPark > 0) bar(W / 2 - 60, 80, 120, 12, uPark / .8, '#4c4');
-  if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
-  if (state === 'ute' && isTouch) { drawStick(); drawBtns(DB); }
-  if (state === 'uteend') {
-    rect(30, 200, W - 60, 300, '#000d');
-    text('ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
-    text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
-    text(isTouch ? 'Tap for the menu' : 'Press SPACE for the menu', W / 2, 440, 18, '#ff6');
-  }
-}
-function curve(x, y0, y1, lw, col) {
-  ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
-  for (let y = y0; ; y = Math.min(y + 8, y1)) { const px = x + roadX(y); if (y === y0) ctx.moveTo(px, y); else ctx.lineTo(px, y); if (y >= y1) break; }
-  ctx.stroke();
-}
-function band(xl, xr, col) {
-  ctx.fillStyle = col; ctx.beginPath();
-  for (let y = -8; y <= H + 8; y += 8) ctx.lineTo(xl + roadX(y), y);
-  for (let y = H + 8; y >= -8; y -= 8) ctx.lineTo(xr + roadX(y), y);
-  ctx.fill();
-}
-function drawRoad() {
-  rect(0, 0, W, H, '#a74626');
-  for (let y = -160 + (scroll % 160); y < H + 100; y += 160) {
-    for (const x of [35, W - 50]) {
-      ctx.fillStyle = '#87351e'; ctx.beginPath(); ctx.ellipse(x, y + 35, 29, 17, -.3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#bc5b31'; ctx.beginPath(); ctx.ellipse(x - 5, y + 30, 23, 11, -.3, 0, Math.PI * 2); ctx.fill();
-    }
-    for (const x of [75, W - 80]) {
-      ctx.fillStyle = '#77713b'; ctx.beginPath(); ctx.arc(x, y + 102, 12, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#a4a063'; ctx.beginPath(); ctx.arc(x - 3, y + 99, 7, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  band(ROAD_L - 13, ROAD_R + 13, '#bf7044'); band(ROAD_L, ROAD_R, '#514f4b');
-  curve(ROAD_L + 3.5, -10, H + 10, 3, '#eee8d5'); curve(ROAD_R - 3.5, -10, H + 10, 3, '#eee8d5');
-  for (let y0 = (scroll % 70) - 70; y0 < H; y0 += 70) curve(W / 2, y0, y0 + 34, 4, '#eee8d5');
-  for (let y0 = (scroll % 160) - 160; y0 < H; y0 += 160) {
-    for (const x of [ROAD_L - 18, ROAD_R + 18]) { curve(x, y0, y0 + 15, 4, '#eee8d5'); curve(x, y0 + 3, y0 + 7, 4, '#d33'); }
-  }
-}
-// ROM pad at the end of the return run: ore stockpiles either side of the entrance
-function drawRom() {
-  if (!ret) return;
-  const y = scroll + qy - (R - 120); if (y < -400) return;
-  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, Math.min(H, y)); ctx.clip();
-  rect(0, 0, W, y, '#7a4428'); rect(ROAD_L - 13, 0, ROAD_R - ROAD_L + 26, y, '#8a5230');
-  for (let k = 0; k < 3; k++) { rockChunks(60, y - 90 - k * 150, 52, 44, 30, 6, 5 + k); rockChunks(W - 60, y - 70 - k * 150, 52, 44, 30, 6, 9 + k); }
-  ctx.restore();
-  rect(ROAD_L - 13, y - 3, ROAD_R - ROAD_L + 26, 6, '#e8b100');
-  rect(ROAD_L - 22, y - 30, 8, 36, '#555'); rect(ROAD_R + 14, y - 30, 8, 36, '#555');
-  rect(ROAD_L - 22, y - 44, ROAD_R - ROAD_L + 44, 18, '#222'); text('ROM', W / 2, y - 30, 14, '#ffd23a');
-}
-function drawTrack() {
-  const cy = crossY(); if (cy < -40 || cy > H + 40) return;
-  rect(0, cy - 20, W, 40, '#6b6258');
-  rect(ROAD_L - 13, cy - 20, ROAD_R - ROAD_L + 26, 40, '#4a4540');
-  for (let x = 4; x < W; x += 14) rect(x, cy - 16, 7, 32, x > ROAD_L - 13 && x < ROAD_R + 13 ? '#6a4a30' : '#3a2a1f');
-  rect(0, cy - 9, W, 3, '#b8bcc0'); rect(0, cy + 6, W, 3, '#b8bcc0');
-}
-function drawGates() {
-  const cy = crossY(); if (cy < -60 || cy > H + 60) return;
-  const on = train.ph === 1 && !trainClear(), blink = Math.sin(beaconClock() * 9) > 0, armL = (ROAD_R - ROAD_L) / 2 - 3;
-  for (const side of [-1, 1]) {
-    const px = side < 0 ? ROAD_L - 9 : ROAD_R + 9, py = cy + 30;
-    if (train.g > 0) {
-      ctx.lineCap = 'butt'; ctx.lineWidth = 6; ctx.strokeStyle = '#f2f2f2'; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - side * armL * train.g, py); ctx.stroke();
-      ctx.strokeStyle = '#d22'; ctx.setLineDash([12, 12]); ctx.stroke(); ctx.setLineDash([]);
-    }
-    rect(px - 5, py - 5, 10, 10, '#333');
-    for (const [k, ly] of [[0, py - 9], [1, py + 9]]) {
-      const lit = on && (blink ? k === 0 : k === 1);
-      if (lit) { const g = ctx.createRadialGradient(px, ly, 1, px, ly, 14); g.addColorStop(0, 'rgba(255,40,40,.8)'); g.addColorStop(1, 'rgba(255,40,40,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, ly, 14, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = lit ? '#ff3030' : '#5a1010'; ctx.beginPath(); ctx.arc(px, ly, 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-}
-function drawTrain() {
-  drawGates();
-  if (train.ph !== 1) return;
-  const cy = crossY(), hx = trainHead();
-  if (cy < -40 || cy > H + 40) return;
-  rect(hx - 66, cy - 15, 66, 30, '#e8a100'); rect(hx - 66, cy - 15, 66, 4, '#b87a00'); rect(hx - 20, cy - 11, 16, 22, '#2a2a2a'); rect(hx - 17, cy - 8, 10, 16, '#9cf');
-  rect(hx - 60, cy - 8, 30, 16, '#c88400'); for (let k = 0; k < 4; k++) rect(hx - 58 + k * 7, cy - 6, 3, 12, '#6a4400');
-  rect(hx - 70, cy - 10, 5, 20, '#555');
-  for (let x = hx - 70; x > hx - TRAIN_L; x -= 58) {
-    if (x < -60 || x - 54 > W) continue;
-    rect(x - 54, cy - 14, 54, 28, '#5a3022'); rect(x - 52, cy - 11, 50, 22, '#8a5a44');
-    rect(x - 48, cy - 8, 42, 16, '#a8705a'); for (let k = 0; k < 5; k++) rect(x - 46 + k * 9, cy - 7 + (k % 2) * 4, 5, 5, '#7a4a38');
-    rect(x - 4, cy - 2, 6, 4, '#222');
-  }
-}
-function drawCar(t) {
-  ctx.save(); ctx.translate(t.x, t.y);
-  if (t.oncoming) ctx.rotate(Math.PI);
-  const x = -t.w / 2, y = -t.h / 2;
-  rect(x, y, t.w, t.h, t.col);
-  rect(x + 4, y + 6, t.w - 8, 12, '#9cf');
-  if (t.truck) rect(x + 2, y + 24, t.w - 4, t.h - 28, '#ddd');
-  rect(x + 3, y + t.h - 4, 8, 3, '#f33'); rect(x + t.w - 11, y + t.h - 4, 8, 3, '#f33');
-  ctx.restore();
-}
-function drawAnimal(a) {
-  ctx.save(); ctx.translate(a.x, a.y);
-  if (a.hit) { ctx.rotate(a.rot); ctx.globalAlpha = Math.min(1, 2.2 - a.t * 1.2); ctx.scale(1 + Math.max(0, .35 - a.t) * 1.2, 1); }
-  ctx.scale(a.dir, 1);
-  const s = a.hit ? 0 : Math.sin(a.ph) * 3;
-  if (a.type === 'cow') {
-    const dark = a.col === '#1e1e1e';
-    rect(-20, -10, 32, 20, a.col); rect(-12, -10, 10, 20, dark ? '#2e2e2e' : '#7f4b27');
-    rect(12, -8, 12, 12, a.col); rect(22, -4, 3, 6, dark ? '#555' : '#a8764a');
-    rect(14, -11, 3, 4, '#ddd'); rect(20, -11, 3, 4, '#ddd');
-    rect(20, -6, 2, 2, '#fff');
-    ctx.fillStyle = '#111'; rect(-16, 10, 4, 8 + s, '#111'); rect(-4, 10, 4, 8 - s, '#111'); rect(4, 10, 4, 8 + s, '#111'); rect(8, 10, 4, 8 - s, '#111');
-  } else {
-    const hop = a.hit ? 0 : -Math.abs(Math.sin(a.ph * .6)) * 8;
-    ctx.translate(0, hop);
-    ctx.fillStyle = '#b97a4a'; ctx.beginPath(); ctx.moveTo(-8, 4); ctx.lineTo(-30, 12); ctx.lineTo(-8, 10); ctx.fill();   // tail
-    rect(-8, -12, 16, 22, '#c8895a'); rect(-8, 2, 14, 8, '#b97a4a');
-    rect(6, -20, 10, 10, '#c8895a'); rect(14, -16, 6, 5, '#d9a07a'); rect(15, -16, 2, 2, '#111');
-    rect(7, -27, 3, 8, '#c8895a'); rect(12, -27, 3, 8, '#c8895a');
-    rect(8, -6, 7, 3, '#b97a4a');
-    rect(-4, 10, 14, 4, '#b97a4a'); rect(6, 12, 12, 4, '#8a5a38');
-  }
-  ctx.restore();
-}
-// side-tipper trailer, top-down, centred on (x,y); w x h; fill 0..1; tipSide hinge on right
-function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
-  rect(x - w / 2 - 3, y - h / 2 + 6, 5, 14, '#111'); rect(x - w / 2 - 3, y + h / 2 - 20, 5, 14, '#111');
-  rect(x + w / 2 - 2, y - h / 2 + 6, 5, 14, '#111'); rect(x + w / 2 - 2, y + h / 2 - 20, 5, 14, '#111');
-  ctx.save();
-  const hx = x + w / 2; ctx.translate(hx, 0); ctx.scale(1 - .5 * tip, 1); ctx.translate(-hx, 0);   // bin tips about its right-hand hinge
-  rect(x - w / 2, y - h / 2, w, h, '#ee5c9d');
-  rect(x - w / 2 + 3, y - h / 2 + 3, w - 6, h - 6, '#b73770');
-  if (fill > 0) {
-    const ih = (h - 10) * Math.min(1, .25 + fill * .75);
-    rect(x - w / 2 + 5, y - ih / 2, w - 10, ih, '#8a5a44');
-    rect(x - w / 2 + 9, y - ih / 2 + 3, w - 18, Math.max(2, ih - 6), '#a8705a');
-    rockChunks(x, y, (w - 12) / 2, ih / 2 - 1, Math.round(6 + ih / 3), 4.5, 3 + num);
-  }
-  if (lid < 1) {
-    const lw = (w - 6) * (1 - lid);
-    rect(x - w / 2 + 3, y - h / 2 + 3, lw, h - 6, '#d94a8c');
-    if (lw > 6) for (let k = 1; k < 4; k++) rect(x - w / 2 + 3, y - h / 2 + 3 + k * (h - 6) / 4, lw, 2, '#a83570');
-  }
-  if (lid > 0 && lid < 1) rect(x - w / 2 - 7 * lid, y - h / 2 + 3, 7 * lid, h - 6, '#f062a4');
-  for (let k = 1; k < 7; k++) rect(x - w / 2, y - h / 2 + k * h / 7, w, 1.5, '#ee5c9d');   // bin side ribs
-  rect(x - w / 2, y - h / 2, 3, h, '#f06fb0');                    // raised rails along the bin
-  rect(x + w / 2 - 3, y - h / 2, 3, h, '#e8b100');               // tipping hinge rail
-  if (num) text(String(num), x - w / 2 + 12, y - h / 2 + 16, 12, '#ccd');
-  ctx.restore();
-}
-function drawSkyway() {
-  const t = beaconClock();
-  rect(0, 0, W, H, '#a74626');
-  for (let i = 0; i < 24; i++) rect((i * 89) % 240, (i * 53) % H, 6, 6, '#85371f');
-  const g = ctx.createLinearGradient(EDGE_X, 0, W, 0); g.addColorStop(0, '#2b1c18'); g.addColorStop(1, '#05060a');
-  ctx.fillStyle = g; ctx.fillRect(EDGE_X, 0, W - EDGE_X, H);
-  ctx.fillStyle = '#ffffff12';
-  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(EDGE_X + 40 + ((i * 97 + t * 8) % 220), 80 + i * 130, 50, 14, 0, 0, 7); ctx.fill(); }
-  rect(150, 0, 90, H, '#514f4b'); rect(152, 0, 3, H, '#eee8d5'); rect(235, 0, 3, H, '#eee8d5');
-  for (let y = 0; y < H; y += 24) { rect(EDGE_X - 8, y, 8, 12, '#e8b100'); rect(EDGE_X - 8, y + 12, 8, 12, '#222'); }
-  text('THE SKYWAY', 365, 330, 30, '#ff6'); text('DEEP DROP', 365, 360, 16, '#e66');
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
-  for (let i = 0; i < NT; i++) {
-    ctx.beginPath(); ctx.moveTo(SKY_X, i === 0 ? qy + 22 : qy + OFF(i - 1) + 28); ctx.lineTo(SKY_X, qy + OFF(i) - 28); ctx.stroke();
-  }
-  for (let i = 0; i < NT; i++) {
-    drawTrailer(SKY_X, qy + OFF(i), 34, 56, fills[i] / TRAILER_CAP * (1 - tr[i].p), 0, tr[i].lid, tr[i].p);
-    drawBtn(lidBtn(i), lidBtn(i)[4], tr[i].want); drawBtn(tipBtn(i), tipBtn(i)[4], tr[i].dir !== 0 || tr[i].hold > 0);
-    text(String(i + 1), 142, qy + OFF(i) + 6, 18, '#ddd');
-  }
-  drawCab(SKY_X, qy);
-  for (const r of rocks) { const z = 5 * Math.min(1, r.l); rect(r.x, r.y, z, z, r.c); }
-  text(isTouch ? 'Open each lid, then tip the bin' : '1-4 open/close lid · Q W E R tip bin', W / 2, 640, 14, '#ccc');
-}
-// tyre look: -1 plain, 0 worn, 1 bare hub, 2 brand new
-function wheel(x, y, w, h, st = -1) {
-  if (st === 1) { rect(x - 1.5, y - 3, 3, 6, '#9aa0a6'); rect(x - .8, y - 1, 1.6, 2, '#444'); return; }
-  if (st === 2) { rect(x - w / 2, y - h / 2, w, h, '#050505'); rect(x - w / 2, y - h / 2, 1.2, h, '#dcdcdc'); for (let k = 1; k < 4; k++) rect(x - w / 2, y - h / 2 + k * h / 4, w, .8, '#2e2e2e'); return; }
-  rect(x - w / 2, y - h / 2, w, h, st === 0 ? '#3d3835' : '#111');
-  if (st === 0) rect(x - w / 2, y - .5, w, 1, '#777');
-}
-function drawCab(x, y, st = -1, drive = true) {
-  wheel(x - 16.5, y - 7, 5, 14, st); wheel(x + 16.5, y - 7, 5, 14, st);   // steer axle
-  if (drive) for (const wy of [34, 41, 48]) { wheel(x - 16.5, y + wy, 5, 5, st); wheel(x + 16.5, y + wy, 5, 5, st); }   // 3 drive axles under the first trailer's front
-  rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
-  drawBeacon(x - 8, y + 8, 0); drawBeacon(x + 8, y + 8, 1);
-  const ex = x + 20, ey = y + 12, c = beaconClock();   // single exhaust stack, right side
-  rect(x + 15, ey - 2, 5, 4, '#555');
-  for (let k = 0; k < 3; k++) {
-    const age = (c * 1.4 + k / 3) % 1;
-    ctx.fillStyle = `rgba(150,150,150,${.4 * (1 - age)})`; ctx.beginPath(); ctx.arc(ex + age * 3, ey + age * 16, 3 + age * 7, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.fillStyle = '#999'; ctx.beginPath(); ctx.arc(ex, ey, 4.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(ex, ey, 2.7, 0, Math.PI * 2); ctx.fill();
-}
-function drawTruck() {
-  drawRig(jts, qx, qy, cabAngle, 1);
-}
-// cab at (x, y) with heading `ang`, trailers hinged on the chain joints; sc scales the whole rig
-function drawRig(J, x, y, ang, sc, o) {
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4 * sc; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); for (let i = 1; i <= NT; i++) ctx.lineTo(J[i].x, J[i].y); ctx.stroke();
-  for (let i = NT - 1; i >= 0; i--) {
-    const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
-    for (const sx of [-18.5, 18.5]) for (const wy of trailerAxles(i, 54)) wheel(sx, wy, 5, 5, st);
-    if (o && o.fill !== undefined) drawTrailer(0, 0, 34, 56, o.fill, 0, 0); else drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid);
-    ctx.strokeStyle = '#f2b800'; ctx.fillStyle = '#e8b100'; ctx.lineWidth = 2.4;
-    if (i) { ctx.beginPath(); ctx.moveTo(-9, -22); ctx.lineTo(0, -31); ctx.lineTo(9, -22); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -17, 5, 0, 7); ctx.fill(); }   // dolly gooseneck to the ring feeder
-    else { ctx.beginPath(); ctx.arc(0, -31, 6, 0, 7); ctx.fill(); }   // cab turntable
-    ctx.restore();
-  }
-  ctx.fillStyle = '#e8b100';
-  for (const j of J) { ctx.beginPath(); ctx.arc(j.x, j.y, 3 * sc, 0, Math.PI * 2); ctx.fill(); }
-  ctx.lineCap = 'butt';
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(sc, sc); drawCab(0, 0, o && o.tyre ? o.tyre[0] : -1); ctx.restore();
-}
-function drawLoader(x, y, loaded) {
-  // CAT 980-style articulated wheel loader, top view. (x, y) is the articulation joint; rear section follows ldr.angle, front section angle + art
-  const turn = a => { ctx.translate(x, y); ctx.rotate(a); ctx.translate(-x, -y); };
-  const tyre = (tx, ty) => {
-    rect(tx, ty, 13, 28, '#151515'); ctx.fillStyle = '#2e2e2e';
-    for (let k = 0; k < 7; k++) ctx.fillRect(tx + 1, ty + 2 + k * 4, 11, 2);
-    rect(tx + (tx < x ? 9 : 0), ty + 8, 4, 12, Y);       // yellow wheel hub
-  };
-  const Y = '#f2b200', Yd = '#c98f00', Yl = '#ffc928', K = '#1c1c1c';
-  ctx.save(); turn(ldr.angle);
-  tyre(x - 28, y + 4); tyre(x + 15, y + 4);
-  rect(x - 16, y + 2, 32, 14, Yd);                       // rear frame
-  rect(x - 15, y + 18, 30, 24, Y); rect(x - 15, y + 18, 30, 3, Yl);   // engine hood
-  rect(x - 17, y + 20, 5, 18, Yd); rect(x + 12, y + 20, 5, 18, Yd);   // fenders
-  rect(x - 9, y + 24, 18, 2, K); rect(x - 9, y + 28, 18, 2, K);       // cooling vents
-  rect(x - 15, y + 40, 30, 8, K); rect(x - 13, y + 41, 26, 2, '#555');   // rear grille / counterweight
-  rect(x - 14, y - 6, 28, 24, Y);                        // cab body
-  rect(x - 12, y - 4, 24, 20, '#f4f4f4');                // white roof
-  rect(x - 12, y - 6, 24, 4, '#101820'); rect(x - 13, y - 2, 2, 14, '#101820'); rect(x + 11, y - 2, 2, 14, '#101820');   // glazing
-  ctx.fillStyle = '#7fb4d0'; ctx.fillRect(x - 11, y - 5, 22, 1.5);
-  rect(x + 8, y + 18, 3, 3, K);                          // exhaust stack
-  drawBeacon(x, y + 8, 0);
-  ctx.restore();
-  ctx.save(); turn(ldr.angle + ldr.art);
-  tyre(x - 28, y - 32); tyre(x + 15, y - 32);
-  rect(x - 14, y - 28, 28, 30, Y); rect(x - 14, y - 28, 28, 3, Yl);   // front frame
-  rect(x - 19, y - 44, 6, 36, Yd); rect(x + 13, y - 44, 6, 36, Yd);   // lift arms
-  rect(x - 17, y - 22, 34, 4, '#8a6a00');                // cross tube
-  rect(x - 29, y - 52, 58, 16, Yd); rect(x - 27, y - 50, 54, 12, Y);   // bucket
-  if (loaded) { rect(x - 24, y - 51, 48, 10, '#8a5a44'); rect(x - 18, y - 53, 36, 5, '#a8705a'); }
-  rect(x - 29, y - 56, 58, 4, '#c8c8c8');                // cutting edge
-  ctx.restore();
-  ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
-}
-// jagged rock chunks scattered over an ellipse; deterministic so they don't flicker
-function rockChunks(cx, cy, rx, ry, n, size, seed = 1) {
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const cols = ['#5e3a2c', '#7a4a38', '#8a5a44', '#a8705a', '#b98368'];
-  for (let i = 0; i < n; i++) {
-    const a = rnd() * 6.283, d = Math.sqrt(rnd()), x = cx + Math.cos(a) * rx * d, y = cy + Math.sin(a) * ry * d, r = size * (.5 + rnd());
-    const k = 5 + Math.floor(rnd() * 3), rot = rnd() * 6.283;
-    ctx.fillStyle = cols[Math.floor(rnd() * cols.length)]; ctx.beginPath();
-    for (let j = 0; j < k; j++) { const t = rot + j / k * 6.283, rr = r * (.6 + rnd() * .5); ctx[j ? 'lineTo' : 'moveTo'](x + Math.cos(t) * rr, y + Math.sin(t) * rr); }
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#ffffff22'; ctx.fillRect(x - r * .3, y - r * .4, r * .4, r * .25);
-  }
-}
-// loading-yard trailer: slimmer open-top bin drawn with an oblique 3D lean, lid folded up on the hinge side
-function yardTrailer(cx, cy, i) {
-  const w = 52, l = TR_H - 24, dx = 9, dy = -17, f = fills[i] / TRAILER_CAP, col = '#d94a8c';
-  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - l / 2, y1 = cy + l / 2;
-  const q = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill(); };
-  const Q = (ax, ay, bx, by, k = 1) => [[ax + dx * k, ay + dy * k], [bx + dx * k, ay + dy * k], [bx + dx * k, by + dy * k], [ax + dx * k, by + dy * k]];
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x0 + 8, y0 + 8, w, l);
-  if (trDmg[i] > 0) { ctx.fillStyle = 'rgba(30,20,20,.55)'; for (let k = 0; k < Math.ceil(trDmg[i] / 10); k++) ctx.fillRect(x0 + 2 + (k * 17) % (w - 14), y0 + 6 + (k * 29) % (l - 14), 9, 3); }
-  const axles = trailerAxles(i, l).map(a => cy + a - 3.5);   // trailer 1: 3 rear axles; its front three are the cab's drive axles
-  for (const wx of [x0 - 5, x1 - 1]) for (const wy of axles) { ctx.fillStyle = '#111'; ctx.fillRect(wx, wy, 6, 7); }
-  rect(x0 + 6, y0, w - 12, l, '#222');
-  q([[x0, y0], [x0, y1], [x0 + dx, y1 + dy], [x0 + dx, y0 + dy]], shade(col, .8));
-  q([[x0, y1], [x1, y1], [x1 + dx, y1 + dy], [x0 + dx, y1 + dy]], shade(col, .62));
-  rect(x0 + 4, y1 - 9, w - 8, 3, '#e8b100');
-  const T = Q(x0, y0, x1, y1), I = Q(x0, y0, x1, y1, .3);
-  ctx.save(); ctx.beginPath(); ctx.moveTo(T[0][0], T[0][1]); for (const p of T.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.clip();
-  q(I, '#3a1429');
-  q([T[0], T[1], I[1], I[0]], shade('#b73770', .75));
-  q([T[1], T[2], I[2], I[1]], shade('#b73770', .5));
-  if (f > 0) {
-    const a = Q(x0 + 5, y0 + 6, x1 - 5, y1 - 6, .3), b = Q(x0 + 8, y0 + 9, x1 - 8, y1 - 9, .3 + .6 * f);
-    q([a[0], a[3], b[3], b[0]], '#6e4636'); q([a[3], a[2], b[2], b[3]], '#7d513f');
-    q(b, '#a8705a');
-    rockChunks((b[0][0] + b[2][0]) / 2, (b[0][1] + b[2][1]) / 2, (w - 26) / 2, (l - 22) / 2, 10, 4.5, 3 + i);
-  }
-  ctx.restore();
-  ctx.strokeStyle = '#f06fb0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(T[3][0], T[3][1]); ctx.lineTo(T[0][0], T[0][1]); ctx.lineTo(T[1][0], T[1][1]); ctx.lineTo(T[2][0], T[2][1]); ctx.lineTo(T[3][0], T[3][1]); ctx.stroke();
-  q([[x1 + dx, y0 + dy], [x1 + dx, y1 + dy], [x1 + dx + 9, y1 + dy - 20], [x1 + dx + 9, y0 + dy - 20]], '#f06fb0');
-  for (let k = 1; k < 5; k++) { const yy = y0 + dy + k * l / 5; q([[x1 + dx, yy], [x1 + dx + 9, yy - 20], [x1 + dx + 9, yy - 18], [x1 + dx, yy + 2]], '#a83570'); }
-  text(`${i + 1}  ${Math.round(fills[i] * BUCKET)}/${TRAILER_CAP * BUCKET}t`, cx + 4, y1 - 10, 11, '#fff');
-}
-const lift = fn => { ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowOffsetX = 5; ctx.shadowOffsetY = 6; ctx.shadowBlur = 7; fn(); ctx.restore(); };
-// ---------- loading yard: chase-camera view ----------
-// The yard stays 2D; this view rotates it about the loader so the rear section always points up-screen, then projects with the shared perspective camera.
-let chaseView = true;
-const VIEW_BTN = [10, 64, 84, 26, 'VIEW'];
-function prismCorners(cx, cy, w, l, ang) {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => { const a = u * w / 2, b = v * l / 2; return [cx + a * ca - b * sa, cy + a * sa + b * ca]; });
-}
-// box in view space: only the side faces that point at the camera are drawn, so any heading works
-function prism(cx, cy, w, l, z0, z1, col, ang = 0, noTop) {
-  const co = prismCorners(cx, cy, w, l, ang);
-  for (let i = 0; i < 4; i++) {
-    const A = co[i], B = co[(i + 1) % 4], mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, nx = mx - cx, ny = my - cy, len = Math.hypot(nx, ny) || 1;
-    if (nx * (W / 2 - mx) + ny * (CAM_Y - my) <= 0) continue;
-    const f = nx / len > .5 ? .6 : nx / len < -.5 ? .85 : .72;
-    poly([P(A[0], A[1], z0), P(B[0], B[1], z0), P(B[0], B[1], z1), P(A[0], A[1], z1)], shade(col, f));
-  }
-  if (!noTop) poly(co.map(p => P(p[0], p[1], z1)), shade(col, 1.05));
-}
-const quadAt = (cx, cy, w, l, z, col, ang) => poly(prismCorners(cx, cy, w, l, ang).map(p => P(p[0], p[1], z)), col);
-function chaseLoader(J, carry) {
-  const art = ldr.art, ca = Math.cos(art), sa = Math.sin(art), Y = '#f2b200', Yd = '#c98f00', K = '#1c1c1c', up = carry ? 6 : 0;
-  const F = (dx, dy) => [J[0] + dx * ca - dy * sa, J[1] + dx * sa + dy * ca];   // front-section offset, swung by the articulation angle
-  const R = (dx, dy) => [J[0] + dx, J[1] + dy];
-  const tyre = (p, a) => wheel3(p[0], p[1], 11, 12, a);
-  shadow(J[0], J[1] + 8, 62, 100);
-  // front section (furthest from the camera) first
-  let p = F(0, -48); prism(p[0], p[1], 58, 16, 2 + up, 16 + up, Yd, art);
-  if (carry) { quadAt(p[0], p[1], 50, 11, 18 + up, '#8a5a44', art); quadAt(p[0], p[1], 36, 7, 21 + up, '#a8705a', art); }
-  p = F(0, -57); prism(p[0], p[1], 58, 3, 1 + up, 5 + up, '#c8c8c8', art);
-  for (const sx of [-1, 1]) { p = F(sx * 16, -28); prism(p[0], p[1], 6, 36, 10, 22 + up, Yd, art); }
-  for (const sx of [-1, 1]) tyre(F(sx * 19.5, -18), art);
-  p = F(0, -13); prism(p[0], p[1], 28, 30, 5, 24, Y, art);
-  p = R(0, 9); prism(p[0], p[1], 28, 14, 5, 14, Yd);
-  // rear section
-  p = R(0, 6); prism(p[0], p[1], 28, 24, 12, 36, Y); prism(p[0], p[1] - 1, 25, 20, 36, 50, '#101820'); prism(p[0], p[1], 28, 24, 50, 53, '#f4f4f4');
-  const t = beaconClock(), on = Math.sin(t * 12) > 0;
-  prism(p[0], p[1] + 2, 4, 4, 53, 57, on ? '#ffb030' : '#7a4200'); if (on) glow(p[0], p[1] + 2, 57, 24, 'rgba(255,150,0,.8)');
-  for (const sx of [-1, 1]) tyre(R(sx * 19.5, 30), 0);
-  p = R(0, 30); prism(p[0], p[1], 30, 24, 8, 27, Y);
-  p = R(0, 44); prism(p[0], p[1], 30, 8, 6, 30, K);
-  p = R(12, 22); prism(p[0], p[1], 3, 3, 27, 44, '#333');
-}
-// round tyre with an alloy rim, in view space. The axle runs along the heading's local x; only the face turned to the camera gets the rim.
-function wheel3(cx, cy, r, wid, ang) {
-  const ax = Math.cos(ang), ay = Math.sin(ang), fx = -ay, fy = ax, N = 16, vx = W / 2 - cx, vy = CAM_Y - cy;
-  const ring = (off, k) => Array.from({ length: N }, (_, i) => { const t = i / N * Math.PI * 2; return P(cx + ax * off + fx * r * k * Math.cos(t), cy + ay * off + fy * r * k * Math.cos(t), r + r * k * Math.sin(t)); });
-  const a = ring(-wid / 2, 1), b = ring(wid / 2, 1), toward = fx * vx + fy * vy;
-  for (let i = 0; i < N; i++) {
-    const j = (i + 1) % N, tm = (i + .5) / N * Math.PI * 2, up = Math.sin(tm);
-    if (up > -.15 || Math.cos(tm) * toward > 0) poly([a[i], a[j], b[j], b[i]], shade('#262626', .7 + .5 * (up + 1) / 2));
-  }
-  const s = ax * vx + ay * vy >= 0 ? 1 : -1, off = s * (wid / 2 + .2);
-  poly(ring(off, 1), '#161616'); poly(ring(off, .8), '#2b2b2b'); poly(ring(off, .66), '#d3d7da'); poly(ring(off, .56), '#aeb3b7'); poly(ring(off, .2), '#e9ecee');
-  const hub = ring(off, .2), rimEdge = ring(off, .56);
-  ctx.strokeStyle = '#7b8085'; ctx.lineWidth = Math.max(.6, 1.1 * sc(cy)); ctx.beginPath();
-  for (let i = 0; i < N; i += 3) { ctx.moveTo(hub[i][0], hub[i][1]); ctx.lineTo(rimEdge[i][0], rimEdge[i][1]); }
-  ctx.stroke();
-}
-// Kenworth C509-style cab-over-bonnet prime mover (nose points to local -y), built from view-space prisms and painted far-to-near
-function chaseCab(vx, vy, ang) {
-  const Pk = '#f062a4', Pd = '#d94a8c', CH = '#c9ccd0', GL = '#2a3b4d', t = beaconClock(), on = Math.sin(t * 12) > 0;
-  const rot = (dx, dy) => [vx + dx * Math.cos(ang) - dy * Math.sin(ang), vy + dx * Math.sin(ang) + dy * Math.cos(ang)];
-  const parts = [];
-  const add = (dx, dy, w, l, z0, z1, col) => { const p = rot(dx, dy); parts.push({ k: p[1] * 100 + z0, fn: () => prism(p[0], p[1], w, l, z0, z1, col, ang) }); };
-  const addWheel = (dx, dy) => { const p = rot(dx, dy); parts.push({ k: p[1] * 100, fn: () => wheel3(p[0], p[1], 7, 6, ang) }); };
-  for (const sx of [-1, 1]) {
-    addWheel(sx * 17, -22);                                                // steer axle
-    for (const dy of [18, 26, 34]) addWheel(sx * 17, dy);                  // three drive axles
-    add(sx * 15.5, 8, 5, 22, 8, 19, CH);                                   // fuel tanks
-    add(sx * 14.5, -24, 5, 16, 14, 23, Pd);                                // front guards
-    add(sx * 9, -37.8, 5, 1.5, 17, 21, '#fff4c0');                         // headlights
-    add(sx * 15, 18, 3, 3, 10, 62, '#d9dce0');                             // twin chrome stacks
-    add(sx * 16.8, 2, 1.5, 14, 28, 40, GL);                                // side windows
-  }
-  add(0, 6, 26, 70, 4, 10, '#262626');                                     // chassis rails
-  add(0, -18, 26, 34, 10, 26, Pk); add(0, -16, 22, 28, 26, 29, Pd);        // long bonnet
-  add(0, -36.5, 24, 3, 12, 30, CH);                                        // grille
-  for (let k = 0; k < 4; k++) add(-7.5 + k * 5, -38.2, 1, 1, 14, 28, '#4a4d52');
-  add(0, -40, 30, 4, 6, 12, CH);                                           // bumper
-  add(0, 6, 32, 28, 10, 46, Pk);                                           // sleeper cab
-  add(0, -8.6, 26, 1.5, 27, 42, GL);                                       // windscreen
-  add(0, 20.5, 20, 1.2, 27, 40, GL);                                       // rear window
-  add(0, -10.5, 32, 4, 42, 45, Pd);                                        // sun visor
-  add(0, 6, 30, 26, 46, 48, '#e8e8e8');                                    // roof
-  add(0, 22, 24, 22, 10, 13, '#3a3a3a'); add(0, 22, 20, 20, 13, 14.5, '#e8b100');   // fifth wheel
-  for (const sx of [-1, 1]) add(sx * 8, 6, 3, 3, 48, 51, on ? '#ffb030' : '#7a4200');
-  const sp = rot(0, 0); quadAt(sp[0] + 5, sp[1] + 3, 36, 84, 0, 'rgba(0,0,0,.3)', ang);
-  parts.sort((a, b) => a.k - b.k);
-  for (const q of parts) q.fn();
-  if (on) for (const sx of [-1, 1]) { const q = rot(sx * 8, 6); glow(q[0], q[1], 51, 18, 'rgba(255,150,0,.8)'); }
-}
-function chaseTrailer(vx, vy, ang, i, f, w, l, hl, label) {
-  const rot = (dx, dy) => [vx + dx * Math.cos(ang) - dy * Math.sin(ang), vy + dx * Math.sin(ang) + dy * Math.cos(ang)];
-  const part = (dx, dy, pw, pl, z0, z1, col, top) => { const p = rot(dx, dy); prism(p[0], p[1], pw, pl, z0, z1, col, ang, top); };
-  quadAt(vx + 6, vy + 4, w + 4, l + 30, 0, 'rgba(0,0,0,.3)', ang);
-  part(0, -l / 2 - 14, 6, 30, 12, 18, '#f2b800');                       // drawbar to the unit ahead
-  part(0, l / 2 + 2, 8, 8, 12, 19, '#2b2b2b');                           // ring feeder at the rear
-  part(0, 0, w - 16, l - 4, 5, 11, '#222');                                  // chassis
-  for (const a of trailerAxles(i, l)) for (const sx of [-1, 1]) { const p = rot(sx * (w / 2 + 1), a); wheel3(p[0], p[1], 6.5, 6, ang); }
-  // open bin: interior first, then the near walls and rim hide the edge of it
-  const inner = prismCorners(vx, vy, w - 6, l - 6, ang);
-  quadAt(vx, vy, w - 6, l - 6, 12, '#3a1429', ang);
-  for (let k = 0; k < 4; k++) {
-    const A = inner[k], B = inner[(k + 1) % 4], mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
-    if ((mx - vx) * (W / 2 - mx) + (my - vy) * (CAM_Y - my) <= 0) poly([P(A[0], A[1], 12), P(B[0], B[1], 12), P(B[0], B[1], 28), P(A[0], A[1], 28)], shade('#b73770', .7));
-  }
-  if (f > 0) {
-    const h = 12 + 15 * f;
-    quadAt(vx, vy, w - 8, l - 8, h * .8 + 2.4, '#7d513f', ang); quadAt(vx, vy, w - 14, l - 16, h, '#a8705a', ang); quadAt(vx, vy, w - 28, l - 34, h + 3 * f, '#b98368', ang);
-  }
-  prism(vx, vy, w, l, 10, 28, '#d94a8c', ang, true);                     // outer walls
-  for (const sx of [-1, 1]) for (let k = 0; k < 5; k++) part(sx * (w / 2), -l / 2 + 8 + k * (l - 16) / 4, 2, 3, 10, 28, '#a83570');   // side ribs
-  part(0, 0, w + 1, l + 1, 10, 14, '#e8b100', true);                     // yellow skirt band
-  for (const sx of [-1, 1]) part(sx * (w / 2 - 4), l / 2 + .5, 5, 2, 17, 21, '#ff3030');   // tail lights
-  const pts = (ww, ll) => prismCorners(vx, vy, ww, ll, ang).map(p => P(p[0], p[1], 28));
-  ctx.fillStyle = '#f06fb0'; ctx.beginPath();
-  for (const ring of [pts(w, l), pts(w - 6, l - 6)]) { ring.forEach((q, k) => k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); }
-  ctx.fill('evenodd');
-  if (hl) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.beginPath(); prismCorners(vx, vy, w + 8, l + 4, ang).forEach((p, k) => { const q = P(p[0], p[1], 0); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); }
-  if (label) { const [tx, ty] = P(vx, vy, 30); text(`${i + 1}`, tx, ty, 12 * sc(vy), '#fff'); }
-}
-function drawYardChase() {
-  const th = ldr.angle, c = Math.cos(-th), sn = Math.sin(-th), VY = 520, ang = -th;
-  camX = W / 2;
-  const V = (x, y) => { const dx = x - ldr.x, dy = y - ldr.y; return [W / 2 + dx * c - dy * sn, VY + dx * sn + dy * c]; };
-  const near = y => y > -140 && y < H + 70;
-  drawSky();
-  const g = ctx.createLinearGradient(0, HOR, 0, H);
-  g.addColorStop(0, '#d29a74'); g.addColorStop(.18, '#b4552f'); g.addColorStop(1, '#8c3820');
-  ctx.fillStyle = g; ctx.fillRect(0, HOR, W, H - HOR);
-  const gs = 90, gx0 = Math.floor((ldr.x - 800) / gs), gy0 = Math.floor((ldr.y - 800) / gs);
-  for (let i = 0; i < 18; i++) for (let j = 0; j < 18; j++) {
-    const k = (gx0 + i) * 73 + (gy0 + j) * 31, [vx, vy] = V((gx0 + i) * gs + hash(k) * gs, (gy0 + j) * gs + hash(k + 1) * gs);
-    if (near(vy)) flatEllipse(vx, vy, 7 + hash(k + 2) * 7, 3 + hash(k + 3) * 3, 'rgba(90,35,20,.35)');
-  }
-  for (const p of spills) {
-    const [vx, vy] = V(p.x, p.y); if (!near(vy)) continue;
-    flatEllipse(vx, vy, p.r, p.r * .8, '#8a5a44'); flatEllipse(vx - 2, vy - 2, p.r * .55, p.r * .45, '#a8705a', .4);
-  }
-  const list = [];
-  {
-    const cx = PILE.x + PILE.w / 2, [, pvy] = V(cx, PILE.y + PILE.h / 2);
-    const sl = pileSeg.map((m, k) => { const pf = segProf(k), e = m > .02 ? .3 + .7 * m : .08; return { y: segY(k), hw: PILE.w / 2 * pf * (.55 + .45 * e), h: 74 * pf * e }; });
-    const pt = (x, y, z) => { const [vx, vy] = V(x, y); return P(vx, vy, z); };
-    const layer = (f, col, dx = 0) => {
-      const L = sl.map(o => pt(cx + dx - o.hw * (1 - f * .8), o.y, o.h * f)), R = sl.map(o => pt(cx + dx + o.hw * (1 - f * .8), o.y, o.h * f));
-      poly([...L, ...R.reverse()], col);
-    };
-    if (near(pvy)) list.push({ y: pvy, fn: () => {
-      layer(0, 'rgba(0,0,0,.3)', 8);
-      [['#5e3a2c', 0], ['#7a4a38', .3], ['#8e5c47', .55], ['#a26c55', .78], ['#b98368', .94]].forEach(([col, f]) => layer(f, col, -f * 5));
-      for (let k = 0; k < SEG_N; k++) if (pileSeg[k] > .02) for (let j = 0; j < 3; j++) {
-        const o = sl[k], u = hash(k * 7 + j * 3 + 1) * 2 - 1, f = .25 + hash(k * 5 + j) * .6, [vx, vy] = V(cx + u * o.hw * (1 - f * .8), o.y + (hash(k + j * 9) - .5) * SEG_H * .6), [sx, sy] = P(vx, vy, o.h * f), q = sc(vy);
-        ctx.fillStyle = hash(k * 3 + j) > .5 ? '#5a3426' : '#c08c70'; ctx.beginPath(); ctx.ellipse(sx, sy, 5 * q, 3.5 * q, 0, 0, 7); ctx.fill();
-      }
-    } });
-  }
-  const cabX = TR_X + TR_W / 2 - 1, cabY = TR_Y0 - 38, [cvx, cvy] = V(cabX, cabY);
-  if (near(cvy)) list.push({ y: cvy, fn: () => chaseCab(cvx, cvy, ang) });
-  for (let i = 0; i < NT; i++) {
-    const cy = TR_Y0 + i * TR_H + TR_H / 2, [vx, vy] = V(TR_X + TR_W / 2, cy), w = 52, l = TR_H - 24, f = fills[i] / TRAILER_CAP;
-    if (!near(vy)) continue;
-    list.push({ y: vy, fn: () => chaseTrailer(vx, vy, ang, i, f, w, l, trailerAt() === i && carrying, true) });
-  }
-  list.push({ y: VY, fn: () => chaseLoader([W / 2, VY], carrying) });
-  list.sort((a, b) => a.y - b.y);
-  for (const o of list) o.fn();
-  for (const p of particles) { const [vx, vy] = V(p.x, p.y); if (near(vy)) { const [sx, sy] = P(vx, vy, 12), k = sc(vy); rect(sx, sy, 4 * k, 4 * k, p.col); } }
-  atmosphere();
-}
-function drawYard() {
-  if (chaseView) drawYardChase(); else {
-  rect(0, 0, W, H, '#a74626');
-  for (let i = 0; i < 30; i++) rect((i * 97) % W, (i * 61) % H, 6, 6, '#85371f');
-  const pcx = PILE.x + PILE.w / 2, pcy = PILE.y + PILE.h / 2;
-  const sl = pileSeg.map((m, k) => ({ y: segY(k), hw: PILE.w / 2 * segProf(k) * (m > .02 ? .55 + .45 * (.3 + .7 * m) : .12), m }));
-  [['rgba(0,0,0,.28)', 1.04, 6], ['#5e3a2c', 1, 0], ['#7a4a38', .84, -1], ['#9a6a55', .62, -2], ['#b98368', .36, -3]].forEach(([col, f, dy]) => {
-    ctx.fillStyle = col; ctx.beginPath();
-    sl.forEach((o, k) => k ? ctx.lineTo(pcx - o.hw * f, o.y + dy) : ctx.moveTo(pcx - o.hw * f, o.y + dy));
-    for (let k = sl.length - 1; k >= 0; k--) ctx.lineTo(pcx + sl[k].hw * f, sl[k].y + dy);
-    ctx.closePath(); ctx.fill();
-  });
-  sl.forEach((o, k) => { if (o.m > .02) rockChunks(pcx, o.y, o.hw - 6, SEG_H * .6, Math.ceil(9 * o.m), 7, 7 + k); });
-  ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
-  lift(() => drawCab(TR_X + TR_W / 2 - 1, TR_Y0 - 38, -1, true));
-  for (let i = 0; i < NT; i++) {
-    const cy = TR_Y0 + i * TR_H + TR_H / 2;
-    rect(TR_X + TR_W / 2 - 3, cy - TR_H / 2 - 12, 6, 30, '#444');
-    lift(() => yardTrailer(TR_X + TR_W / 2, cy, i));
-    if (trailerAt() === i && carrying) { ctx.strokeStyle = '#ff6'; ctx.lineWidth = 3; ctx.strokeRect(TR_X - 2, cy - TR_H / 2 + 5, TR_W + 4, TR_H - 10); }
-  }
-  lift(() => { for (const wy of [150, 159, 168]) { wheel(TR_X + 8, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
+  lift(() => { for (const wy of [150 - trShift, 159 - trShift, 168 - trShift]) { wheel(TR_X + 8, wy, 5, 6); } });   // cab's three drive axles under trailer 1's front
   for (const p of spills) {
     ctx.fillStyle = '#8a5a44'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * .7, p.a, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#a8705a'; ctx.beginPath(); ctx.ellipse(p.x - 2, p.y - 2, p.r * .55, p.r * .35, p.a, 0, Math.PI * 2); ctx.fill();
@@ -2616,9 +2047,9 @@ function tyreDisc(x, y, r, spin = 0) {
 function drawMech(m) {
   const t = performance.now() / 1000, sw = m.walk ? Math.sin(t * 10 + m.ph) : 0, reach = m.work ? 7 + Math.sin(t * 16 + m.ph) * 2 : 3 + sw * 1.5;
   ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.a); ctx.scale(1.3, 1.3);
-  rect(-4, -1 + sw * 3, 3, 5, '#222'); rect(1, -1 - sw * 3, 3, 5, '#222');
-  ctx.fillStyle = m.col; ctx.beginPath(); ctx.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = m.col; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath();
+  rect(-4, -1 + sw * 3, 3, 5, '#1b2a4a'); rect(1, -1 - sw * 3, 3, 5, '#1b2a4a');
+  ctx.fillStyle = '#f2e600'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#1b2a4a'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath();
   ctx.moveTo(-5, 0); ctx.lineTo(-4, -reach); ctx.moveTo(5, 0); ctx.lineTo(4, -reach * .9); ctx.stroke(); ctx.lineCap = 'butt';
   if (m.work) rect(-6, -reach - 5, 3, 7, '#b8bcc0');
   ctx.fillStyle = '#e0b090'; ctx.beginPath(); ctx.arc(0, -1, 3.4, 0, Math.PI * 2); ctx.fill();
@@ -2705,6 +2136,7 @@ function drawWorkshopChase() {
   };
   flat(WK.x - 6, WK.y - 6, WK.x + WK.w + 6, WK.y + WK.h + 6, '#3b3f44');
   flat(WK.x, WK.y, WK.x + WK.w, WK.y + WK.h, '#2a2d30');
+  for (const m of marks) if (Math.abs(m.x - wk.x) < 500 && Math.abs(m.y - wk.y) < 500) flat(m.x - 1.2, m.y - 1.2, m.x + 1.2, m.y + 1.2, 'rgba(40,16,8,.4)');
   for (let i = 0; i < 6; i++) { const x = WK.x + i * BAY_W; flat(x + 3, WK.y + 4, x + 6, WK.y + WK.h - 4, '#e8b100'); flat(x + BAY_W - 6, WK.y + 4, x + BAY_W - 3, WK.y + WK.h - 4, '#e8b100'); }
   const al = wk.lap === 15 && !wk.auto && !wk.done ? wkAlign() : null;
   for (let i = 0; i < 6; i++) {
@@ -2789,6 +2221,7 @@ function drawWorkshop() {
   ctx.save(); ctx.translate(-Math.round(cx0), -Math.round(cy0));
   rect(0, 0, WORLD.w, WORLD.h, '#a74626');
   for (let i = 0; i < 160; i++) rect((i * 97) % WORLD.w, (i * 61) % WORLD.h, 6, 6, '#85371f');
+  ctx.fillStyle = 'rgba(40,16,8,.4)'; for (const m of marks) ctx.fillRect(m.x - 1.2, m.y - 1.2, 2.4, 2.4);
   ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 10; ctx.setLineDash([24, 12]); ctx.strokeRect(5, 5, WORLD.w - 10, WORLD.h - 10); ctx.setLineDash([]);
   rect(GATE.x - GATE.w / 2, WORLD.h - 12, GATE.w, 12, '#a74626');
   rect(GATE.x - GATE.w / 2 - 6, WORLD.h - 40, 6, 40, '#e8b100'); rect(GATE.x + GATE.w / 2, WORLD.h - 40, 6, 40, '#e8b100');
