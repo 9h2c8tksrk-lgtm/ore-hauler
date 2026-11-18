@@ -60,15 +60,15 @@ const faceRect = (b, along, len, d0, d1) => {
 };
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_W = 76, BUCKET_W = 58, TR_H = BUCKET_W * 3 + 24;   // loading-yard trailer layout: each bin is three loader buckets long
-// the road train is parked on a half-moon arc that bulges away from the pile; u is the distance along it from the cab
-const ARC = { cx: 162, cy: 356, R: 260 }, CAB_U = 38, ARC_MID = (CAB_U + NT * TR_H) / 2;
-const poseAt = u => { const p = (u - ARC_MID) / ARC.R; return { x: ARC.cx + ARC.R * Math.cos(p), y: ARC.cy + ARC.R * Math.sin(p), a: p }; };
+// the road train is parked on a half-moon arc that bulges toward the pile (loaders work on the outside of the curve); u is the distance along it from the cab
+const ARC = { cx: 415, cy: 372, R: 235 }, CAB_U = 38, ARC_MID = (CAB_U + NT * TR_H) / 2;
+const poseAt = u => { const p = (u - ARC_MID) / ARC.R; return { x: ARC.cx - ARC.R * Math.cos(p), y: ARC.cy + ARC.R * Math.sin(p), a: -p }; };
 const trPose = i => poseAt(CAB_U + i * TR_H + TR_H / 2), cabPose = poseAt(0);
 const trLoc = (p, x, y) => { const dx = x - p.x, dy = y - p.y, c = Math.cos(p.a), n = Math.sin(p.a); return [dx * c + dy * n, -dx * n + dy * c]; };   // world -> trailer-local (x toward the load side, y along the trailer)
 const trWorld = (p, lx, ly) => { const c = Math.cos(p.a), n = Math.sin(p.a); return [p.x + lx * c - ly * n, p.y + lx * n + ly * c]; };
-const AI_HOME = { x: 290, y: 450 }, AI_TRAILERS = [2, 3];   // the second loader fills trailers 3 and 4
+const AI_HOME = { x: 130, y: 570 }, AI_TRAILERS = [2, 3];   // the second loader fills trailers 3 and 4
 let ai;
-const PILE = { x: 6, y: 200, w: 160, h: 280 };   // one big mound; solid for the loader
+const PILE = { x: -30, y: 210, w: 80, h: 260 };   // one big mound; solid for the loader
 const LDR_R = 30, SEG_N = 10, SEG_H = PILE.h / SEG_N, SCOOP_CUT = .25;
 const segY = k => PILE.y + (k + .5) * SEG_H;
 const segProf = k => Math.pow(Math.sin(Math.PI * (k + .5) / SEG_N), .7);   // bell profile so the slices read as one mound
@@ -228,7 +228,7 @@ function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 290, y: 270, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
+  ldr = { x: 140, y: 150, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
 }
 
 function onKey(code) {
@@ -416,7 +416,7 @@ function updateAI(dt) {
     const j = AI_TRAILERS.find(i => fills[i] < TRAILER_CAP);
     if (j === undefined) { setSt('idle'); return; }
     const p = trPose(j);
-    if (a.stage === 0) { const [wx, wy] = trWorld(p, -190, 0); if (goto(wx, wy, 110) < 26 || a.t > 12) { a.stage = 1; a.t = 0; } }
+    if (a.stage === 0) { const [wx, wy] = trWorld(p, -100, 0); if (goto(wx, wy, 110) < 26 || a.t > 12) { a.stage = 1; a.t = 0; } }
     else {
       const [wx, wy] = trWorld(p, -80, 0);
       if (goto(wx, wy, 80) < 20 || (a.t > 10 && Math.hypot(wx - a.x, wy - a.y) < 70)) {
@@ -431,7 +431,7 @@ function updateAI(dt) {
     if (goto(AI_HOME.x, AI_HOME.y, 100) < 20 || a.t > 15) a.t = 0;
     if (AI_TRAILERS.some(i => fills[i] < TRAILER_CAP)) setSt(a.carrying ? 'trailer' : 'pile');
   }
-  a.x = Math.max(25, Math.min(W - 25, a.x)); a.y = Math.max(85, Math.min(H - 100, a.y));
+  a.x = Math.max(25, Math.min(W - 25, a.x)); a.y = Math.max(30, Math.min(H - 30, a.y));
   pushOutTrailers(a); pushOutPile(a);
   const dx = a.x - ldr.x, dy = a.y - ldr.y, dd = Math.hypot(dx, dy);
   if (dd < LDR_R * 2 && dd > 0) { const k = (LDR_R * 2 - dd) / dd / 2; a.x += dx * k; a.y += dy * k; ldr.x -= dx * k; ldr.y -= dy * k; }
@@ -444,7 +444,7 @@ function updateLoad(dt) {
   const mid = ldr.angle + ldr.art / 2;
   ldr.angle += distance * Math.sin(ldr.art) / 40; // rear section swings round the centre joint
   ldr.x = Math.max(25, Math.min(W - 25, ldr.x + Math.sin(mid) * distance));
-  ldr.y = Math.max(85, Math.min(H - 100, ldr.y - Math.cos(mid) * distance));
+  ldr.y = Math.max(30, Math.min(H - 30, ldr.y - Math.cos(mid) * distance));
   // trailers are solid: bumping them hurts both the loader and that trailer
   const hit = pushOutTrailers(ldr);
   if (hit >= 0 && hitCd <= 0 && Math.abs(distance) > 0) {
@@ -479,7 +479,7 @@ function startSecondLoad() {
   trip = 2; ret = false; state = 'load'; shake = 0; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
   qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
   train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 290, y: 270, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
+  ldr = { x: 140, y: 150, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
   flash('Back at the ROM! Load up for trip 2');
 }
 function startReturn() {
