@@ -48,7 +48,7 @@ const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // wor
 const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
-const LADDER = { x: 180, y: 550 };   // against the west wall of the top-left building
+const LADDER = { x: 88, y: 1102 }, BEACON_AT = { x: 95, y: 1104, z: 48 };   // beside the second parked truck's cab; its left roof beacon is being swapped
 const BLDG = [[185, 520], [265, 520], [185, 610], [265, 610]].map(([x, y]) => ({ x, y, w: 50, h: 60, c: '#6d7f8f' }));   // four buildings at the tyre-bay end of the workshop, a cross-shaped open space between them
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 150, TR_X = 390, TR_W = 76, BUCKET_W = 58, TR_H = BUCKET_W * 3 + 24;   // loading-yard trailer layout: each bin is three loader buckets long
@@ -544,7 +544,7 @@ function tyreWork(dt) {
     f.t += dt;
     if (f.t >= .9) {
       f.st[f.u] = 2; f.rolls = f.rolls.filter(r => r.kind !== 'new'); hp = Math.min(100, hp + (100 - wk.hp0) / 5);
-      burst(wx, p.y, '#ffd23a', 12); f.stage = 3; f.t = 0;
+      burst(wx, p.y, '#9a9a9a', 12); f.stage = 3; f.t = 0;
     }
   } else { f.t += dt; if (f.t >= .25) { f.u++; f.stage = 0; } }
 }
@@ -640,7 +640,7 @@ function updateWorkshop(dt) {
     if (!wk.done) {
       ps.forEach((p, k) => {
         if (!wk.fixed[k] && p.y > WK.y + WK.h * .75) {
-          wk.fixed[k] = 1; hp = Math.min(100, hp + (100 - wk.hp0) / 5); burst(p.x, p.y, '#ffd23a', 14);
+          wk.fixed[k] = 1; hp = Math.min(100, hp + (100 - wk.hp0) / 5); burst(p.x, p.y, '#9a9a9a', 14);
         }
       });
     }
@@ -1060,8 +1060,13 @@ function cab3(x, y) {
   rearRect(y + 13, x - 11, x + 11, 31, 36, 'rgba(255,255,255,.22)');
   box(x, y + 2, 25, 20, 40, 43, '#2e2e2e');
   for (const sx of [-1, 1]) { box(x + sx * 18, y - 8, 3, 5, 26, 33, '#222'); rearRect(y + 28, x + sx * 10 - 2.5, x + sx * 10 + 2.5, 6, 10, '#ff3030'); }
+  box(x, y - 44, 30, 2.2, 12, 14, '#2b2e33'); box(x, y - 44, 30, 2.2, 19, 21, '#2b2e33'); box(x, y - 44, 30, 2.2, 25, 27, '#2b2e33');   // bull bar rails
+  for (const bx of [-12, 0, 12]) box(x + bx, y - 44, 2, 2.2, 6, 28, '#3d4045');
+  box(x - 8, y - 45.4, 9, 1, 7, 11, '#e8b100'); box(x + 8, y - 45.4, 9, 1, 7, 11, '#e8b100');   // ROAD TRAIN plates
+  for (const sx of [-1, 1]) { box(x + sx * 15, y - 44, 4.5, 3, 27, 32, '#222'); box(x + sx * 15, y - 45.6, 3.2, 0.6, 28, 31, '#f4f4f4'); }   // round driving lights
+  box(x, y - 5, 28, 3, 29, 31.5, '#1a1a1a');   // black visor
   fifthWheel(x, y + HITCH);
-  box(x + 17.5, y + 8, 4, 4, 12, 62, '#d9dce0');   // single exhaust stack behind the cab
+  box(x + 17.5, y + 8, 4, 4, 12, 62, '#d9dce0'); box(x - 17.5, y + 8, 4, 4, 12, 62, '#d9dce0'); box(x + 17.5, y + 8, 6.5, 6.5, 62, 63.5, '#b8bec4'); box(x - 17.5, y + 8, 6.5, 6.5, 62, 63.5, '#b8bec4');   // twin tall chrome stacks with rain caps
   const t = beaconClock();
   for (let k = 0; k < 3; k++) {
     const age = (t * 1.3 + k / 3) % 1;
@@ -1294,7 +1299,6 @@ function person3(m) {
     box(x + dir * 6.5, y + 1.8, 8, 2.6, 15 + dz + 3, 17.6 + dz + 3, '#1b2a4a'); box(x + dir * 11, y + 1.8, 3, 3, 16.5 + dz + 3 + sp * .3, 19 + dz + 3, '#d29a73');
     box(x + dir * 13.5, y + 1.8, 6, 1.6, 17 + sp + 3 + dz, 18.6 + sp + 3 + dz, '#a8afb5');
     box(x - dir * 8, y + 4, 7, 4.5, 0, 5.5, '#c4281c'); box(x - dir * 8, y + 4, 7.2, 1.2, 3, 3.8, '#222');
-    if (Math.sin(m.work * 40) > 0) glow(x + dir * 16, y + 1.8, 20 + dz, 14, 'rgba(255,230,140,.9)');
   } else {
     const sk = '#d29a73';   // swinging arms: sleeve, then bare forearm and hand
     for (const s of [-1, 1]) { const ay = y + s * sw * 2.2; box(x + s * 5.6, ay, 2.6, 3, 14, 20.5, '#1b2a4a'); box(x + s * 5.6, ay, 2.4, 2.8, 9.6, 14, sk); box(x + s * 5.6, ay, 2.6, 2.8, 8.4, 9.8, '#c98f66'); }
@@ -1307,27 +1311,23 @@ function person3(m) {
   box(hx + dir * 2.6, y - 1.1, 1, 1, 24 + dz, 25 + dz, '#222'); box(hx + dir * 2.6, y + 1.1, 1, 1, 24 + dz, 25 + dz, '#222');   // eyes
   box(hx, y, 6.6, 6.6, 26 + dz, 29.2 + dz, '#f4f4f4'); box(hx + dir * 2.2, y, 7.2, 8.4, 26 + dz, 27.2 + dz, '#f4f4f4');
 }
-// mechanic up a ladder on the end of a building, swapping a dead beacon light for a new one
-function ladderGuy(list, vx, vy, topZ) {
-  const t = beaconClock(), ph = t % 12, work = ph > 2 && ph < 9, lit = ph >= 9, z = 36;   // z = standing height on the rungs
+// mechanic up a ladder beside a parked truck, swapping the dead beacon on the cab roof for a new one
+const beaconSwap = () => (beaconClock() % 12) < 9;   // true while the old beacon is off its mount
+function ladderGuy(list, vx, vy, bx, by) {
+  const t = beaconClock(), ph = t % 12, z = 28, bz = BEACON_AT.z, topZ = 44;
   list.push({ y: vy + 3, fn: () => {
     shadow(vx, vy, 10, 8);
-    for (const s of [-4, 4]) box(vx + s, vy, 1.6, 1.6, 0, topZ + 6, '#c9a46a');
-    for (let r = 4; r < topZ + 4; r += 8) box(vx, vy, 8, 1.2, r, r + 1.4, '#a9854e');
-    const arm = work ? Math.sin(t * 9) * 1.5 : 0;
+    for (const s of [-4, 4]) box(vx + s, vy, 1.6, 1.6, 0, topZ, '#c9a46a');
+    for (let r = 4; r < topZ; r += 8) box(vx, vy, 8, 1.2, r, r + 1.4, '#a9854e');
     box(vx - 2, vy + 2, 3.2, 4, z - 18, z, '#1b2a4a'); box(vx + 2, vy + 2, 3.2, 4, z - 18, z, '#1b2a4a');   // legs on the rungs
     box(vx - 2, vy + 3, 3.8, 5.6, z - 20, z - 17.4, '#2a1d14'); box(vx + 2, vy + 3, 3.8, 5.6, z - 20, z - 17.4, '#2a1d14');
     box(vx, vy + 2, 9, 5.2, z, z + 11, '#1b2a4a'); box(vx, vy + 2, 9.6, 5.8, z + 3, z + 11, '#f2e600'); box(vx, vy + 2, 9.9, 6, z + 6, z + 7.4, '#e6e6e6');
-    box(vx - 5.4, vy + 2, 2.6, 3, z + 9 + arm, z + 22 + arm, '#1b2a4a'); box(vx + 5.4, vy + 2, 2.6, 3, z + 9 - arm, z + 22 - arm, '#1b2a4a');   // both arms reaching up
-    box(vx - 5.4, vy + 2, 2.6, 2.8, z + 22 + arm, z + 24 + arm, '#d29a73'); box(vx + 5.4, vy + 2, 2.6, 2.8, z + 22 - arm, z + 24 - arm, '#d29a73');
+    box(vx - 5.4, vy + 2, 2.6, 3, z + 9, z + 20, '#1b2a4a'); box(vx - 5.4, vy + 2, 2.6, 2.8, z + 20, z + 22, '#d29a73');   // free hand holds the rail
+    const wob = ph > 2 && ph < 9 ? Math.sin(t * 7) * 1.2 : 0;
+    for (let k = 1; k <= 5; k++) { const u = k / 5, ax = vx + 5.4 + (bx - vx - 5.4) * u, ay = vy + 2 + (by - vy - 2) * u, az = z + 11 + (bz - z - 11 + wob) * u; box(ax, ay, 2.6, 2.6, az - 1, az + 1.4, k > 3 ? '#d29a73' : '#1b2a4a'); }   // working arm reaching out to the beacon
     box(vx, vy + 2, 3.2, 3.2, z + 11, z + 12.6, '#c98f66'); box(vx, vy + 2, 5.2, 5.2, z + 12, z + 17, '#d29a73');
     box(vx, vy + 2, 5.4, 5.4, z + 14.6, z + 16.6, '#3b2a1c'); box(vx, vy + 2, 6.6, 6.6, z + 16.6, z + 19.8, '#f4f4f4'); box(vx, vy + 3, 7.2, 8, z + 16.6, z + 17.8, '#f4f4f4');
-    // the beacon on the roof corner: dead and cracked, then the new one flashing
-    const bz = topZ + 4, bx = vx, by = vy - 4;
-    box(bx, by, 5, 5, bz - 4, bz, '#555');
-    if (lit) { const on = Math.sin(t * 12) > 0; box(bx, by, 4.4, 4.4, bz, bz + 5, on ? '#ffb030' : '#a86a10'); if (on) glow(bx, by, bz + 3, 26, 'rgba(255,150,0,.8)'); }
-    else if (ph > 5) box(bx, by, 4.4, 4.4, bz, bz + 5, '#7a4200');
-    else if (ph < 5) box(bx, by, 4.4, 4.4, bz, bz + 5, '#3a2a1a');
+    if (ph > 5 && ph < 9) box(bx + 1, by, 4, 4, bz + 1, bz + 5, '#ffb030');   // new beacon in his hand
   } });
 }
 // tray-back dual cab with a mine-site ROPS frame behind the cab: beacon, short flag and tail lights on the frame.
@@ -1710,7 +1710,12 @@ function drawCab(x, y, st = -1, drive = true) {
   wheel(x - 16.5, y - 7, 5, 14, st); wheel(x + 16.5, y - 7, 5, 14, st);   // steer axle
   if (drive) for (const wy of [34, 41, 48]) { wheel(x - 16.5, y + wy, 5, 5, st); wheel(x + 16.5, y + wy, 5, 5, st); }   // 3 drive axles under the first trailer's front
   rect(x - 15, y - 22, 30, 44, '#f062a4'); rect(x - 12, y - 18, 24, 12, '#9cf'); rect(x - 12, y - 2, 24, 18, '#c43879');
+  rect(x - 12, y - 20, 24, 3, '#1a1a1a');   // black sun visor
+  rect(x - 17, y - 30, 34, 7, '#2b2e33'); rect(x - 17, y - 26.5, 34, 1.6, '#555'); for (const bx of [-12, -.8, 10.8]) rect(x + bx, y - 30, 2, 8, '#3d4045');   // bull bar with grille guard
+  rect(x - 14, y - 29, 10, 3, '#e8b100'); rect(x + 4, y - 29, 10, 3, '#e8b100');   // ROAD TRAIN plates
+  for (const sx of [-1, 1]) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(x + sx * 15, y - 30, 3.4, 0, 7); ctx.fill(); ctx.fillStyle = '#f4f4f4'; ctx.beginPath(); ctx.arc(x + sx * 15, y - 30, 2.3, 0, 7); ctx.fill(); }   // round driving lights
   drawBeacon(x - 8, y + 8, 0); drawBeacon(x + 8, y + 8, 1);
+  ctx.fillStyle = '#c9ccd0'; ctx.beginPath(); ctx.arc(x - 20, y + 12, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(x - 20, y + 12, 2.7, 0, Math.PI * 2); ctx.fill(); rect(x - 20, y + 10, 5, 4, '#555');   // second tall chrome stack
   const ex = x + 20, ey = y + 12, c = beaconClock();   // single exhaust stack, right side
   rect(x + 15, ey - 2, 5, 4, '#555');
   for (let k = 0; k < 3; k++) {
@@ -1880,6 +1885,7 @@ function wheel3(cx, cy, r, wid, ang) {
   ctx.stroke();
 }
 // Kenworth C509-style cab-over-bonnet prime mover (nose points to local -y), built from view-space prisms and painted far-to-near
+let swapCab = false;   // set while drawing the truck whose beacon is being swapped
 function chaseCab(vx, vy, ang) {
   const Pk = '#f062a4', Pd = '#d94a8c', CH = '#c9ccd0', GL = '#2a3b4d', t = beaconClock(), on = Math.sin(t * 12) > 0;
   const rot = (dx, dy) => [vx + dx * Math.cos(ang) - dy * Math.sin(ang), vy + dx * Math.sin(ang) + dy * Math.cos(ang)];
@@ -1900,13 +1906,17 @@ function chaseCab(vx, vy, ang) {
   add(0, -36.5, 24, 3, 12, 30, CH);                                        // grille
   for (let k = 0; k < 4; k++) add(-7.5 + k * 5, -38.2, 1, 1, 14, 28, '#4a4d52');
   add(0, -40, 30, 4, 6, 12, CH);                                           // bumper
+  for (const z of [12, 19, 25]) add(0, -43.5, 32, 2.2, z, z + 2, '#2b2e33');   // bull bar rails
+  for (const bx of [-13, 0, 13]) add(bx, -43.5, 2, 2.2, 6, 28, '#3d4045');
+  add(-8, -45, 9, 1, 7, 11, '#e8b100'); add(8, -45, 9, 1, 7, 11, '#e8b100');   // ROAD TRAIN plates
+  for (const sx of [-1, 1]) { add(sx * 15.5, -43.5, 4.5, 3, 27, 32, '#222'); add(sx * 15.5, -45.2, 3.2, .6, 28, 31, '#f4f4f4'); add(sx * 15, 18, 6, 6, 62, 63.5, '#b8bec4'); }   // round driving lights, rain caps on the stacks
   add(0, 6, 32, 28, 10, 46, Pk);                                           // sleeper cab
   add(0, -8.6, 26, 1.5, 27, 42, GL);                                       // windscreen
   add(0, 20.5, 20, 1.2, 27, 40, GL);                                       // rear window
-  add(0, -10.5, 32, 4, 42, 45, Pd);                                        // sun visor
+  add(0, -10.5, 32, 4, 42, 45, '#1a1a1a');                                // black sun visor
   add(0, 6, 30, 26, 46, 48, '#e8e8e8');                                    // roof
   add(0, 22, 24, 22, 10, 13, '#3a3a3a'); add(0, 22, 20, 20, 13, 14.5, '#e8b100');   // fifth wheel
-  for (const sx of [-1, 1]) add(sx * 8, 6, 3, 3, 48, 51, on ? '#ffb030' : '#7a4200');
+  for (const sx of [-1, 1]) { if (swapCab && sx < 0) add(sx * 8, 6, 3, 3, 48, 49, '#222'); else add(sx * 8, 6, 3, 3, 48, 51, on ? '#ffb030' : '#7a4200'); }
   const sp = rot(0, 0); quadAt(sp[0] + 5, sp[1] + 3, 36, 84, 0, 'rgba(0,0,0,.3)', ang);
   parts.sort((a, b) => a.k - b.k);
   for (const q of parts) q.fn();
@@ -2191,19 +2201,19 @@ function drawWorkshopChase() {
   // people
   const man = (m, work) => { const [vx, vy] = V(m.x, m.y); if (near(vy)) list.push({ y: vy, fn: () => person3({ x: vx, y: vy, dir: Math.sin(m.a - th) >= 0 ? 1 : -1, walk: m.walk ? t * 10 + (m.ph || 0) : 0, work: work ? t : 0 }) }); };
   for (const m of yard.mechs) man(m, m.work);
-  { const [lx, ly] = V(LADDER.x, LADDER.y); if (near(ly)) ladderGuy(list, lx, ly, 60); }
+  { const [lx, ly] = V(LADDER.x, LADDER.y), [bx, by] = V(BEACON_AT.x, BEACON_AT.y); if (near(ly)) ladderGuy(list, lx, ly, bx, by); }
   { const f = wk.fit, idle = f.u < 0 && !wk.auto; man({ x: f.fx, y: f.fy, a: f.fa, walk: f.walk }, idle || (wk.auto && !f.walk && f.u >= 0 && f.u <= NT && (f.stage === 1 || f.stage === 2))); }
   for (const m of wk.crew) man(m, m.work);
   // trucks: the player's rig is always at the camera
-  const rig = (J, x, y, h, fl) => {
+  const rig = (J, x, y, h, fl, swap) => {
     const [cx, cy] = V(x, y);
-    if (near(cy)) list.push({ y: cy, fn: () => chaseCab(cx, cy, h - th) });
+    if (near(cy)) list.push({ y: cy, fn: () => { swapCab = !!swap && beaconSwap(); chaseCab(cx, cy, h - th); swapCab = false; } });
     for (let i = 0; i < NT; i++) {
       const p = chainPose(J, i), [vx, vy] = V(p.x, p.y);
       if (near(vy)) list.push({ y: vy - 1, fn: () => chaseTrailer(vx, vy, p.a - th, i, fl(i), 40, 56) });
     }
   };
-  for (const r of yard.parked) rig(r.j, r.x, r.y, r.h, () => r.f);
+  yard.parked.forEach((r, k) => rig(r.j, r.x, r.y, r.h, () => r.f, k === 1));
   for (const r of yard.movers) {
     if (!r.ute) { rig(r.j, r.x, r.y, r.h, () => r.f); continue; }
     const [vx, vy] = V(r.x, r.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, r.h - th, () => ute3(vx, vy, '#f4f4f4', -1, { toolbox: true })) });
