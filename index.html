@@ -134,7 +134,7 @@ cv.addEventListener('pointerdown', e => {
   if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -237,7 +237,8 @@ function onKey(code) {
     if (code === 'KeyF') { startFitter(); return; }
     if (code === 'KeyC') { bayReady = 0; toUte(); return; }
   }
-  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { toWalk(); return; }
+  if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && code === 'KeyL') { skipLoad(); return; }
@@ -758,6 +759,7 @@ function update(dt) {
   if (state === 'skyway') return updateSkyway(dt);
   if (state === 'workshop') return updateWorkshop(dt);
   if (state === 'ute') return updateUte(dt);
+  if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
   if (bf) {
@@ -1609,6 +1611,92 @@ function drawUteScreen() {
     rect(30, 200, W - 60, 300, '#000d');
     text('ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
     text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
+    text(isTouch ? 'Tap to hop out' : 'Press SPACE to hop out', W / 2, 440, 18, '#ff6');
+  }
+}
+// ---------- change over, part 2: on foot from the car park to the schedule office, then to your room ----------
+// Golden Eagle Village: car park down the right (cars reversed in), camp on the left. Up the camp side: basketball court, wet mess, kitchen,
+// then a U-shaped room block open to the car park. The schedule office sits behind the kitchen; more rooms behind the kitchen and wet mess.
+const CW = {
+  court: [200, 560, 110, 120], mess: [200, 460, 110, 90], kitchen: [200, 360, 110, 90], office: [100, 360, 76, 90],
+  uTop: [190, 80, 120, 34], uBot: [190, 266, 120, 34], uBack: [190, 80, 34, 220], r1: [20, 340, 50, 160], r2: [20, 560, 150, 50],
+};
+const CAMP_BOX = o => ({ x: o[0], y: o[1], w: o[2], h: o[3] });
+const CAMP_SOLID = ['mess', 'kitchen', 'office', 'uTop', 'uBot', 'uBack', 'r1', 'r2'].map(k => CAMP_BOX(CW[k]));
+const CAR_BAYS = [100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650].map(y => ({ x: 408, y }));
+const CAMP_DOORS = [];   // rooms 1-24: { x, y, nx, ny } on the wall face, (nx, ny) points out into the walkway
+for (let i = 0; i < 4; i++) CAMP_DOORS.push({ x: 236 + i * 20, y: 114, nx: 0, ny: 1 });
+for (let i = 0; i < 4; i++) CAMP_DOORS.push({ x: 236 + i * 20, y: 266, nx: 0, ny: -1 });
+for (let i = 0; i < 4; i++) CAMP_DOORS.push({ x: 224, y: 134 + i * 32, nx: 1, ny: 0 });
+for (let i = 0; i < 6; i++) CAMP_DOORS.push({ x: 70, y: 360 + i * 23, nx: 1, ny: 0 });
+for (let i = 0; i < 6; i++) CAMP_DOORS.push({ x: 40 + i * 25, y: 560, nx: 0, ny: -1 });
+const OFFICE_DOOR = { x: 138, y: 360, nx: 0, ny: -1 };
+const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < 10; };
+let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 1, wT = 0, wWrong = 0, wPark = 0;
+function toWalk() {
+  state = 'walk'; wp = { x: 392, y: 650, dir: Math.PI, ph: 0 }; wStage = 0; wT = 0; wWrong = 0; wPark = 650;
+  wRoom = 1 + Math.floor(Math.random() * CAMP_DOORS.length);   // a different room every time
+  ptrs.clear(); syncBtns(); flash('Hand your paperwork in at the Schedule Office');
+}
+function updateWalk(dt) {
+  wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
+  let ax = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0), ay = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
+  const tp = [...ptrs.values()][0];
+  if (!ax && !ay && tp) { const dx = tp.x - wp.x, dy = tp.y - wp.y, d = Math.hypot(dx, dy); if (d > 8) { ax = dx / d; ay = dy / d; } }
+  const m = Math.hypot(ax, ay);
+  if (m) {
+    ax /= Math.max(1, m); ay /= Math.max(1, m); wp.dir = Math.atan2(ay, ax); wp.ph += dt * 10;
+    const hit = (x, y) => x < 8 || x > W - 8 || y < 70 || y > H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6)
+      || CAR_BAYS.some(c => x > c.x - 6 && y > c.y - 15 && y < c.y + 15);
+    const nx = wp.x + ax * 95 * dt, ny = wp.y + ay * 95 * dt;
+    if (!hit(nx, wp.y)) wp.x = nx;
+    if (!hit(wp.x, ny)) wp.y = ny;
+  }
+  if (wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(`Paperwork in! You're in Room ${wRoom}`); msgT = 4; }
+  if (wStage === 1) CAMP_DOORS.forEach((d, i) => {
+    if (!atDoor(d, wp)) return;
+    if (i + 1 === wRoom) { wStage = 2; state = 'walkend'; ptrs.clear(); syncBtns(); }
+    else if (!wWrong) { wWrong = 1.2; flash(`Room ${i + 1} - not yours`); }
+  });
+}
+function drawWalk() {
+  rect(0, 0, W, H, '#b8a37a');
+  rect(350, 0, 130, H, '#7d6a55');   // car park
+  for (const c of CAR_BAYS) rect(350, c.y + 22, 130, 2, 'rgba(255,255,255,.35)');
+  const cols = ['#f4f4f4', '#d8d8d8', '#c33', '#3a6fc4', '#b8a37a', '#2e8b57'];
+  CAR_BAYS.forEach((c, i) => {   // reversed in: nose to the lane, tail to the right
+    const mine = c.y === wPark;
+    rect(c.x + 2, c.y - 12, 62, 24, mine ? '#f4f4f4' : cols[(i * 7 + 3) % cols.length]); rect(c.x + 34, c.y - 9, 16, 18, 'rgba(40,60,80,.7)');
+    if (mine) text('YOUR UTE', c.x + 33, c.y + 4, 8, '#333');
+  });
+  rect(200, 560, 110, 120, '#a79a82'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(206, 566, 98, 108); ctx.beginPath(); ctx.moveTo(206, 620); ctx.lineTo(304, 620); ctx.stroke();
+  ctx.beginPath(); ctx.arc(255, 620, 14, 0, Math.PI * 2); ctx.stroke(); text('BASKETBALL', 255, 700, 9, '#555');
+  const bld = (o, roof, label, lx, ly) => { rect(o[0], o[1], o[2], o[3], '#d9d4c4'); ctx.strokeStyle = roof; ctx.lineWidth = 4; ctx.strokeRect(o[0] + 2, o[1] + 2, o[2] - 4, o[3] - 4); if (label) text(label, lx ?? o[0] + o[2] / 2, ly ?? o[1] + o[3] / 2 + 4, 10, '#222'); };
+  bld(CW.mess, '#6f7d3c', 'WET MESS'); bld(CW.kitchen, '#6f7d3c', 'KITCHEN'); bld(CW.office, '#1d5fb4', 'SCHEDULE', null, 398); text('OFFICE', 138, 412, 10, '#222');
+  for (const k of ['uTop', 'uBot', 'uBack', 'r1', 'r2']) bld(CW[k], '#8c3b2a');
+  text('ROOMS', 267, 190, 10, '#555');
+  CAMP_DOORS.forEach((d, i) => {
+    const mine = i + 1 === wRoom && wStage === 1, hz = d.ny !== 0;
+    rect(hz ? d.x - 7 : d.x - (d.nx > 0 ? 5 : 0), hz ? d.y - (d.ny > 0 ? 5 : 0) : d.y - 7, hz ? 14 : 5, hz ? 5 : 14, mine ? '#ff6' : '#5a3a22');
+    if (mine) { ctx.fillStyle = 'rgba(255,255,100,.35)'; ctx.beginPath(); ctx.arc(d.x + d.nx * 10, d.y + d.ny * 10, 14 + Math.sin(wT * 6) * 3, 0, Math.PI * 2); ctx.fill(); }
+    text(String(i + 1), d.x + d.nx * 11, d.y + d.ny * 11 + 3, 8, '#222');
+  });
+  const od = OFFICE_DOOR; rect(od.x - 7, od.y - 5, 14, 5, wStage === 0 ? '#ff6' : '#5a3a22');
+  if (wStage === 0) { const k = Math.sin(wT * 6) * 3; ctx.fillStyle = '#ff6'; ctx.beginPath(); ctx.moveTo(od.x, od.y - 8 - k); ctx.lineTo(od.x - 7, od.y - 20 - k); ctx.lineTo(od.x + 7, od.y - 20 - k); ctx.fill(); }
+  const sw = Math.sin(wp.ph) * 3, { x, y } = wp;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 7, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+  rect(x - 4, y - 2 + sw / 2, 3, 8, '#234'); rect(x + 1, y - 2 - sw / 2, 3, 8, '#234'); rect(x - 5, y - 10, 10, 10, '#e8c32e');
+  ctx.fillStyle = '#e0b48a'; ctx.beginPath(); ctx.arc(x, y - 14, 4.5, 0, Math.PI * 2); ctx.fill(); rect(x - 5, y - 19, 10, 3, '#f60');
+  rect(0, 0, W, 64, '#000a');
+  text('ON FOOT AT CAMP', 10, 22, 14, '#fff', 'left');
+  text(wStage === 0 ? 'Go to the Schedule Office' : `Find Room ${wRoom}`, W - 10, 22, 16, '#ff6', 'right');
+  text(wStage === 0 ? 'Behind the kitchen' : 'Look for the glowing door', W - 10, 48, 13, '#ccc', 'right');
+  text(isTouch ? 'Hold to walk toward your finger' : 'WASD / arrows to walk', 10, 48, 12, '#ccc', 'left');
+  if (msgT > 0) text(msg, W / 2, 110, 20, '#ff6');
+  if (state === 'walkend') {
+    rect(30, 200, W - 60, 300, '#000d');
+    text(`ROOM ${wRoom}`, W / 2, 270, 38, '#4c4');
+    text('Home sweet home. Change over done!', W / 2, 320, 17);
     text(isTouch ? 'Tap for the menu' : 'Press SPACE for the menu', W / 2, 440, 18, '#ff6');
   }
 }
@@ -2397,6 +2485,7 @@ function render() {
   if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
   else if (state === 'ute' || state === 'uteend') drawUteScreen();
+  else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
     rect(40, 70, W - 80, 180, '#000b'); rect(40, 316, W - 80, 190, '#000b');
