@@ -431,6 +431,8 @@ function startReturn() {
   flash('All tipped! Return run: steep descent, then back to the ROM');
 }
 // ---------- workshop yard ----------
+const PIT_BAYS = [1, 3, 4];   // bays 2, 4 and 5 (labelled from 1) have inspection pits
+const pitRect = i => ({ x0: wkBayX(i) - 17, x1: wkBayX(i) + 17, y0: WK.y + 22, y1: WK_MOUTH - 22 });
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
 const TYRE_BAY = 0, TY_RACK = { x: WK.x - 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x - 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
@@ -2175,6 +2177,11 @@ function drawWorkshopChase() {
   };
   flat(WK.x - 6, WK.y - 6, WK.x + WK.w + 6, WK.y + WK.h + 6, '#3b3f44');
   flat(WK.x, WK.y, WK.x + WK.w, WK.y + WK.h, '#2a2d30');
+  for (const i of PIT_BAYS) {   // inspection pit: yellow kerb round a dark hole with ladder rungs
+    const p = pitRect(i);
+    flat(p.x0 - 3, p.y0 - 3, p.x1 + 3, p.y1 + 3, '#e8b100'); flat(p.x0, p.y0, p.x1, p.y1, '#050506');
+    for (let y = p.y0 + 8; y < p.y1 - 4; y += 12) flat(p.x0 + 3, y, p.x0 + 9, y + 1.5, '#555');
+  }
   for (const m of marks) if (Math.abs(m.x - wk.x) < 500 && Math.abs(m.y - wk.y) < 500) flat(m.x - 1.2, m.y - 1.2, m.x + 1.2, m.y + 1.2, 'rgba(40,16,8,.4)');
   for (let i = 0; i < 6; i++) { const x = WK.x + i * BAY_W; flat(x + 3, WK.y + 4, x + 6, WK.y + WK.h - 4, '#e8b100'); flat(x + BAY_W - 6, WK.y + 4, x + BAY_W - 3, WK.y + WK.h - 4, '#e8b100'); }
   const al = wk.lap === 15 && !wk.auto && !wk.done ? wkAlign() : null;
@@ -2274,6 +2281,11 @@ function drawWorkshop() {
     const x = WK.x + i * BAY_W;
     rect(x + 1, WK.y, BAY_W - 2, WK.h, '#2a2d30');
     rect(x + 3, WK.y + 4, 3, WK.h - 8, '#e8b100'); rect(x + BAY_W - 6, WK.y + 4, 3, WK.h - 8, '#e8b100');
+  }
+  for (const i of PIT_BAYS) {
+    const p = pitRect(i);
+    rect(p.x0 - 3, p.y0 - 3, p.x1 - p.x0 + 6, p.y1 - p.y0 + 6, '#e8b100'); rect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0, '#050506');
+    for (let y = p.y0 + 8; y < p.y1 - 4; y += 12) rect(p.x0 + 3, y, 6, 1.5, '#555');
   }
   const al = wk.lap === 15 && !wk.auto && !wk.done ? wkAlign() : null;
   for (let i = 0; i < 6; i++) {
