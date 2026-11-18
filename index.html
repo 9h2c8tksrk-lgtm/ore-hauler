@@ -49,8 +49,15 @@ const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const LADDER = { x: 88, y: 1102 }, BEACON_AT = { x: 95, y: 1104, z: 48 };   // beside the second parked truck's cab; its left roof beacon is being swapped
-const BLDG = [[185, 520], [265, 520], [185, 610], [265, 610]].map(([x, y]) => ({ x, y, w: 50, h: 60, c: '#cfd3d6' }));   // four transportable site buildings at the tyre-bay end of the workshop, a cross-shaped open space between them
-const bldgInner = b => ({ fx: b.x < 250 ? b.x + b.w : b.x, sx: b.x < 250 ? 1 : -1 });   // the face looking into the open space carries the door
+// four long transportable buildings round a square courtyard (a pinwheel, long sides facing across it); n is the face's outward normal, pointing into the yard
+const BLDG = [[210, 530, 80, 30, 0, 1], [260, 570, 30, 80, -1, 0], [170, 620, 80, 30, 0, -1], [170, 530, 30, 80, 1, 0]].map(([x, y, w, h, nx, ny]) => ({ x, y, w, h, nx, ny, c: '#cfd3d6' }));
+// a point/size along a building's yard-facing wall: t = offset along the wall, returns the face centre
+const bldgFace = b => ({ px: b.nx > 0 ? b.x + b.w : b.nx < 0 ? b.x : b.x + b.w / 2, py: b.ny > 0 ? b.y + b.h : b.ny < 0 ? b.y : b.y + b.h / 2 });
+// rectangle hugging the yard-facing wall: along = offset on the wall, len along it, depth from the wall (positive goes into the yard, negative into the building)
+const faceRect = (b, along, len, d0, d1) => {
+  const { px, py } = bldgFace(b);
+  return b.ny ? { x: px + along - len / 2, y: b.ny > 0 ? py + d0 : py - d1, w: len, h: d1 - d0 } : { x: b.nx > 0 ? px + d0 : px - d1, y: py + along - len / 2, w: d1 - d0, h: len };
+};
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
 const TR_Y0 = 150, TR_X = 390, TR_W = 76, BUCKET_W = 58, TR_H = BUCKET_W * 3 + 24;   // loading-yard trailer layout: each bin is three loader buckets long
 let trShift = 0;   // how far the whole truck has rolled forward (up the screen) so the next empty trailer sits at the loading spot
@@ -1898,10 +1905,10 @@ function chaseCab(vx, vy, ang) {
   const rot = (dx, dy) => [vx + dx * Math.cos(ang) - dy * Math.sin(ang), vy + dx * Math.sin(ang) + dy * Math.cos(ang)];
   const parts = [];
   const add = (dx, dy, w, l, z0, z1, col) => { const p = rot(dx, dy); parts.push({ k: p[1] * 100 + z0, fn: () => prism(p[0], p[1], w, l, z0, z1, col, ang) }); };
-  const addWheel = (dx, dy) => { const p = rot(dx, dy); parts.push({ k: p[1] * 100, fn: () => wheel3(p[0], p[1], 7, 6, ang) }); };
+  const addWheel = (dx, dy, r = 7) => { const p = rot(dx, dy); parts.push({ k: p[1] * 100, fn: () => wheel3(p[0], p[1], r, r * .85, ang) }); };
   for (const sx of [-1, 1]) {
-    addWheel(sx * 17, -22);                                                // steer axle
-    for (const dy of [18, 26, 34]) addWheel(sx * 17, dy);                  // three drive axles
+    addWheel(sx * 17, -22, 6);                                             // steer axle
+    for (const dy of [14, 24, 34]) addWheel(sx * 17, dy, 4.8);             // three drive axles, spaced clear of each other
     add(sx * 15.5, 8, 5, 22, 8, 19, CH);                                   // fuel tanks
     add(sx * 14.5, -24, 5, 16, 14, 23, Pd);                                // front guards
     add(sx * 9, -37.8, 5, 1.5, 17, 21, '#fff4c0');                         // headlights
@@ -1936,7 +1943,8 @@ function chaseTrailer(vx, vy, ang, i, f, w, l, hl, label) {
   part(0, -l / 2 - 14, 6, 30, 12, 18, '#f2b800');                       // drawbar to the unit ahead
   part(0, l / 2 + 2, 8, 8, 12, 19, '#2b2b2b');                           // ring feeder at the rear
   part(0, 0, w - 16, l - 4, 5, 11, '#222');                                  // chassis
-  for (const a of trailerAxles(i, l)) for (const sx of [-1, 1]) { const p = rot(sx * (w / 2 + 1), a); wheel3(p[0], p[1], 8, 7, ang); }
+  const wr = Math.min(8, Math.max(4, l * .065));   // tyre size follows the axle spacing so shorter trailers don't get overlapping wheels
+  for (const a of trailerAxles(i, l)) for (const sx of [-1, 1]) { const p = rot(sx * (w / 2 + 1), a); wheel3(p[0], p[1], wr, wr * .85, ang); }
   // open bin: interior first, then the near walls and rim hide the edge of it
   const inner = prismCorners(vx, vy, w - 6, l - 6, ang);
   quadAt(vx, vy, w - 6, l - 6, 12, '#3a1429', ang);
@@ -2103,13 +2111,11 @@ function drawStructures() {
     rect(c.x + c.w / 2 - 1, c.y + c.h - 40, 2, 34, '#ddd8');
   }
   for (const c of BLDG) {
-    const { fx, sx } = bldgInner(c);
     rect(c.x + 3, c.y + 3, c.w, c.h, '#0004'); rect(c.x, c.y, c.w, c.h, '#4a5a72'); rect(c.x + 2, c.y + 2, c.w - 4, c.h - 4, c.c);
-    for (let k = 4; k < c.w - 3; k += 4) rect(c.x + k, c.y + 3, 1, c.h - 6, '#0000001a');   // corrugated roof sheets
-    rect(c.x + c.w / 2 - 1, c.y + 2, 2, c.h - 4, '#0000001f');
-    rect(fx - (sx > 0 ? 3 : 0), c.y + c.h / 2 - 4, 3, 8, '#1f2d4a'); rect(fx + sx * 1, c.y + c.h / 2 - 5, 3, 10, '#a38f6e');   // navy door and its step
-    rect(fx - (sx > 0 ? 2 : 0), c.y + 9, 2, 9, '#2b3440'); rect(fx - (sx > 0 ? 2 : 0), c.y + c.h - 18, 2, 9, '#2b3440');   // windows
-    rect(fx + sx * 3 + (sx > 0 ? 0 : -4), c.y + c.h - 12, 4, 4, '#2f3b2f');   // wheelie bin
+    const long = c.w > c.h;
+    for (let k = 4; k < (long ? c.w : c.h) - 3; k += 4) long ? rect(c.x + k, c.y + 3, 1, c.h - 6, '#0000001a') : rect(c.x + 3, c.y + k, c.w - 6, 1, '#0000001a');   // corrugated roof sheets
+    long ? rect(c.x + 2, c.y + c.h / 2 - 1, c.w - 4, 2, '#0000001f') : rect(c.x + c.w / 2 - 1, c.y + 2, 2, c.h - 4, '#0000001f');
+    for (const [al, ln, d0, d1, col] of [[0, 8, -3, 0, '#1f2d4a'], [0, 10, 0, 3, '#a38f6e'], [-24, 10, -2, 0, '#2b3440'], [24, 10, -2, 0, '#2b3440'], [-16, 4, 4, 8, '#2f3b2f']]) { const q = faceRect(c, al, ln, d0, d1); rect(q.x, q.y, q.w, q.h, col); }   // navy door and step, windows, wheelie bin
   }
   const h = SHELTER;   // corrugated arch seen from above: ribs across, shaded towards the sides
   rect(h.x + 3, h.y + 3, h.w, h.h, '#0004');
@@ -2196,14 +2202,9 @@ function drawWorkshopChase() {
     }
   }
   for (const k of BLDG) {
-    const { fx, sx } = bldgInner(k), fxo = fx + sx * .5, yc = k.y + k.h / 2;
-    wall(k.x + k.w / 2, yc, k.w, k.h, 0, 56, k.c);
-    wall(k.x + k.w / 2, yc, k.w + 2, k.h + 2, 56, 60, '#4a5a72');   // dark roof edge
-    wall(fxo, yc, 1, 8, 0, 30, '#1f2d4a'); wall(fx + sx * 3, yc, 4, 10, 0, 3, '#a38f6e');   // navy door and step
-    wall(fxo, yc - 6, 1, 2, 30, 34, '#ffd98a');                                             // wall light over the door
-    wall(fxo, k.y + 12, 1, 10, 15, 29, '#2b3440'); wall(fxo, k.y + k.h - 12, 1, 10, 15, 29, '#2b3440');   // windows
-    wall(fxo, yc + 8, 1, 1.6, 8, 15, '#c8201a');                                            // fire extinguisher
-    wall(fx + sx * 4, k.y + k.h - 8, 4, 4, 0, 9, '#2f3b2f');                                // wheelie bin
+    wall(k.x + k.w / 2, k.y + k.h / 2, k.w, k.h, 0, 56, k.c);
+    wall(k.x + k.w / 2, k.y + k.h / 2, k.w + 2, k.h + 2, 56, 60, '#4a5a72');   // dark roof edge
+    for (const [al, ln, d0, d1, z0, z1, col] of [[0, 8, 0, .8, 0, 30, '#1f2d4a'], [0, 10, 0, 3, 0, 3, '#a38f6e'], [0, 3, 0, 1, 30, 34, '#ffd98a'], [-24, 10, 0, .8, 15, 29, '#2b3440'], [24, 10, 0, .8, 15, 29, '#2b3440'], [10, 1.6, 0, 1, 8, 15, '#c8201a'], [-16, 4, 2, 6, 0, 9, '#2f3b2f']]) { const q = faceRect(k, al, ln, d0, d1); wall(q.x + q.w / 2, q.y + q.h / 2, q.w, q.h, z0, z1, col); }   // navy door, step, light, windows, extinguisher, wheelie bin
   }
   for (const k of CONT) wall(k.x + k.w / 2, k.y + k.h / 2, k.w, k.h, 0, 52, k.c);
   for (const [dx, dy] of [[2, 2], [SHELTER.w - 2, 2], [2, SHELTER.h - 2], [SHELTER.w - 2, SHELTER.h - 2]]) wall(SHELTER.x + dx, SHELTER.y + dy, 4, 4, 0, 40, '#8d959c');
