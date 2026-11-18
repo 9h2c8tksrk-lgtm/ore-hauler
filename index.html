@@ -147,6 +147,7 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   if (state === 'menu' && inR(p, SKIP_BTN)) { skipLoad(); return; }
+  if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
   if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
   onKey('Space');
 });
@@ -165,6 +166,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
 let ldr, carrying, spills = [], pileSeg = [];   // pileSeg: remaining ore (0..1) in each slice of the pile, eaten away by scooping
+let shiftStart = false;   // the run began in a camp room: office, then the ute to the truck park, then the truck
 let bayReady = 0, bf = null;   // bayReady: -1/1 = parked in a parking bay on that side; bf: fitter visit in progress
 let best = +localStorage.oreBest || 0;
 let playerName = localStorage.oreName || '', runId = 0;
@@ -225,7 +227,7 @@ function drawBoard(y0, n, hi) {
 const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 
 function reset() {
-  bayReady = 0; bf = null;
+  bayReady = 0; bf = null; shiftStart = false;
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
@@ -237,11 +239,12 @@ function onKey(code) {
     if (code === 'KeyF') { startFitter(); return; }
     if (code === 'KeyC') { bayReady = 0; toUte(); return; }
   }
-  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { toWalk(); return; }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { shiftStart = false; skipLoad(); flash('In the truck - let\'s haul!'); } else toWalk(); return; }
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && code === 'KeyL') { skipLoad(); return; }
+  if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
   if (state === 'load') {
@@ -257,7 +260,12 @@ function onKey(code) {
   }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-const SKIP_BTN = [130, 596, 220, 34, 'SKIP LOADING (L)'];
+const SKIP_BTN = [130, 590, 220, 30, 'SKIP LOADING (L)'], CAMP_BTN = [130, 624, 220, 30, 'START AT CAMP (C)'];
+// begin the shift at your room: on foot to the Schedule Office, then your ute to the truck park, then into the truck
+function startAtCamp() {
+  playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
+  shiftStart = true; toWalk();
+}
 // skip the yard: begin the run already loaded, parked in the first left-hand parking bay
 function skipLoad() {
   playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
@@ -531,7 +539,9 @@ function makeYard() {
       mech('#7a4fc2', [P(375, 600, { w: 3 }), P(420, 650, { w: 2 })]),
       mech('#c2a02a', [P(700, 600, { w: 2 }), P(680, 650, { w: 3 })]),
       mech('#3a9a4a', [P(445, 585, { w: 4 }), P(445, 600, { w: 3 })], 0, 2, -1),
-      mech('#d96aa0', [P(580, 585, { w: 4 }), P(580, 600, { w: 3 })], 1, 3, -1)]
+      mech('#d96aa0', [P(580, 585, { w: 4 }), P(580, 600, { w: 3 })], 1, 3, -1)],
+    // coloured toolbox trolleys: the first six mechanics (the ones who stay in the shed) push one each, two more are parked between the bays
+    carts: [['#d62828', 0], ['#2a6fd6', 1], ['#2fa84a', 2], ['#f08a00', 3], ['#8a4fd0', 4], ['#f2c200', 5], ['#00a6a6'], ['#d96aa0']].map(([col, by], i) => by !== undefined ? { col, by, x: 0, y: 0, a: 0 } : { col, x: 396, y: 545 + (i - 6) * 95, a: i % 2 ? .4 : -.4 })
   };
 }
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -583,6 +593,12 @@ function yardUpdate(dt) {
     const g = m.pts[m.i], dx = g.x - m.x, dy = g.y - m.y, d = Math.hypot(dx, dy);
     if (d < 2) { m.wait = g.w; m.i = (m.i + 1) % m.pts.length; m.walk = false; m.work = false; continue; }
     const st = Math.min(d, 26 * dt); m.x += dx / d * st; m.y += dy / d * st; m.a = Math.atan2(dx, -dy); m.walk = true; m.work = false;
+  }
+  for (const c of yard.carts) {   // a pushed trolley rolls along in front of its mechanic and swings round as they turn
+    if (c.by === undefined) continue;
+    const m = yard.mechs[c.by], k = Math.min(1, dt * 6), tx = m.x + Math.sin(m.a) * 11, ty = m.y - Math.cos(m.a) * 11;
+    if (!c.set) { c.x = tx; c.y = ty; c.a = m.a; c.set = 1; }
+    c.x += (tx - c.x) * k; c.y += (ty - c.y) * k; c.a += angDiff(m.a, c.a) * k;
   }
 }
 // the tyre fitter walks to a spot; true once there
@@ -1366,30 +1382,78 @@ function beaconAt(x, y, z) {
   if (on) glow(x, y, z, 28, 'rgba(255,150,0,.8)');
   ctx.fillStyle = on ? '#ffb030' : '#7a4200'; ctx.beginPath(); ctx.arc(bx, by, 3.4 * sc(y), 0, 7); ctx.fill();
 }
+// workshop toolbox trolley: grey deck on four castors, a coloured lidded toolbox and a push bar at the back
+function cart3(vx, vy, col, ang) {
+  const ca = Math.cos(ang), sa = Math.sin(ang), rt = (dx, dy) => [vx + dx * ca - dy * sa, vy + dx * sa + dy * ca];
+  flatEllipse(vx + 2, vy + 1, 12, 5, 'rgba(0,0,0,.22)');
+  for (const [dx, dy] of [[-6.5, -7], [6.5, -7], [-6.5, 7], [6.5, 7]]) { const p = rt(dx, dy); prism(p[0], p[1], 2.4, 4, 0, 4, '#15171a', ang); }
+  prism(vx, vy, 15, 21, 4, 6.5, '#8a9199', ang);
+  const b = rt(0, -2.5);
+  prism(b[0], b[1], 13, 13, 6.5, 18, col, ang, true);
+  prism(b[0], b[1], 13.6, 13.6, 18, 20.5, shade(col, 1.3), ang);
+  prism(b[0], b[1], 5, 1.6, 20.5, 22, '#1c1c1c', ang);
+  for (const dx of [-6, 6]) { const p = rt(dx, 10); prism(p[0], p[1], 1.4, 1.4, 6.5, 24, '#2b2e32', ang); }
+  const bar = rt(0, 10); prism(bar[0], bar[1], 14, 1.6, 24, 26, '#2b2e32', ang);
+}
 // the fitter: navy overalls, hi-vis vest, white hard hat; carries a red toolbox out, kneels and works with a spanner
+// smooth shaded limbs and a rounded head instead of boxes, so he reads as a person rather than a block figure
+function limb(a, b, r, col) {
+  const [x1, y1] = P(a[0], a[1], a[2]), [x2, y2] = P(b[0], b[1], b[2]), w = 2 * r * sc(a[1]);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = shade(col, .62); ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.strokeStyle = col; ctx.lineWidth = w * .78; ctx.beginPath(); ctx.moveTo(x1 - w * .06, y1); ctx.lineTo(x2 - w * .06, y2); ctx.stroke();
+  ctx.strokeStyle = shade(col, 1.22); ctx.lineWidth = w * .26; ctx.beginPath(); ctx.moveTo(x1 - w * .2, y1); ctx.lineTo(x2 - w * .2, y2); ctx.stroke();
+}
+function ball(x, y, z, r, col) {
+  const [sx, sy] = P(x, y, z), rr = r * sc(y);
+  if (!(rr > 0)) return;
+  const g = ctx.createRadialGradient(sx - rr * .35, sy - rr * .4, rr * .1, sx, sy, rr);
+  g.addColorStop(0, shade(col, 1.2)); g.addColorStop(.6, col); g.addColorStop(1, shade(col, .6));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, rr, 0, Math.PI * 2); ctx.fill();
+}
 function person3(m) {
-  const { x, y, dir } = m, sw = m.walk ? Math.sin(m.walk) : 0, lean = m.work ? 4 : 0, dz = m.work ? -4 : 0, hx = x + dir * lean;
-  shadow(x, y, 12, 9);
-  box(x - 2, y + sw * 2.4, 3.4, 4, 0, 10 + dz * .5, '#1b2a4a'); box(x + 2, y - sw * 2.4, 3.4, 4, 0, 10 + dz * .5, '#1b2a4a');
-  box(x - 2, y + sw * 2.4, 3.8, 5.4, 0, 2.6, '#2a1d14'); box(x + 2, y - sw * 2.4, 3.8, 5.4, 0, 2.6, '#2a1d14');
-  box(x + dir * lean * .6, y, 9, 5.2, 10 + dz, 21 + dz, '#1b2a4a');
-  box(x + dir * lean * .6, y, 9.6, 5.8, 13 + dz, 21 + dz, '#f2e600'); box(x + dir * lean * .6, y, 9.9, 6, 16 + dz, 17.4 + dz, '#e6e6e6');
-  if (m.work) {
-    const sp = Math.sin(m.work * 14) * 1.2;
-    box(x + dir * 6.5, y + 1.8, 8, 2.6, 15 + dz + 3, 17.6 + dz + 3, '#1b2a4a'); box(x + dir * 11, y + 1.8, 3, 3, 16.5 + dz + 3 + sp * .3, 19 + dz + 3, '#d29a73');
-    box(x + dir * 13.5, y + 1.8, 6, 1.6, 17 + sp + 3 + dz, 18.6 + sp + 3 + dz, '#a8afb5');
-    box(x - dir * 8, y + 4, 7, 4.5, 0, 5.5, '#c4281c'); box(x - dir * 8, y + 4, 7.2, 1.2, 3, 3.8, '#222');
-  } else {
-    const sk = '#d29a73';   // swinging arms: sleeve, then bare forearm and hand
-    for (const s of [-1, 1]) { const ay = y + s * sw * 2.2; box(x + s * 5.6, ay, 2.6, 3, 14, 20.5, '#1b2a4a'); box(x + s * 5.6, ay, 2.4, 2.8, 9.6, 14, sk); box(x + s * 5.6, ay, 2.6, 2.8, 8.4, 9.8, '#c98f66'); }
-    if (m.walk) { box(x + 6.5, y + sw * 1.6, 5.5, 4, 2, 8, '#c4281c'); box(x + 6.5, y + sw * 1.6, 5.7, 1, 4.4, 5.2, '#222'); }
+  const { x, y, dir } = m, sw = m.walk ? Math.sin(m.walk) : 0, lean = m.work ? 4 : 0, dz = m.work ? -5 : 0;
+  const navy = '#24385e', skin = '#d9a07a', skinD = '#c68c68', hair = '#4a3425', boot = '#34261b';
+  const tx = x + dir * lean * .6, hx = x + dir * lean, hip = 14 + dz * .5;
+  flatEllipse(x + 2, y + 1, 11, 3.6, 'rgba(0,0,0,.14)'); flatEllipse(x + 2, y + 1, 8, 2.6, 'rgba(0,0,0,.22)');
+  for (const s of [-1, 1]) {   // long legs: thigh, shin, boot with a sole
+    const ly = y + s * sw * 3, kz = 7.5 + dz * .5 + (s * sw > 0 ? 1.2 : 0), lx = x + s * 1.8;
+    limb([lx, y, hip], [lx, y + (ly - y) * .5 + (m.work ? 1.5 : 0), kz], 2.2, navy);
+    limb([lx, y + (ly - y) * .5, kz], [lx, ly, 3.2], 1.7, navy);
+    limb([lx, ly, 2.6], [lx + dir * 2.4, ly, 1.6], 1.9, boot);
+    limb([lx, ly, .9], [lx + dir * 2.8, ly, .9], 1.9, '#15100c');
   }
-  box(x + dir * lean * .6, y, 9.4, 5.4, 10 + dz, 11.4 + dz, '#3a2a1a'); box(x + dir * lean * .6, y, 2, 5.6, 10 + dz, 11.4 + dz, '#c9a33a');   // belt and buckle
-  box(x + dir * lean * .8, y, 3.2, 3.2, 20.5 + dz, 22.2 + dz, '#c98f66');   // neck
-  box(hx, y, 5.2, 5.2, 21.5 + dz, 26.4 + dz, '#d29a73');
-  box(hx - dir * .6, y, 5.4, 5.4, 24 + dz, 26 + dz, '#3b2a1c');   // hair under the hat
-  box(hx + dir * 2.6, y - 1.1, 1, 1, 24 + dz, 25 + dz, '#222'); box(hx + dir * 2.6, y + 1.1, 1, 1, 24 + dz, 25 + dz, '#222');   // eyes
-  box(hx, y, 6.6, 6.6, 26 + dz, 29.2 + dz, '#f4f4f4'); box(hx + dir * 2.2, y, 7.2, 8.4, 26 + dz, 27.2 + dz, '#f4f4f4');
+  if (m.work) box(x - dir * 8, y + 4, 7, 4.5, 0, 5.5, '#c4281c');
+  limb([tx, y, hip - .5], [tx, y, 19.5 + dz], 3.2, navy);   // waist and belly
+  limb([tx, y, 19 + dz], [tx, y, 23 + dz], 3.7, navy);   // chest
+  limb([tx - 3.6, y, 23.2 + dz], [tx + 3.6, y, 23.2 + dz], 1.7, navy);   // shoulders
+  limb([tx, y + .2, hip + .5], [tx, y + .2, 23.2 + dz], 3.5, '#f2d400');   // hi-vis vest
+  limb([tx - 3.4, y + .5, 18.6 + dz], [tx + 3.4, y + .5, 18.6 + dz], .8, '#dfe3e5');   // reflective stripes
+  limb([tx - 3.4, y + .5, 15.4 + dz], [tx + 3.4, y + .5, 15.4 + dz], .8, '#dfe3e5');
+  limb([tx - 3.2, y + .5, hip - .2], [tx + 3.2, y + .5, hip - .2], .9, '#3a2a1a'); ball(tx + dir * 1.2, y + .7, hip - .2, 1, '#c9a33a');
+  if (m.work) {
+    const sp = Math.sin(m.work * 14) * 1.2, sh = [tx + dir * 3.6, y + 1.5, 22.6 + dz], el = [tx + dir * 8, y + 1.8, 19.5 + dz], ha = [tx + dir * 12, y + 1.8, 20 + dz + sp * .3];
+    limb([tx - dir * 4.2, y, 22.4 + dz], [tx - dir * 5.6, y, 17.5 + dz], 1.6, navy); limb([tx - dir * 5.6, y, 17.5 + dz], [tx - dir * 4.6, y, 13.5 + dz], 1.3, skin); ball(tx - dir * 4.4, y, 12.8 + dz, 1.5, skinD);
+    limb(sh, el, 1.7, navy); limb(el, ha, 1.3, skin); ball(ha[0], ha[1], ha[2], 1.5, skin);
+    limb(ha, [ha[0] + dir * 5, ha[1], ha[2] + sp], .8, '#b4bbc1'); ball(ha[0] + dir * 5.5, ha[1], ha[2] + sp, 1.5, '#b4bbc1');
+  } else {
+    for (const s of [-1, 1]) {   // arms swing opposite the legs, slightly bent at the elbow
+      const ay = y + s * sw * 2.6, sx = tx + s * 4.9, my = y + (ay - y) * .35;
+      limb([sx, y, 22.4], [sx + s * .3, my, 17.2], 1.65, navy); limb([sx + s * .3, my, 17.2], [sx, ay, 12.2], 1.35, skin); ball(sx, ay, 11.4, 1.5, skinD);
+    }
+    if (m.walk) { const hy = y + sw * 1.6; box(x + 6.5, hy, 5.5, 4, 2.5, 8.5, '#c4281c'); box(x + 6.5, hy, 5.7, 1, 5, 5.8, '#222'); }
+  }
+  limb([hx, y, 22.8 + dz], [hx, y, 25 + dz], 1.5, skin);   // neck
+  ball(hx - dir * .6, y, 27.2 + dz, 2.55, hair);   // hair
+  ball(hx + dir * .4, y, 27 + dz, 2.5, skin);   // head
+  ball(hx + dir * 2.6, y, 26.6 + dz, .7, skinD);   // nose
+  ball(hx, y + 2.2, 27 + dz, .5, skinD); ball(hx, y - 2.2, 27 + dz, .5, skinD);   // ears
+  ball(hx + dir * 2.2, y - 1, 27.4 + dz, .38, '#1a1410'); ball(hx + dir * 2.2, y + 1, 27.4 + dz, .38, '#1a1410');   // eyes
+  limb([hx + dir * 2.3, y - 1.1, 28.1 + dz], [hx + dir * 2.3, y + 1.1, 28.1 + dz], .22, hair);   // brows
+  const [bx, by] = P(hx + dir * 1.4, y, 28.4 + dz), bs = sc(y);   // hard hat: dome, brim and a centre ridge
+  ctx.fillStyle = shade('#e4e6e8', .85); ctx.beginPath(); ctx.ellipse(bx + dir * 1.2 * bs, by, 4.4 * bs, 1.6 * bs, 0, 0, Math.PI * 2); ctx.fill();
+  ball(hx - dir * .2, y, 29.2 + dz, 3, '#f6f6f6');
+  limb([hx - dir * 2.2, y, 30.4 + dz], [hx + dir * 1.6, y, 31 + dz], .45, '#d9dcde');
 }
 // mechanic up a ladder beside a parked truck, swapping the dead beacon on the cab roof for a new one
 const beaconSwap = () => (beaconClock() % 12) < 9;   // true while the old beacon is off its mount
@@ -1557,7 +1621,7 @@ function updateUte(dt) {
   }
   uoncoming = uoncoming.filter(o => o.s > us - 160);
   for (const c of ucars) if (Math.abs(c.x - ux) < 20 && Math.abs(c.s - us) < 48) bump('Bump! Mind the parked cars');
-  if (!uHint && us > CP0 - 300) { uHint = 1; flash('Camp ahead - park in a free bay'); }
+  if (!uHint && us > CP0 - 300) { uHint = 1; flash(shiftStart ? 'Truck park ahead - park in a free bay' : 'Camp ahead - park in a free bay'); }
   const sl = uslots.find(q => q.free && Math.abs(ux - q.x) < 12 && Math.abs(us - (q.s0 + 32)) < 22);
   uPark = sl && Math.abs(uv) < 3 ? uPark + dt : 0;
   if (uPark > .8) { state = 'uteend'; ptrs.clear(); syncBtns(); }
@@ -1602,7 +1666,7 @@ function drawUteWorld() {
     box(bx, yB, 120, 46, 0, 34, '#d9d4c4'); box(bx, yB, 126, 52, 34, 39, '#8c3b2a');
     for (const wx of [-36, 36]) rearRect(yB + 23, bx + wx - 9, bx + wx + 9, 12, 26, '#2a3b4d');
     rearRect(yB + 23, bx - 8, bx + 8, 0, 28, '#5a3a22');
-    if (bx === 240) { const [sx, sy] = P(bx, yB + 23, 31), k = sc(yB); rect(sx - 30 * k, sy - 8 * k, 60 * k, 16 * k, '#1d5fb4'); text('CAMP', sx, sy + 5 * k, 14 * k, '#fff'); }
+    if (bx === 240) { const [sx, sy] = P(bx, yB + 23, 31), k = sc(yB); rect(sx - 30 * k, sy - 8 * k, 60 * k, 16 * k, '#1d5fb4'); text(shiftStart ? 'TRUCKS' : 'CAMP', sx, sy + 5 * k, 14 * k, '#fff'); }
   } });
   const yS = ys(CP0 - 10);
   if (yS > -115 && yS < H + 80) list.push({ y: yS, fn: () => {
@@ -1627,16 +1691,16 @@ function drawUteScreen() {
   rect(0, 0, W, 64, '#000a');
   text('DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
   text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
-  text(us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
+  text(us < CP0 ? `${Math.round((CP0 - us) / 4)} m to ${shiftStart ? 'Truck Park' : 'Camp'}` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
   text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
   if (uPark > 0) bar(W / 2 - 60, 80, 120, 12, uPark / .8, '#4c4');
   if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
   if (state === 'ute' && isTouch) { drawStick(); drawBtns(DB); }
   if (state === 'uteend') {
     rect(30, 200, W - 60, 300, '#000d');
-    text('ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
+    text(shiftStart ? 'AT THE TRUCK PARK!' : 'ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
     text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
-    text(isTouch ? 'Tap to hop out' : 'Press SPACE to hop out', W / 2, 440, 18, '#ff6');
+    text(isTouch ? (shiftStart ? 'Tap to climb in the truck' : 'Tap to hop out') : (shiftStart ? 'Press SPACE to climb in the truck' : 'Press SPACE to hop out'), W / 2, 440, 18, '#ff6');
   }
 }
 // ---------- change over, part 2: on foot from the car park to the schedule office, then to your room ----------
@@ -1669,7 +1733,7 @@ campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
 const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [760, 1100, 85, 160], office: [670, 1090, 80, 45] };
 const CAR_SPOTS = [805, 835, 865].map(y => ({ x: 744, y: y - 8, w: 28, h: 16, mine: y === 835 }));
-const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 };
+const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: 758, y: 835, nx: 0, ny: 0 };
 const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
 const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
@@ -1678,7 +1742,10 @@ let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 
 function toWalk() {
   state = 'walk'; wp = { x: 805, y: 835, dir: Math.atan2(255, -95), ph: 0 }; wCamH = wp.dir; wStage = 0; wT = 0; wWrong = 0;   // facing the office
   wRoom = Math.floor(Math.random() * CAMP_DOORS.length);   // a different room every time
-  ptrs.clear(); syncBtns(); flash('Hand your paperwork in at the Schedule Office');
+  if (shiftStart) {   // outside your own door, facing the office
+    const d = CAMP_DOORS[wRoom]; wp = { x: d.x + d.nx * 14, y: d.y + d.ny * 14, dir: Math.atan2(OFFICE_DOOR.y - d.y, OFFICE_DOOR.x - d.x), ph: 0 }; wCamH = wp.dir;
+  }
+  ptrs.clear(); syncBtns(); flash(shiftStart ? `Room ${CAMP_DOORS[wRoom].name}: pick up your schedule at the office` : 'Hand your paperwork in at the Schedule Office');
 }
 function updateWalk(dt) {
   wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
@@ -1691,8 +1758,9 @@ function updateWalk(dt) {
     if (!campHit(wp.x, ny)) wp.y = ny;
   }
   wCamH += Math.atan2(Math.sin(wp.dir - wCamH), Math.cos(wp.dir - wCamH)) * (1 - Math.exp(-5 * dt));   // chase cam swings in behind
-  if (wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(`Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
-  if (wStage === 1) CAMP_DOORS.forEach((d, i) => {
+  if (wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(shiftStart ? 'Schedule collected! Head to your ute' : `Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
+  if (shiftStart && wStage === 1 && Math.hypot(wp.x - YOUR_UTE.x, wp.y - YOUR_UTE.y) < 30) { toUte(); return; }
+  if (wStage === 1 && !shiftStart) CAMP_DOORS.forEach((d, i) => {
     if (!atDoor(d, wp)) return;
     if (i === wRoom) { wStage = 2; state = 'walkend'; ptrs.clear(); syncBtns(); }
     else if (!wWrong) { wWrong = 1.2; flash(`Room ${d.name} - not yours`); }
@@ -1762,8 +1830,8 @@ function drawWalk() {
       wPoly([[wx - d.dx * 2.4, wy - d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 13], [wx - d.dx * 2.4, wy - d.dy * 2.4, 13]], '#32404d');
     }
   });
-  CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1, d.name)); doorEnt(OFFICE_DOOR, wStage === 0);
-  const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? CAMP_DOORS[wRoom] : null;
+  CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1 && !shiftStart, d.name)); doorEnt(OFFICE_DOOR, wStage === 0);
+  const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? (shiftStart ? YOUR_UTE : CAMP_DOORS[wRoom]) : null;
   if (goal) add(goal.x + goal.nx * 12, goal.y + goal.ny * 12, () => {   // glowing beacon over the target door
     const b = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 0), t = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 140);
     if (b[1] < WNEAR || t[1] < WNEAR) return;
@@ -1799,8 +1867,8 @@ function drawWalk() {
   const rn = CAMP_DOORS[wRoom].name;
   rect(0, 0, W, 64, '#000a');
   text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
-  text(wStage === 0 ? 'Go to the Schedule Office' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
-  text(wStage === 0 ? 'Behind the kitchen' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
+  text(wStage === 0 ? 'Go to the Schedule Office' : shiftStart ? 'Walk to your ute' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
+  text(wStage === 0 ? (shiftStart ? `From Room ${rn}` : 'Behind the kitchen') : shiftStart ? 'In the car park - follow the glow' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
   text(isTouch ? 'Stick: turn  GAS: walk' : 'A/D turn, W/S walk', 10, 48, 12, '#ccc', 'left');
   if (state === 'walk' && isTouch) { drawStick(); drawBtns(DB); }
   if (msgT > 0) text(msg, W / 2, 110, 20, '#ff6');
@@ -2371,9 +2439,18 @@ function drawUte(u) {
   if (Math.sin(beaconClock() * 10) > 0) rect(-2, -2, 4, 3, '#ffa020');
   ctx.restore();
 }
+function drawCart(c) {
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a);
+  for (const sx of [-5.5, 5.5]) for (const wy of [-6, 6]) rect(sx - 1, wy - 2, 2, 4, '#111');
+  rect(-5, -8, 10, 16, '#4a4f55'); rect(-4.5, -7, 9, 14, '#62686f');
+  rect(-4, -6, 8, 9, c.col); rect(-4, -6, 8, 2.2, shade(c.col, 1.25)); rect(-3, -1, 6, .8, shade(c.col, .6)); rect(-1.5, -3.5, 3, 1, '#222');
+  rect(-5, 7, 10, 1.4, '#2b2e32'); rect(-5, 4, 1, 4, '#2b2e32'); rect(4, 4, 1, 4, '#2b2e32');
+  ctx.restore();
+}
 function drawYardLife() {
   for (const r of yard.parked) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
   for (const r of yard.movers) { if (r.ute) drawUte(r); else drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f }); }
+  for (const c of yard.carts) drawCart(c);
   for (const m of yard.mechs) drawMech(m);
   rect(LADDER.x - 5, LADDER.y - 8, 6, 16, '#c9a46a'); rect(LADDER.x - 4, LADDER.y - 7, 4, 14, '#a9854e'); drawMech({ x: LADDER.x - 2, y: LADDER.y, a: Math.PI / 2, col: '#f2e600', walk: false, work: true, ph: 0 });
   // new tyres on a rack and a heap of old ones outside the tyre bay
@@ -2511,6 +2588,10 @@ function drawWorkshopChase() {
   if (wk.fit.u < 0 && !wk.auto) tyre(wk.fit.fx + 20, wk.fit.fy);
   // people
   const man = (m, work) => { const [vx, vy] = V(m.x, m.y); if (near(vy)) list.push({ y: vy, fn: () => person3({ x: vx, y: vy, dir: Math.sin(m.a - th) >= 0 ? 1 : -1, walk: m.walk ? t * 10 + (m.ph || 0) : 0, work: work ? t : 0 }) }); };
+  for (const c of yard.carts) {
+    const [vx, vy] = V(c.x, c.y); if (!near(vy)) continue;
+    list.push({ y: vy, fn: () => cart3(vx, vy, c.col, c.a - th) });
+  }
   for (const m of yard.mechs) man(m, m.work);
   { const [lx, ly] = V(LADDER.x, LADDER.y), [bx, by] = V(BEACON_AT.x, BEACON_AT.y); if (near(ly)) ladderGuy(list, lx, ly, bx, by); }
   { const f = wk.fit, idle = f.u < 0 && !wk.auto; man({ x: f.fx, y: f.fy, a: f.fa, walk: f.walk }, idle || (wk.auto && !f.walk && f.u >= 0 && f.u <= NT && (f.stage === 1 || f.stage === 2))); }
@@ -2606,8 +2687,9 @@ function render() {
     text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
     text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
     drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
-    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 656, 14, '#ccc');
-    text(`Best: ${best}`, W / 2, 686, 14, '#ccc');
+    drawBtn(CAMP_BTN, isTouch ? 'START AT CAMP' : CAMP_BTN[4], false);
+    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 676, 14, '#ccc');
+    text(`Best: ${best}`, W / 2, 702, 14, '#ccc');
   } else {
     if (state === 'skyway') drawSkyway();
     else {
