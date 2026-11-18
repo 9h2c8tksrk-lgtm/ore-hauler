@@ -1073,8 +1073,8 @@ function cab3(x, y) {
     ctx.fillStyle = on ? '#ffb030' : '#7a4200'; ctx.beginPath(); ctx.arc(sx, sy, 3.5 * sc(y), 0, 7); ctx.fill();
   }
 }
-// trailer 1: 3 rear axles (its front is carried by the cab's drive axles); the others get 4 rear + 3 front
-const trailerAxles = (i, l) => [4, 9.5, 15, 20.5].slice(0, i ? 4 : 3).map(k => l / 2 - k).concat(i ? [-l / 2 + 4, -l / 2 + 9.5, -l / 2 + 15] : []);
+// trailer 1: 3 rear axles; the others get 5 along their length
+const trailerAxles = (i, l) => { const m = Math.min(10, l * .12), sp = (l - 2 * m) / 4; return Array.from({ length: i ? 5 : 3 }, (_, k) => l / 2 - m - k * sp); };   // evenly spread; trailer 1's front is carried by the cab's drive axles
 const line3 = (pts, lw, col) => {
   ctx.strokeStyle = col; ctx.lineWidth = lw * sc(pts[0][1]); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath();
   pts.forEach((q, k) => { const [sx, sy] = P(q[0], q[1], q[2]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.stroke();
@@ -1106,7 +1106,7 @@ function fifthWheel(x, jy) {
 function trailer3(x, y, i, f, lid) {
   const last = i === NT - 1, w = 34, l = 50, x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, col = '#d94a8c', cl = camL(), TOP = 33;
   shadow(x, y, w + 4, l);
-  for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 5, 4.5, 0, 11, '#131313');
+  for (const sx of [-1, 1]) for (const oy of trailerAxles(i, l)) box(x + sx * (w / 2 + 1), y + oy, 6.5, 7, 0, 14, '#131313');
   box(x, y + 2, w - 8, l - 10, 4, 10, '#222');
   for (const sx of [-1, 1]) box(x + sx * (w / 2 - 3), y, 2.5, l, 7, 11, '#2a2a2a');   // chassis rails under the bin
   if (i) dolly(x, y, w, l);
@@ -1730,7 +1730,7 @@ function drawRig(J, x, y, ang, sc, o) {
   ctx.beginPath(); ctx.moveTo(J[0].x, J[0].y); for (let i = 1; i <= NT; i++) ctx.lineTo(J[i].x, J[i].y); ctx.stroke();
   for (let i = NT - 1; i >= 0; i--) {
     const p = chainPose(J, i), st = o && o.tyre ? o.tyre[i + 1] : -1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.scale(sc, sc);
-    for (const sx of [-18.5, 18.5]) for (const wy of trailerAxles(i, 54)) wheel(sx, wy, 5, 5, st);
+    for (const sx of [-18.5, 18.5]) for (const wy of trailerAxles(i, 54)) wheel(sx, wy, 6, 8, st);
     if (o && o.fill !== undefined) drawTrailer(0, 0, 34, 56, o.fill, 0, 0); else drawTrailer(0, 0, 34, 56, fills[i] / TRAILER_CAP, 0, tr[i].lid);
     ctx.strokeStyle = '#f2b800'; ctx.fillStyle = '#e8b100'; ctx.lineWidth = 2.4;
     if (i) { ctx.beginPath(); ctx.moveTo(-9, -22); ctx.lineTo(0, -31); ctx.lineTo(9, -22); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -17, 5, 0, 7); ctx.fill(); }   // dolly gooseneck to the ring feeder
@@ -1797,8 +1797,8 @@ function yardTrailer(cx, cy, i) {
   const Q = (ax, ay, bx, by, k = 1) => [[ax + dx * k, ay + dy * k], [bx + dx * k, ay + dy * k], [bx + dx * k, by + dy * k], [ax + dx * k, by + dy * k]];
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x0 + 8, y0 + 8, w, l);
   if (trDmg[i] > 0) { ctx.fillStyle = 'rgba(30,20,20,.55)'; for (let k = 0; k < Math.ceil(trDmg[i] / 10); k++) ctx.fillRect(x0 + 2 + (k * 17) % (w - 14), y0 + 6 + (k * 29) % (l - 14), 9, 3); }
-  const axles = trailerAxles(i, l).map(a => cy + a - 3.5);   // trailer 1: 3 rear axles; its front three are the cab's drive axles
-  for (const wx of [x0 - 5, x1 - 1]) for (const wy of axles) { ctx.fillStyle = '#111'; ctx.fillRect(wx, wy, 6, 7); }
+  const axles = trailerAxles(i, l).map(a => cy + a - 6);   // trailer 1: 3 rear axles; its front three are the cab's drive axles
+  for (const wx of [x0 - 5, x1 - 1]) for (const wy of axles) { ctx.fillStyle = '#111'; ctx.fillRect(wx - 1, wy, 8, 12); }
   rect(x0 + 6, y0, w - 12, l, '#222');
   q([[x0, y0], [x0, y1], [x0 + dx, y1 + dy], [x0 + dx, y0 + dy]], shade(col, .8));
   q([[x0, y1], [x1, y1], [x1 + dx, y1 + dy], [x0 + dx, y1 + dy]], shade(col, .62));
@@ -1920,7 +1920,7 @@ function chaseTrailer(vx, vy, ang, i, f, w, l, hl, label) {
   part(0, -l / 2 - 14, 6, 30, 12, 18, '#f2b800');                       // drawbar to the unit ahead
   part(0, l / 2 + 2, 8, 8, 12, 19, '#2b2b2b');                           // ring feeder at the rear
   part(0, 0, w - 16, l - 4, 5, 11, '#222');                                  // chassis
-  for (const a of trailerAxles(i, l)) for (const sx of [-1, 1]) { const p = rot(sx * (w / 2 + 1), a); wheel3(p[0], p[1], 6.5, 6, ang); }
+  for (const a of trailerAxles(i, l)) for (const sx of [-1, 1]) { const p = rot(sx * (w / 2 + 1), a); wheel3(p[0], p[1], 8, 7, ang); }
   // open bin: interior first, then the near walls and rim hide the edge of it
   const inner = prismCorners(vx, vy, w - 6, l - 6, ang);
   quadAt(vx, vy, w - 6, l - 6, 12, '#3a1429', ang);
