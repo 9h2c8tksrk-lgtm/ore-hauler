@@ -131,7 +131,7 @@ cv.addEventListener('pointerdown', e => {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
   if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
@@ -1672,26 +1672,23 @@ const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 };
 const CAMP_SOLID = [...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
-let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCam = { x: 0, y: 0 };
-const campCam = () => { wCam.x = Math.max(0, Math.min(CAMP_W - W, wp.x - W / 2)); wCam.y = Math.max(0, Math.min(CAMP_H - H, wp.y - H / 2)); };
+let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
 function toWalk() {
-  state = 'walk'; wp = { x: 805, y: 835, dir: Math.PI, ph: 0 }; wStage = 0; wT = 0; wWrong = 0; campCam();
+  state = 'walk'; wp = { x: 805, y: 835, dir: Math.atan2(255, -95), ph: 0 }; wCamH = wp.dir; wStage = 0; wT = 0; wWrong = 0;   // facing the office
   wRoom = Math.floor(Math.random() * CAMP_DOORS.length);   // a different room every time
   ptrs.clear(); syncBtns(); flash('Hand your paperwork in at the Schedule Office');
 }
 function updateWalk(dt) {
   wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
-  let ax = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0), ay = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
-  const tp = [...ptrs.values()][0];
-  if (!ax && !ay && tp) { const dx = tp.x + wCam.x - wp.x, dy = tp.y + wCam.y - wp.y, d = Math.hypot(dx, dy); if (d > 8) { ax = dx / d; ay = dy / d; } }
-  const m = Math.hypot(ax, ay);
-  if (m) {
-    ax /= Math.max(1, m); ay /= Math.max(1, m); wp.dir = Math.atan2(ay, ax); wp.ph += dt * 10;
-    const nx = wp.x + ax * 130 * dt, ny = wp.y + ay * 130 * dt;
+  const fwd = (keys.ArrowUp || keys.KeyW || keys.TG ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB ? .5 : 0);
+  wp.dir += steerAxis() * 2.3 * dt;
+  if (fwd) {
+    wp.ph += dt * 10 * Math.abs(fwd);
+    const nx = wp.x + Math.cos(wp.dir) * 130 * fwd * dt, ny = wp.y + Math.sin(wp.dir) * 130 * fwd * dt;
     if (!campHit(nx, wp.y)) wp.x = nx;
     if (!campHit(wp.x, ny)) wp.y = ny;
   }
-  campCam();
+  wCamH += Math.atan2(Math.sin(wp.dir - wCamH), Math.cos(wp.dir - wCamH)) * (1 - Math.exp(-5 * dt));   // chase cam swings in behind
   if (wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(`Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
   if (wStage === 1) CAMP_DOORS.forEach((d, i) => {
     if (!atDoor(d, wp)) return;
@@ -1699,40 +1696,83 @@ function updateWalk(dt) {
     else if (!wWrong) { wWrong = 1.2; flash(`Room ${d.name} - not yours`); }
   });
 }
+// chase-cam perspective for the camp: camera sits behind and above the walker and turns with them
+const WF = 520, WCY = H * .5, WPH = .45, WCH = 70, WNEAR = 6, wCos = Math.cos(WPH), wSin = Math.sin(WPH);
+const wCamPt = (x, y, z) => { const dx = x - wCam.x, dy = y - wCam.y, v = z - WCH, f = dx * wCam.hx + dy * wCam.hy; return [dx * wCam.rx + dy * wCam.ry, f * wCos - v * wSin, v * wCos + f * wSin]; };
+const wProj = q => [W / 2 + WF * q[0] / q[1], WCY - WF * q[2] / q[1]];
+function wPoly(pts, col) {
+  let q = pts.map(p => wCamPt(p[0], p[1], p[2])), o = [];
+  for (let i = 0; i < q.length; i++) {   // clip against the near plane
+    const A = q[i], B = q[(i + 1) % q.length], ia = A[1] >= WNEAR, ib = B[1] >= WNEAR;
+    if (ia) o.push(A);
+    if (ia !== ib) { const t = (WNEAR - A[1]) / (B[1] - A[1]); o.push([A[0] + (B[0] - A[0]) * t, WNEAR, A[2] + (B[2] - A[2]) * t]); }
+  }
+  if (o.length < 3) return;
+  ctx.fillStyle = col; ctx.beginPath();
+  o.forEach((p, i) => { const [sx, sy] = wProj(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+  ctx.closePath(); ctx.fill();
+}
+const wFlat = (x, y, w, h, col, z = 0) => wPoly([[x, y, z], [x + w, y, z], [x + w, y + h, z], [x, y + h, z]], col);
+function wBox(cx, cy, w, l, z0, z1, wall, roof, a = 0) {
+  const c = Math.cos(a), s = Math.sin(a), k = [[-w / 2, -l / 2], [w / 2, -l / 2], [w / 2, l / 2], [-w / 2, l / 2]].map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c]);
+  for (let i = 0; i < 4; i++) {
+    const A = k[i], B = k[(i + 1) % 4], nx = B[1] - A[1], ny = -(B[0] - A[0]), mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+    if (nx * (wCam.x - mx) + ny * (wCam.y - my) <= 0) continue;
+    const nl = Math.hypot(nx, ny) || 1;
+    wPoly([[A[0], A[1], z0], [B[0], B[1], z0], [B[0], B[1], z1], [A[0], A[1], z1]], shade(wall, .62 + .38 * Math.max(0, (nx * .35 - ny * .9) / nl)));
+  }
+  wPoly(k.map(p => [p[0], p[1], z1]), shade(roof, 1.05));
+}
+function wText(str, x, y, z, size, col) {
+  const q = wCamPt(x, y, z); if (q[1] < 30 || q[1] > 420) return;
+  const [sx, sy] = wProj(q); text(str, sx, sy, Math.max(5, Math.min(15, size * WF / q[1])), col);
+}
 function drawWalk() {
-  rect(0, 0, W, H, '#b8a37a');
-  ctx.save(); ctx.translate(-wCam.x, -wCam.y);
-  rect(0, 0, CAMP_W, CAMP_H, '#c8b18f'); rect(0, 1690, CAMP_W, 110, '#a9855f');
-  for (const [x, y, w, h, c] of [[445, 545, 75, 40, '#a08565'], [445, 660, 75, 70, '#a08565'], [445, 1000, 75, 70, '#5f7240'], [670, 620, 50, 70, '#5f7240'], [680, 1000, 70, 70, '#5f7240'], [660, 1160, 85, 100, '#3d4f5c'], [225, 700, 70, 60, '#a08565'], [225, 880, 70, 60, '#a08565']]) rect(x, y, w, h, c);
-  rect(770, 1310, 110, 190, '#6f8a4a'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(778, 1318, 94, 174); ctx.beginPath(); ctx.moveTo(778, 1405); ctx.lineTo(872, 1405); ctx.stroke(); text('COURT', 825, 1410, 11, '#fff');
-  rect(735, 790, 145, 90, '#a99a80'); text('CAR PARK', 835, 800, 10, '#555');
-  const cols = ['#d8d8d8', '#c33', '#3a6fc4'];
-  CAR_SPOTS.forEach((c, i) => { rect(c.x, c.y, c.w, c.h, c.mine ? '#f4f4f4' : cols[i]); rect(c.x + 4, c.y + 3, 10, c.h - 6, 'rgba(40,60,80,.7)'); if (c.mine) text('UTE', c.x + c.w + 12, c.y + 12, 9, '#333'); });
-  const bld = (b, roof) => { rect(b.x, b.y, b.w, b.h, '#d9d4c4'); ctx.strokeStyle = roof; ctx.lineWidth = 4; ctx.strokeRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4); };
-  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) bld(b, b.roof);
+  const hx = Math.cos(wCamH), hy = Math.sin(wCamH);
+  wCam = { x: wp.x - hx * 110, y: wp.y - hy * 110, hx, hy, rx: -hy, ry: hx };
+  const hor = WCY - WF * Math.tan(WPH);
+  const sg = ctx.createLinearGradient(0, 0, 0, hor); sg.addColorStop(0, '#5b8fd0'); sg.addColorStop(1, '#d9e6f2');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, hor + 1); rect(0, hor, W, H - hor, '#c8b18f');
+  wFlat(-3000, -3000, 6922, 4700, '#c8b18f'); wFlat(-3000, 1690, 6922, 110, '#a9855f'); wFlat(-3000, 1800, 6922, 3000, '#b49a74');
+  for (const [x, y, w, h, c] of [[445, 545, 75, 40, '#a08565'], [445, 660, 75, 70, '#a08565'], [445, 1000, 75, 70, '#5f7240'], [670, 620, 50, 70, '#5f7240'], [680, 1000, 70, 70, '#5f7240'], [660, 1160, 85, 100, '#3d4f5c'], [225, 700, 70, 60, '#a08565'], [225, 880, 70, 60, '#a08565'], [735, 790, 145, 90, '#a99a80'], [770, 1310, 110, 190, '#6f8a4a']]) wFlat(x, y, w, h, c, .1);
+  for (const [x, y, w, h] of [[778, 1318, 94, 2], [778, 1490, 94, 2], [778, 1318, 2, 174], [870, 1318, 2, 174], [778, 1404, 94, 2]]) wFlat(x, y, w, h, '#fff', .2);
+  const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   const [kx, ky, kw, kh] = CAMP_BIG.kitchen, [mx, my, mw, mh] = CAMP_BIG.mess, [ox, oy, ow, oh] = CAMP_BIG.office;
-  bld({ x: kx, y: ky, w: kw, h: kh }, '#6f7d3c'); text('KITCHEN', kx + kw / 2, ky + kh / 2, 12, '#222');
-  bld({ x: mx, y: my, w: mw, h: mh }, '#6f7d3c'); text('WET MESS', mx + mw / 2, my + mh / 2, 12, '#222');
-  bld({ x: ox, y: oy, w: ow, h: oh }, '#1d5fb4'); text('SCHEDULE', ox + ow / 2, oy + 20, 10, '#222'); text('OFFICE', ox + ow / 2, oy + 33, 10, '#222');
-  const door = (d, on) => { const hz = d.ny !== 0; rect(hz ? d.x - d.hw : d.x - 3 + (d.nx > 0 ? -2 : 0), hz ? d.y - 3 + (d.ny > 0 ? -2 : 0) : d.y - d.hw, hz ? d.hw * 2 : 6, hz ? 6 : d.hw * 2, on ? '#ff6' : '#5a3a22'); };
-  CAMP_DOORS.forEach((d, i) => {
-    const mine = i === wRoom && wStage === 1; door(d, mine);
-    if (mine) { ctx.fillStyle = 'rgba(255,255,100,.4)'; ctx.beginPath(); ctx.arc(d.x + d.nx * 12, d.y + d.ny * 12, 16 + Math.sin(wT * 6) * 3, 0, Math.PI * 2); ctx.fill(); }
-    text(d.name, d.x + d.nx * 16, d.y + d.ny * 12 + 3, 7, '#222');
+  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 24, '#d9d4c4', b.roof));
+  for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.mess, 'WET MESS', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
+    add(o[0] + o[2] / 2, o[1] + o[3] / 2, () => { wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, 30, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, 34, 11, '#fff'); });
+  const cols = ['#d8d8d8', '#c33', '#3a6fc4'];
+  CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { wBox(c.x + c.w / 2, c.y + c.h / 2, c.w, c.h, 1, 8, c.mine ? '#f4f4f4' : cols[i], c.mine ? '#f4f4f4' : cols[i]); wBox(c.x + c.w / 2 - 3, c.y + c.h / 2, 12, c.h - 3, 8, 13, '#27323d', '#3a4a5a'); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 24, 9, '#fff'); }));
+  const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
+    const hz = d.ny !== 0; wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, hz ? d.hw * 2 : 3, hz ? 3 : d.hw * 2, 0, 16, on ? '#ffe040' : '#5a3a22', on ? '#ffe040' : '#5a3a22');
+    if (label) wText(label, d.x + d.nx * 3, d.y + d.ny * 3, 20, 7, '#222');
   });
-  door(OFFICE_DOOR, wStage === 0);
-  if (wStage === 0) { const k = Math.sin(wT * 6) * 3, od = OFFICE_DOOR; ctx.fillStyle = '#ff6'; ctx.beginPath(); ctx.moveTo(od.x, od.y - 8 - k); ctx.lineTo(od.x - 7, od.y - 20 - k); ctx.lineTo(od.x + 7, od.y - 20 - k); ctx.fill(); }
-  const sw = Math.sin(wp.ph) * 3, { x, y } = wp;
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 7, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
-  rect(x - 4, y - 2 + sw / 2, 3, 8, '#234'); rect(x + 1, y - 2 - sw / 2, 3, 8, '#234'); rect(x - 5, y - 10, 10, 10, '#e8c32e');
-  ctx.fillStyle = '#e0b48a'; ctx.beginPath(); ctx.arc(x, y - 14, 4.5, 0, Math.PI * 2); ctx.fill(); rect(x - 5, y - 19, 10, 3, '#f60');
-  ctx.restore();
+  CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1, d.name)); doorEnt(OFFICE_DOOR, wStage === 0);
+  const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? CAMP_DOORS[wRoom] : null;
+  if (goal) add(goal.x + goal.nx * 12, goal.y + goal.ny * 12, () => {   // glowing beacon over the target door
+    const b = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 0), t = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 140);
+    if (b[1] < WNEAR || t[1] < WNEAR) return;
+    const [bx, by] = wProj(b), [tx, ty] = wProj(t), w = 9 * WF / b[1], g = ctx.createLinearGradient(0, by, 0, ty);
+    g.addColorStop(0, `rgba(255,240,90,${.55 + Math.sin(wT * 6) * .15})`); g.addColorStop(1, 'rgba(255,240,90,0)');
+    ctx.fillStyle = g; ctx.fillRect(bx - w, ty, w * 2, by - ty);
+  });
+  add(wp.x, wp.y, () => {
+    const sw = Math.sin(wp.ph) * 3, a = wp.dir, fx = Math.cos(a), fy = Math.sin(a), rx = -fy, ry = fx;
+    wFlat(wp.x - 5, wp.y - 4, 10, 8, 'rgba(0,0,0,.25)', .2);
+    wBox(wp.x + rx * 2.2 + fx * sw, wp.y + ry * 2.2 + fy * sw, 3, 3, 0, 9, '#234', '#234', a); wBox(wp.x - rx * 2.2 - fx * sw, wp.y - ry * 2.2 - fy * sw, 3, 3, 0, 9, '#234', '#234', a);
+    wBox(wp.x, wp.y, 9, 6, 9, 20, '#e8c32e', '#e8c32e', a); wBox(wp.x, wp.y, 6, 6, 20, 26, '#e0b48a', '#f60', a);
+  });
+  ents.sort((p, q) => q.f - p.f);
+  for (const e of ents) if (e.f > -40 && e.f < 1100) e.fn();
+  const fog = ctx.createLinearGradient(0, hor, 0, hor + 90); fog.addColorStop(0, 'rgba(217,230,242,.9)'); fog.addColorStop(1, 'rgba(217,230,242,0)');
+  ctx.fillStyle = fog; ctx.fillRect(0, hor, W, 90);
   const rn = CAMP_DOORS[wRoom].name;
   rect(0, 0, W, 64, '#000a');
   text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
   text(wStage === 0 ? 'Go to the Schedule Office' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
   text(wStage === 0 ? 'Behind the kitchen' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
-  text(isTouch ? 'Hold to walk toward your finger' : 'WASD / arrows to walk', 10, 48, 12, '#ccc', 'left');
+  text(isTouch ? 'Stick: turn  GAS: walk' : 'A/D turn, W/S walk', 10, 48, 12, '#ccc', 'left');
+  if (state === 'walk' && isTouch) { drawStick(); drawBtns(DB); }
   if (msgT > 0) text(msg, W / 2, 110, 20, '#ff6');
   if (state === 'walkend') {
     rect(30, 200, W - 60, 300, '#000d');
