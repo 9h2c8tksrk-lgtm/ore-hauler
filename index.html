@@ -1644,15 +1644,16 @@ function drawUteScreen() {
 // B = middle column, D = the U block (open end to the car park), E = north-east wings. Car park sits beside the U block; the kitchen, wet mess
 // and courts run down the east side and the schedule office is tucked behind the kitchen.
 const CAMP_W = 922, CAMP_H = 1800;
-const CAMP_WINGS = [], CAMP_DOORS = [], campCount = {};
+const CAMP_WINGS = [], CAMP_DOORS = [], CAMP_VERANDAS = [], campCount = {};
 function campDoors(L, x1, y1, x2, y2, n, nx, ny) {   // n doors evenly spaced along a wall segment; (nx, ny) points out into the walkway
   const len = Math.hypot(x2 - x1, y2 - y1);
+  if (n) CAMP_VERANDAS.push({ x1, y1, x2, y2, nx, ny, n });
   for (let i = 0; i < n; i++) {
     const f = (i + .5) / n; campCount[L] = (campCount[L] || 0) + 1;
-    CAMP_DOORS.push({ x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, nx, ny, hw: Math.min(9, len / n / 2 - 1), name: L + campCount[L] });
+    CAMP_DOORS.push({ x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, nx, ny, hw: Math.min(6, len / n / 2 - 1), name: L + campCount[L], dx: (x2 - x1) / len, dy: (y2 - y1) / len, sp: len / n, last: i === n - 1 });
   }
 }
-function campWing(L, x, y, w, h, face, n, roof = '#8c3b2a') {
+function campWing(L, x, y, w, h, face, n, roof = 'AB'.includes(L) ? '#dccfa8' : '#85726a') {
   CAMP_WINGS.push({ x, y, w, h, roof });
   if (face === 'E') campDoors(L, x + w, y, x + w, y + h, n, 1, 0);
   else if (face === 'W') campDoors(L, x, y, x, y + h, n, -1, 0);
@@ -1662,14 +1663,15 @@ function campWing(L, x, y, w, h, face, n, roof = '#8c3b2a') {
 for (const y of [705, 815, 915, 1020, 1125]) campWing('A', 50, y, 90, 60, 'E', 4);
 for (const [y, h] of [[690, 85], [780, 80], [865, 80], [1025, 85], [1190, 85], [1285, 70], [1360, 80]]) campWing('C', 170, y, 45, h, 'E', 3);
 for (const y of [520, 590, 640, 690, 735, 790, 895, 950, 1180, 1225, 1345, 1385, 1515]) campWing('B', 440, y, 80, 30, 'E', 2);   // B11 is the first door of the 6th wing
-const CAMP_DECOR = [[405, 520, 35, 90], [405, 655, 35, 80], [405, 815, 35, 80], [400, 905, 35, 70], [400, 985, 35, 85], [395, 1090, 40, 85], [395, 1180, 40, 70], [395, 1260, 40, 80], [390, 1430, 40, 75], [600, 1100, 40, 100]].map(([x, y, w, h]) => ({ x, y, w, h, roof: '#a07040' }));
+const CAMP_DECOR = [[405, 520, 35, 90], [405, 655, 35, 80], [405, 815, 35, 80], [400, 905, 35, 70], [400, 985, 35, 85], [395, 1090, 40, 85], [395, 1180, 40, 70], [395, 1260, 40, 80], [390, 1430, 40, 75], [600, 1100, 40, 100]].map(([x, y, w, h]) => ({ x, y, w, h, roof: '#dccfa8' }));
 campWing('D', 635, 748, 85, 38, 'S', 0); campWing('D', 635, 890, 85, 38, 'S', 0); campWing('D', 635, 748, 38, 180, 'S', 0);   // the U block
 campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 3, 0, -1); campDoors('D', 673, 786, 673, 890, 3, 1, 0);
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
 const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [760, 1100, 85, 160], office: [670, 1090, 80, 45] };
 const CAR_SPOTS = [805, 835, 865].map(y => ({ x: 744, y: y - 8, w: 28, h: 16, mine: y === 835 }));
 const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 };
-const CAMP_SOLID = [...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
+const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
+const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
@@ -1732,10 +1734,15 @@ function drawWalk() {
   wCam = { x: wp.x - hx * 110, y: wp.y - hy * 110, hx, hy, rx: -hy, ry: hx };
   const hor = WCY - WF * Math.tan(WPH);
   const sg = ctx.createLinearGradient(0, 0, 0, hor); sg.addColorStop(0, '#5b8fd0'); sg.addColorStop(1, '#d9e6f2');
-  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, hor + 1); rect(0, hor, W, H - hor, '#c8b18f');
-  wFlat(-3000, -3000, 6922, 4700, '#c8b18f'); wFlat(-3000, 1690, 6922, 110, '#a9855f'); wFlat(-3000, 1800, 6922, 3000, '#b49a74');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, hor + 1);
+  ctx.fillStyle = '#9a5b3c'; ctx.beginPath(); ctx.moveTo(0, hor + 1);   // red ranges, shifting as the camera turns
+  for (let x = 0; x <= W; x += 8) { const a = x - wCamH * 260; ctx.lineTo(x, hor - 22 - 16 * Math.sin(a / 70) - 12 * Math.sin(a / 29 + 1.3) - 6 * Math.sin(a / 13)); }
+  ctx.lineTo(W, hor + 1); ctx.fill(); rect(0, hor, W, H - hor, '#c8b18f');
+  wFlat(-3000, -3000, 6922, 4700, '#b99a6e'); wFlat(-3000, 1690, 6922, 110, '#a9855f'); wFlat(-3000, 1800, 6922, 3000, '#b49a74');
   for (const [x, y, w, h, c] of [[445, 545, 75, 40, '#a08565'], [445, 660, 75, 70, '#a08565'], [445, 1000, 75, 70, '#5f7240'], [670, 620, 50, 70, '#5f7240'], [680, 1000, 70, 70, '#5f7240'], [660, 1160, 85, 100, '#3d4f5c'], [225, 700, 70, 60, '#a08565'], [225, 880, 70, 60, '#a08565'], [735, 790, 145, 90, '#a99a80'], [770, 1310, 110, 190, '#6f8a4a']]) wFlat(x, y, w, h, c, .1);
   for (const [x, y, w, h] of [[778, 1318, 94, 2], [778, 1490, 94, 2], [778, 1318, 2, 174], [870, 1318, 2, 174], [778, 1404, 94, 2]]) wFlat(x, y, w, h, '#fff', .2);
+  for (const [x, y, w, h] of [[150, 700, 12, 590], [300, 1080, 350, 10], [315, 742, 90, 8], [540, 700, 10, 820], [738, 960, 12, 130]]) wFlat(x, y, w, h, '#b9b3a3', .15);   // concrete footpaths
+  for (const v of CAMP_VERANDAS) { const ex = v.nx * 18, ey = v.ny * 18; wPoly([[v.x1, v.y1, .3], [v.x2, v.y2, .3], [v.x2 + ex, v.y2 + ey, .3], [v.x1 + ex, v.y1 + ey, .3]], '#c58a5e'); }
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   const [kx, ky, kw, kh] = CAMP_BIG.kitchen, [mx, my, mw, mh] = CAMP_BIG.mess, [ox, oy, ow, oh] = CAMP_BIG.office;
   for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 24, '#d9d4c4', b.roof));
@@ -1744,8 +1751,16 @@ function drawWalk() {
   const cols = ['#d8d8d8', '#c33', '#3a6fc4'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { wBox(c.x + c.w / 2, c.y + c.h / 2, c.w, c.h, 1, 8, c.mine ? '#f4f4f4' : cols[i], c.mine ? '#f4f4f4' : cols[i]); wBox(c.x + c.w / 2 - 3, c.y + c.h / 2, 12, c.h - 3, 8, 13, '#27323d', '#3a4a5a'); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 24, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
-    const hz = d.ny !== 0; wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, hz ? d.hw * 2 : 3, hz ? 3 : d.hw * 2, 0, 16, on ? '#ffe040' : '#5a3a22', on ? '#ffe040' : '#5a3a22');
-    if (label) wText(label, d.x + d.nx * 3, d.y + d.ny * 3, 20, 7, '#222');
+    const hz = d.ny !== 0, tx = -d.ny, ty = d.nx, px = d.x + d.nx * 3.2, py = d.y + d.ny * 3.2;
+    wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, hz ? d.hw * 2 : 3, hz ? 3 : d.hw * 2, 0, 16, on ? '#ffe040' : '#7d8688', on ? '#ffe040' : '#7d8688');
+    if (label) {   // white room sign on the door, like the real ones
+      wPoly([[px - tx * 2.6, py - ty * 2.6, 10.5], [px + tx * 2.6, py + ty * 2.6, 10.5], [px + tx * 2.6, py + ty * 2.6, 14.5], [px - tx * 2.6, py - ty * 2.6, 14.5]], '#f4f4ee');
+      wText(label, px, py, 11.2, 3.4, '#14243a');
+    }
+    if (!d.last) {   // window to the next room along the wall
+      const wx = d.x + d.dx * d.sp / 2 + d.nx * 1.2, wy = d.y + d.dy * d.sp / 2 + d.ny * 1.2;
+      wPoly([[wx - d.dx * 2.4, wy - d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 13], [wx - d.dx * 2.4, wy - d.dy * 2.4, 13]], '#32404d');
+    }
   });
   CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1, d.name)); doorEnt(OFFICE_DOOR, wStage === 0);
   const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? CAMP_DOORS[wRoom] : null;
@@ -1755,6 +1770,21 @@ function drawWalk() {
     const [bx, by] = wProj(b), [tx, ty] = wProj(t), w = 9 * WF / b[1], g = ctx.createLinearGradient(0, by, 0, ty);
     g.addColorStop(0, `rgba(255,240,90,${.55 + Math.sin(wT * 6) * .15})`); g.addColorStop(1, 'rgba(255,240,90,0)');
     ctx.fillStyle = g; ctx.fillRect(bx - w, ty, w * 2, by - ty);
+  });
+  CAMP_VERANDAS.forEach(v => {   // covered concrete verandah with posts and a see-through roof so the doors stay visible
+    const L = Math.hypot(v.x2 - v.x1, v.y2 - v.y1), mx = (v.x1 + v.x2) / 2 + v.nx * 9, my = (v.y1 + v.y2) / 2 + v.ny * 9, ex = v.nx * 18, ey = v.ny * 18;
+    add(mx, my, () => {
+      for (let i = 0; i <= v.n; i++) { const f = i / v.n; wBox(v.x1 + (v.x2 - v.x1) * f + v.nx * 16, v.y1 + (v.y2 - v.y1) * f + v.ny * 16, 1.6, 1.6, 0, 19, '#e8dcae', '#e8dcae'); }
+      wPoly([[v.x1, v.y1, 19], [v.x2, v.y2, 19], [v.x2 + ex, v.y2 + ey, 19], [v.x1 + ex, v.y1 + ey, 19]], 'rgba(225,212,170,.5)');
+    });
+  });
+  CAMP_DOORS.forEach((d, i) => {
+    if (i % 3 === 0) add(d.x + d.nx * 7, d.y + d.ny * 7, () => { wBox(d.x + d.nx * 7 + d.dx * 8, d.y + d.ny * 7 + d.dy * 8, 5, 5, 0, 5, '#f2efe6', '#f2efe6'); wBox(d.x + d.nx * 9 + d.dx * 8, d.y + d.ny * 9 + d.dy * 8, 4, 4, 5, 11, '#f2efe6', '#f2efe6'); });   // white plastic chair
+    if (d.last && i % 2 === 0) add(d.x + d.nx * 8, d.y + d.ny * 8, () => wBox(d.x + d.nx * 8 + d.dx * 9, d.y + d.ny * 8 + d.dy * 9, 5, 5, 0, 9, '#3f6b4a', '#4f7d58'));   // green wheelie bin
+  });
+  for (const [tx, ty] of CAMP_TREES) add(tx, ty, () => {   // olive-type courtyard trees
+    wBox(tx, ty, 2.6, 2.6, 0, 13, '#8a5a34', '#8a5a34');
+    for (const [ox, oy, z, r] of [[0, 0, 12, 11], [-5, 3, 15, 8], [5, -3, 17, 8], [0, 0, 22, 7]]) wBox(tx + ox, ty + oy, r * 1.6, r * 1.6, z, z + 7, '#6f7d5c', '#7f8d6a');
   });
   add(wp.x, wp.y, () => {
     const sw = Math.sin(wp.ph) * 3, a = wp.dir, fx = Math.cos(a), fy = Math.sin(a), rx = -fy, ry = fx;
