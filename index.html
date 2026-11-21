@@ -127,14 +127,15 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { if (e.code === 'MetaLeft' || e.code === 'MetaRight') clearInput(); else keys[e.code] = false; });   // macOS swallows keyups while Cmd is held
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
+  if ((state === 'walk' || state === 'officeinside') && inR(p, [340, 558, 132, 52])) { if (officeStep === 1) officeTouchHeld = true; else officeInteract(); return; }
   if (state === 'drive' && bayReady) {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -147,11 +148,12 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   if (state === 'menu' && inR(p, SKIP_BTN)) { skipLoad(); return; }
-  if (state === 'walk' && inR(p, [340, 558, 132, 52])) { officeInteract(); return; }
+
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
   if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
   onKey('Space');
 });
+cv.addEventListener('pointerup', () => { officeTouchHeld = false; });
 cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && !e.buttons && ptrs.size) { ptrs.clear(); syncBtns(); return; } if (ptrs.has(e.pointerId)) { const n = cpos(e); n.stick = ptrs.get(e.pointerId).stick; ptrs.set(e.pointerId, n); syncBtns(); } });
 const up = e => { ptrs.delete(e.pointerId); syncBtns(); };
 addEventListener('pointerup', up); addEventListener('pointercancel', up);
@@ -245,7 +247,7 @@ function onKey(code) {
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && code === 'KeyL') { skipLoad(); return; }
-  if (state === 'walk' && code === 'KeyE') { officeInteract(); return; }
+  if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
@@ -777,6 +779,7 @@ function update(dt) {
   if (state === 'skyway') return updateSkyway(dt);
   if (state === 'workshop') return updateWorkshop(dt);
   if (state === 'ute') return updateUte(dt);
+  if (state === 'officeinside') return updateOffice(dt);
   if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
@@ -1741,7 +1744,8 @@ const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
-let officeStep = 0, officeBreath = 0, officeLine = 0;
+let officeStep = 0, officeBreath = 0, officeLine = 0, officeTouchHeld = false, officePos = {x:0,y:0}, officeHeading = -Math.PI/2;
+const nearOffice = () => Math.hypot(wp.x - OFFICE_DOOR.x, wp.y - (OFFICE_DOOR.y - 20)) < 75;
 const officeLines = [
   'Moustached scheduler: Morning mate. Ready for the run?',
   'Driver: Morning! What truck am I on today?',
@@ -1750,14 +1754,26 @@ const officeLines = [
   'Scheduler: Check your load and paperwork. Stay safe!'
 ];
 function officeInteract() {
-  if (state !== 'walk' || !shiftStart || wStage !== 0 || !atDoor(OFFICE_DOOR, wp)) return;
+  if (state === 'walk' && shiftStart && wStage === 0 && nearOffice()) {
+    state='officeinside'; officePos={x:0,y:8}; officeHeading=-Math.PI/2;
+    officeStep=0; officeBreath=0; ptrs.clear(); syncBtns();
+    flash('Inside Fleet Schedulers Office. Walk to the breathalyser by the entrance.');return;
+  }
+  if (state !== 'officeinside') return;
+  if (officeStep === 0) {
+    if (Math.hypot(officePos.x+18,officePos.y+2)>23) { flash('Move closer to the breathalyser on the left wall.');return; }
+    officeStep=1;flash('Hold E to complete the simulated breath test.');return;
+  }
+  if (officeStep === 2) {
+    if (Math.hypot(officePos.x,officePos.y+20)>30) {flash('Walk towards the Fleet Schedulers desk.');return;}
+    officeStep=3;officeLine=0;return;
+  }
   if (officeStep === 0) { officeStep = 1; flash('Breathalyser ready. Hold E to blow (game simulation).'); }
   else if (officeStep === 2) { officeStep = 3; officeLine = 0; }
   else if (officeStep === 3) {
     officeLine++;
     if (officeLine >= officeLines.length) {
-      officeStep = 4; wStage = 1;
-      flash('Schedule collected. Walk to your ute in the car park.');
+      officeStep=4;flash('Schedule collected. Walk back to the office door to leave.');
     }
   }
 }
@@ -1765,11 +1781,64 @@ function officeInteract() {
 function toWalk() {
   state = 'walk'; wp = { x: 805, y: 835, dir: Math.atan2(255, -95), ph: 0 }; wCamH = wp.dir; wStage = 0; wT = 0; wWrong = 0;   // facing the office
   wRoom = Math.floor(Math.random() * CAMP_DOORS.length);   // a different room every time
-  officeStep = 0; officeBreath = 0; officeLine = 0;
+  officeStep = 0; officeBreath = 0; officeLine = 0; officeTouchHeld = false;
   if (shiftStart) {   // outside your own door, facing the office
     const d = CAMP_DOORS[wRoom]; wp = { x: d.x + d.nx * 14, y: d.y + d.ny * 14, dir: Math.atan2(OFFICE_DOOR.y - d.y, OFFICE_DOOR.x - d.x), ph: 0 }; wCamH = wp.dir;
   }
   ptrs.clear(); syncBtns(); flash(shiftStart ? `Room ${CAMP_DOORS[wRoom].name}: pick up your schedule at the office` : 'Hand your paperwork in at the Schedule Office');
+}
+function updateOffice(dt) {
+  wT+=dt;msgT-=dt;
+  const fwd=(keys.ArrowUp||keys.KeyW||keys.TG?1:0)-(keys.ArrowDown||keys.KeyS||keys.TB ? .65 : 0);
+  officeHeading+=steerAxis()*2.3*dt;
+  if(fwd){
+    const nx=officePos.x+Math.cos(officeHeading)*35*fwd*dt;
+    const ny=officePos.y+Math.sin(officeHeading)*35*fwd*dt;
+    // Room bounds and the reception counter prevent walking through desks.
+    if(nx>-32&&nx<32&&!(ny< -7&&ny>-27&&Math.abs(nx)<29))officePos.x=nx;
+    if(ny>-38&&ny<24&&!(ny< -7&&ny>-27&&Math.abs(officePos.x)<29))officePos.y=ny;
+  }
+  if(officeStep===1&&(keys.KeyE||officeTouchHeld)){
+    officeBreath=Math.min(2.5,officeBreath+dt);
+    if(officeBreath>=2.5){officeStep=2;officeTouchHeld=false;flash('SIMULATED RESULT: 0.000 BAC. Talk to the Fleet Schedulers.');}
+  }
+  if(officeStep===4&&officePos.y>17){
+    state='walk';wStage=1;wp.x=OFFICE_DOOR.x;wp.y=OFFICE_DOOR.y-23;
+    wp.dir=-Math.PI/2;wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
+  }
+}
+function drawOffice() {
+  // Camera follows the player inside the office, using the same 3D projection.
+  const hx=Math.cos(officeHeading),hy=Math.sin(officeHeading);
+  wCam={x:officePos.x-hx*33,y:officePos.y-hy*33,hx,hy,rx:-hy,ry:hx};
+  rect(0,0,W,H,'#d3d8d9');
+  wFlat(-40,-45,80,75,'#b5b1a6');
+  for(const [x,y,w,l] of [[-40,-45,80,2],[-40,-45,2,75],[38,-45,2,75]])wBox(x+w/2,y+l/2,w,l,0,31,'#c4c9ca','#dce1e1');
+  // Long reception counter, monitors, keyboards and paperwork.
+  wBox(0,-17,58,11,0,12,'#765a42','#9e8060');
+  for(const x of [-17,17]){
+    wBox(x,-22,13,2,13,25,'#252c34','#303c48');
+    wBox(x,-20,10,1,16,22,'#3c8ba5','#3c8ba5');
+    wBox(x,-11,11,4,12,13,'#30343b','#30343b');
+    wBox(x+8,-15,4,5,12,13,'#f0eee4','#f0eee4');
+  }
+  wBox(-33,0,4,12,0,16,'#657984','#657984');
+  wText('BAC',-31,0,19,6,'#fff');
+  // Both schedulers remain behind the desk. One has a thick moustache.
+  campHuman(-17,-31,true,false);campHuman(17,-31,false,false);
+  campHuman(officePos.x,officePos.y,false,true);
+  rect(0,0,W,80,'#142536dd');text('FLEET SCHEDULERS OFFICE',W/2,27,22,'#ffea69');
+  text('W / S walk    A / D turn    E interact',W/2,55,14,'#fff');
+  const instruction=officeStep===0?'Walk to the wall breathalyser and press E':
+    officeStep===1?'Hold E: '+Math.round(officeBreath/2.5*100)+'%':
+    officeStep===2?'SIMULATED 0.000 BAC. Approach the desk, press E':
+    officeStep===3?officeLines[Math.min(officeLine,officeLines.length-1)]:
+    'Schedule collected. Walk back through the door.';
+  rect(15,570,W-30,139,'#102337ed');text(instruction,W/2,610,14,'#fff');
+  if(officeStep===1)bar(80,630,340,15,officeBreath/2.5,'#7de0a3');
+  text('E: interact / continue',W/2,681,16,'#ffe65e');
+  if(isTouch){drawStick();drawBtns(DB);drawBtn([340,558,132,52],'INTERACT',false);}
+  if(msgT>0)text(msg,W/2,105,16,'#ffef79');
 }
 function updateWalk(dt) {
   wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
@@ -1782,9 +1851,9 @@ function updateWalk(dt) {
     if (!campHit(wp.x, ny)) wp.y = ny;
   }
   wCamH += Math.atan2(Math.sin(wp.dir - wCamH), Math.cos(wp.dir - wCamH)) * (1 - Math.exp(-5 * dt));   // chase cam swings in behind
-  if (shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp) && officeStep === 1 && keys.KeyE) {
+  if (shiftStart && wStage === 0 && nearOffice() && officeStep === 1 && (keys.KeyE || officeTouchHeld)) {
     officeBreath = Math.min(2.5, officeBreath + dt);
-    if (officeBreath >= 2.5) { officeStep = 2; flash('SIMULATED breath test: 0.000 BAC. Press E to speak to the schedulers.'); }
+    if (officeBreath >= 2.5) { officeTouchHeld = false; officeStep = 2; flash('SIMULATED breath test: 0.000 BAC. Press E to speak to the schedulers.'); }
   }
   if (!shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(`Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
 
@@ -1826,31 +1895,49 @@ function wText(str, x, y, z, size, col) {
   const q = wCamPt(x, y, z); if (q[1] < 30 || q[1] > 420) return;
   const [sx, sy] = wProj(q); text(str, sx, sy, Math.max(5, Math.min(15, size * WF / q[1])), col);
 }
-// Camp models use the same projected world geometry and chase camera as the buildings.
-function campHuman(x, y, moustache = false, player = false) {
-  const a = player ? wp.dir : Math.PI / 2, fx = Math.cos(a), fy = Math.sin(a), rx = -fy, ry = fx;
-  const swing = player ? Math.sin(wp.ph) * 2.2 : 0;
-  const pt = (side, forward) => [x + rx*side + fx*forward, y + ry*side + fy*forward];
-  const part = (side, fwd, w, l, lo, hi, col) => {
-    const p=pt(side,fwd);wBox(p[0],p[1],w,l,lo,hi,col,col,a);
-  };
-  // Distinct boots, trouser legs, torso, sleeves, neck, hair and face.
-  for (const side of [-1,1]) {
-    part(side*2.8,side*swing,3.8,4.2,0,3,'#161b22');
-    part(side*2.8,side*swing*.5,3.3,3.8,3,13,'#263a54');
-    part(side*6,side*swing*.4,3.3,3.4,13,23,'#e5e800');
-    part(side*6,side*swing*.4,3.4,3.5,12,13,'#d7e0e3');
-    part(side*6.2,side*swing,2.5,2.8,7,12,'#c99470');
+// Rounded shaded 3D ellipsoid projected through the existing chase camera.
+function campOval(x,y,z,rx,ry,rz,base) {
+  const rings=7, sides=12;
+  const P=[];
+  for(let j=0;j<=rings;j++) {
+    const theta=Math.PI*j/rings, row=[];
+    for(let i=0;i<sides;i++) {
+      const phi=2*Math.PI*i/sides;
+      row.push([x+rx*Math.sin(theta)*Math.cos(phi), y+ry*Math.sin(theta)*Math.sin(phi), z+rz*Math.cos(theta)]);
+    }
+    P.push(row);
   }
-  part(0,0,11,6.5,12,24,'#e5e800');
-  part(0,0,11.2,6.6,16.5,18.3,'#dbe4e6');
-  part(0,0,11.2,6.6,21,22.5,'#dbe4e6');
-  part(0,0,3.3,3.4,24,27,'#cb916e');
-  const head=pt(0,0);
-  wBox(head[0],head[1],7.6,6.4,27,35,'#d6a07a','#d6a07a',a);
-  const hair=pt(0,-1.4);wBox(hair[0],hair[1],8,5,34,36,'#443127','#443127',a);
-  const face=pt(0,3.3);wBox(face[0],face[1],4.2,1,29,32,'#bc805f','#bc805f',a);
-  if(moustache){const m=pt(0,3.8);wBox(m[0],m[1],6,1.5,29.4,30.8,'#2d211b','#2d211b',a);}
+  for(let j=0;j<rings;j++)for(let i=0;i<sides;i++){
+    const ni=(i+1)%sides;
+    const f=.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings);
+    wPoly([P[j][i],P[j][ni],P[j+1][ni],P[j+1][i]],shade(base,Math.max(.52,Math.min(1.18,f))));
+  }
+}
+// Camp models use the same projected world geometry and chase camera as the buildings.
+function campHuman(x,y,moustache=false,player=false) {
+  const a=player?wp.dir:Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const moving=player?Math.sin(wp.ph)*2.1:0;
+  const point=(side,front=0)=>[x+rx*side+fx*front,y+ry*side+fy*front];
+  // Boots and separate moving legs, naturally rounded rather than block-shaped.
+  for(const side of [-1,1]){
+    let p=point(side*2.6,side*moving);
+    campOval(p[0],p[1],2,2.8,3.7,2.5,'#202329');
+    p=point(side*2.7,side*moving*.45);
+    campOval(p[0],p[1],9,2.5,2.5,7,'#293b56');
+    p=point(side*6,side*moving*.3);
+    campOval(p[0],p[1],18,2.8,2.9,7,'#e8e900');
+    campOval(p[0],p[1],13,2.9,3,1.3,'#dce4e7');
+    p=point(side*6,side*moving);
+    campOval(p[0],p[1],9,2,2,4,'#c89570');
+  }
+  campOval(x,y,18.5,6.2,4.3,8,'#e7e900');
+  campOval(x,y,16.5,6.35,4.45,1,'#e4e8e9');
+  campOval(x,y,22,6.1,4.35,1,'#e4e8e9');
+  campOval(x,y,26,2.1,2.2,2.5,'#c78e6a');
+  campOval(x,y,31,4.7,4.2,5.8,'#d8a27b');
+  let p=point(0,-1.5);campOval(p[0],p[1],35,4.7,3.9,2.5,'#49332b');
+  p=point(0,4);campOval(p[0],p[1],30,2.4,1.1,1.1,'#bd8566');
+  if(moustache){p=point(0,4.5);campOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
 }
 function campUteModel(x,y,col) {
   wBox(x,y,24,31,2,10,col,col);
@@ -1906,9 +1993,7 @@ function drawWalk() {
   });
   // Fleet schedulers by the office entrance, one with a thick moustache.
   if (shiftStart) {
-    add(691, 1070, () => campHuman(691, 1070, true));
-    add(729, 1070, () => campHuman(729, 1070, false));
-    add(704, 1078, () => { wBox(704,1078, 12, 7, 0, 10, '#4d6475', '#75909e'); wText('BAC',704,1078,15,6,'#fff'); });
+    // Schedulers and the breathalyser are inside the office.
   }
   CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1 && !shiftStart, d.name)); doorEnt(OFFICE_DOOR, wStage === 0);
   const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? (shiftStart ? YOUR_UTE : CAMP_DOORS[wRoom]) : null;
@@ -1942,12 +2027,12 @@ function drawWalk() {
   const rn = CAMP_DOORS[wRoom].name;
   rect(0, 0, W, 64, '#000a');
   text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
-  text(wStage === 0 ? (shiftStart ? 'Go to office: breath test + briefing' : 'Go to the Schedule Office') : shiftStart ? 'Walk to your ute' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
+  text(wStage === 0 ? (shiftStart ? 'Enter the Fleet Schedulers Office' : 'Go to the Schedule Office') : shiftStart ? 'Walk to your ute' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
   text(wStage === 0 ? (shiftStart ? `From Room ${rn}` : 'Behind the kitchen') : shiftStart ? 'In the car park - follow the glow' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
   text(isTouch ? 'Stick: turn  GAS: walk' : 'A/D turn, W/S walk', 10, 48, 12, '#ccc', 'left');
-  if (shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp)) {
+  if (shiftStart && wStage === 0 && nearOffice()) {
     rect(18, 455, W - 36, 155, '#102337ee');
-    const instruction = officeStep === 0 ? 'Press E to begin the simulated breath test' :
+    const instruction = officeStep === 0 ? 'Press E to enter the Fleet Schedulers Office' :
       officeStep === 1 ? `Hold E: ${Math.round(officeBreath / 2.5 * 100)}%` :
       officeStep === 2 ? 'SIMULATED 0.000 BAC - Press E to talk' :
       officeLines[Math.min(officeLine, officeLines.length - 1)];
@@ -2763,6 +2848,7 @@ function render() {
   if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
   else if (state === 'ute' || state === 'uteend') drawUteScreen();
+  else if (state === 'officeinside') drawOffice();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
