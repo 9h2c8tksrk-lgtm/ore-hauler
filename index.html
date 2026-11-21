@@ -134,7 +134,8 @@ cv.addEventListener('pointerdown', e => {
   }
   if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
-  if(state==='workshop'&&workshopOnFoot&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
+  if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
+  if(state==='workshop'&&inR(p,[340,570,132,52])&&wk.auto&&!wk.done){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
   if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
@@ -253,11 +254,17 @@ function onKey(code) {
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
-  if(state==='workshop'&&code==='KeyE'&&workshopOnFoot){
-    if(!wk.done){flash('Mechanics are still repairing the truck.');return;}
-    if(Math.hypot(workshopFoot.x-wk.x,workshopFoot.y-wk.y)>55){flash('Walk closer to the cab to climb back in.');return;}
-    workshopOnFoot=false;wk.auto=true;wk.v=0;ptrs.clear();syncBtns();
-    flash('Back in the cab. Workshop crew clear. Truck exiting the bay.');return;
+  if (state==='workshop' && code==='KeyE' && wk.auto && !wk.done) {
+    enterWorkshopFoot(); return;
+  }
+  if (state==='workshopfoot' && code==='KeyE') {
+    if (!wk.done) {flash('Repairs underway. Watch the mechanics and tyre fitters.');return;}
+    if (Math.hypot(workshopFoot.x,workshopFoot.y)>38) {
+      flash('Walk back to the truck cab and press E.');return;
+    }
+    workshopOnFoot=false;state='workshop';wk.auto=true;wk.exitOffered=false;
+    wk.v=0;ptrs.clear();syncBtns();
+    flash('Back in the cab. Mechanics clear. Proceed out of the workshop.');return;
   }
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
   if (state === 'load') {
@@ -719,27 +726,109 @@ function wkHome() {
   jts = straightChain(qx, qy, 1); cabAngle = 0; spawnT = 2; wk = null; ptrs.clear(); syncBtns();
   flash('Repaired! Back on the highway');
 }
+// Walkable workshop interior. The truck is stationary; the player can move
+// around a safe observation area and watch independent repair animations.
+let footTime=0, footFacing=0;
+function enterWorkshopFoot() {
+  if(state!=='workshop'||!wk.auto||wk.done)return;
+  state='workshopfoot';workshopOnFoot=true;footTime=0;
+  workshopFoot={x:13,y:10};footFacing=-Math.PI/2;
+  wk.v=0;ptrs.clear();syncBtns();
+  flash('Out of cab. Walk around the workshop and watch the crew.');
+}
+function updateWorkshopFoot(dt) {
+  time+=dt;msgT-=dt;footTime+=dt;
+  // Third-person walking; turn with A/D and walk forward/back with W/S.
+  footFacing+=steerAxis()*2.1*dt;
+  const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-(keys.KeyS||keys.ArrowDown||keys.TB ? .6 : 0);
+  const nx=workshopFoot.x+Math.cos(footFacing)*fwd*18*dt;
+  const ny=workshopFoot.y+Math.sin(footFacing)*fwd*18*dt;
+  // A safe aisle, away from the truck, jacks and moving equipment.
+  workshopFoot.x=Math.max(-5,Math.min(26,nx));
+  workshopFoot.y=Math.max(-26,Math.min(30,ny));
+  // Simulated mechanic and tyre-fitter tasks progress while the driver watches.
+  if(!wk.done && footTime>=17) {
+    wk.done=true;wk.fixed=wk.fixed.map(()=>1);hp=100;
+    flash('Repairs complete. Walk back to the cab and press E.');
+  }
+}
+function drawWorkshopFoot() {
+  // Third-person perspective camera, looking from behind the walking driver.
+  const dir=footFacing, fX=Math.cos(dir),fY=Math.sin(dir),rX=-fY,rY=fX;
+  const cam={x:workshopFoot.x-fX*17,y:workshopFoot.y-fY*17};
+  const project=(x,y,z=0)=>{
+    const dx=x-cam.x,dy=y-cam.y,forward=dx*fX+dy*fY;
+    const lateral=dx*rX+dy*rY;
+    const depth=Math.max(4,forward+28);
+    const k=400/depth;
+    return [W/2+lateral*k,390-(z-5)*k+forward*1.1,k];
+  };
+  const poly=(pts,c)=>{ctx.fillStyle=c;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fill();};
+  const block=(x,y,w,l,h,c,top)=>{
+    const p=[[x-w/2,y-l/2],[x+w/2,y-l/2],[x+w/2,y+l/2],[x-w/2,y+l/2]];
+    const low=p.map(q=>project(...q,0)),high=p.map(q=>project(...q,h));
+    poly([low[0],low[1],high[1],high[0]],c);
+    poly([low[1],low[2],high[2],high[1]],c);
+    poly(high,top||c);
+  };
+  rect(0,0,W,H,'#aebbc2');
+  rect(0,180,W,H-180,'#7c858b');
+  // Workshop concrete, service-bay lines, gantry and large roller door.
+  const floor=[[-85,-95],[85,-95],[85,95],[-85,95]].map(p=>project(...p));poly(floor,'#747c82');
+  for(const x of [-50,-18,18,50])block(x,-8,1.5,140,.25,'#e2b93a');
+  for(const x of [-65,65]){block(x,-35,4,4,65,'#4b5963');block(x,40,4,4,65,'#4b5963');}
+  block(0,-70,125,3,45,'#758590','#8898a2');
+  block(-40,-62,20,3,30,'#293d4a','#384f60');
+  // Parked road train: cab, windscreens, bonnet and loaded trailers.
+  block(-19,-10,22,40,17,'#e4e5e2','#d4d8da');
+  block(-19,-28,21,15,25,'#d7d9d6','#ebebea');
+  block(-19,-37,19,2,19,'#496e84','#496e84');
+  for(let i=0;i<3;i++){
+    block(-19,22+i*23,24,20,13,'#8b4d32','#b87b54');
+    for(let j=0;j<4;j++)block(-19+(j-1.5)*5,22+i*23,4,12,16,'#81523b','#8f6046');
+  }
+  // Tool benches, jacks, tyre stacks and an overhead crane.
+  block(42,-38,20,9,9,'#496579','#697f8e');
+  block(42,16,18,12,10,'#58646e','#687782');
+  for(let i=0;i<3;i++)block(45,42+i*6,13,4,6,'#22282e','#30383f');
+  block(0,-57,105,2,58,'#d3a525','#e5bd36');
+  const worker=(x,y,vest,phase)=>{
+    const [sx,sy,k]=project(x,y,0);const scale=Math.max(.4,Math.min(3.1,k/9));
+    ctx.save();ctx.translate(sx,sy);ctx.scale(scale,scale);
+    // Rounded head, body, legs and moving arms.
+    ctx.fillStyle='#20314a';ctx.fillRect(-7,-17,6,18);ctx.fillRect(2,-17,6,18);
+    ctx.fillStyle=vest;ctx.beginPath();ctx.ellipse(0,-26,13,17,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#dce5e6';ctx.fillRect(-12,-29,24,4);
+    ctx.fillStyle='#c99571';ctx.beginPath();ctx.ellipse(0,-49,9,11,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#c99571';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(12,-30);ctx.lineTo(17+Math.sin(phase)*7,-17+Math.cos(phase)*8);ctx.stroke();
+    ctx.restore();
+  };
+  const action=Math.sin(footTime*5);
+  worker(10,-30,'#e3e800',footTime*5);worker(42,30,'#f4a12e',footTime*6);
+  worker(32,-10,'#e3e800',footTime*4);
+  // Player visible near camera as a rounded third-person character.
+  worker(workshopFoot.x,workshopFoot.y,'#e7e800',footTime*(keys.KeyW||keys.ArrowUp?9:0));
+  rect(0,0,W,69,'#132432c9');
+  text('WORKSHOP - ON FOOT',W/2,26,20,'#ffe56a');
+  text('W/S walk  |  A/D turn  |  E climb into cab when repaired',W/2,53,13,'#fff');
+  if(!wk.done)text('Mechanics and tyre fitters working: '+Math.round(Math.min(1,footTime/17)*100)+'%',W/2,108,15,'#ffed7b');
+  else text('REPAIRS COMPLETE - WALK BACK TO CAB AND PRESS E',W/2,108,16,'#88f5a1');
+  if(msgT>0)text(msg,W/2,144,15,'#ffe76c');
+  if(isTouch){drawStick();drawBtns(DB);drawBtn([340,570,132,52],'ENTER CAB',false);}
+}
 function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
   yardUpdate(dt); crewUpdate(dt); trackMarks();
-  if(workshopOnFoot){
-    const mx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
-    const my=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);
-    const n=Math.hypot(mx,my)||1;
-    workshopFoot.x=Math.max(WK.x+8,Math.min(WK.x+WK.w-8,workshopFoot.x+mx/n*60*dt));
-    workshopFoot.y=Math.max(WK.y+18,Math.min(WK.y+WK.h-10,workshopFoot.y+my/n*60*dt));
+  // Stop in the workshop bay. The player can now leave the cab with E.
+  if (wk.auto && !wk.done && !wk.exitOffered && (wk.y >= WK.y + 22 || wk.bay === TYRE_BAY)) {
+    wk.exitOffered = true; wk.v = 0;
+    flash('Parked in workshop. Press E to climb out and watch the repairs.');
   }
-  if(wk.auto&&!wk.done&&!workshopOnFoot&&wk.y>WK.y+25){
-    workshopOnFoot=true;
-    workshopFoot={x:wk.x+24,y:WK.y+WK.h-24};
-    wk.v=0;ptrs.clear();syncBtns();
-    flash('You climbed out. Watch the mechanics repair the truck.');
-  }
-
   const straighten = () => { wk.h = Math.PI + angDiff(wk.h, Math.PI) * (1 - Math.min(1, dt * 6)); };
   if (wk.auto) {
+    if (wk.exitOffered && !wk.done) {wk.v=0;return;}
     const cx = wkBayX(wk.bay);
     if (wk.bay === TYRE_BAY && !wk.done) {
       straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
@@ -748,16 +837,6 @@ function updateWorkshop(dt) {
     }
     if (wk.bay === TYRE_BAY) { const p = idleSpot(); if (fitWalk(wk.fit, p.x, p.y, dt)) wk.fit.fa = Math.PI / 2; }
     if (!wk.done && !wk.crewReady) { wk.crewReady = wk.crew.every(m => !m.walk); wk.v = 0; return; }   // mechanics hurry over first
-    if(workshopOnFoot && !wk.done){
-      wk.repairClock=(wk.repairClock||0)+dt;
-      wk.crewReady=true;
-      if(wk.repairClock>=13){
-        wk.done=true;wk.fixed=[1,1,1,1,1];hp=100;
-        wk.auto=false;wk.v=0;
-        flash('Repair complete. Walk back to the cab and press E to climb in.');
-      }
-      return;
-    }
     wk.v = wk.done ? Math.min(60, wk.v + 60 * dt) : 38;
     straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
     wk.y += wk.v * dt; wkChain();
@@ -775,7 +854,6 @@ function updateWorkshop(dt) {
     }
     return;
   }
-  if(workshopOnFoot){wk.v=0;return;}
   const px = wk.x, py = wk.y, ph = wk.h;
   const up = keys.ArrowUp || keys.KeyW || keys.TG, brake = keys.ArrowDown || keys.KeyS || keys.TB;
   wk.v += (up ? 70 : brake ? -140 : -30) * dt; wk.v = Math.max(0, Math.min(90, wk.v));
@@ -812,6 +890,7 @@ function update(dt) {
   if (state === 'menu') scroll += 70 * dt;
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
+  if (state === 'workshopfoot') return updateWorkshopFoot(dt);
   if (state === 'workshop') return updateWorkshop(dt);
   if (state === 'ute') return updateUte(dt);
   if (state === 'officeinside') return updateOffice(dt);
@@ -2958,22 +3037,19 @@ function drawWorkshop() {
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
-  if(workshopOnFoot){
-    const done=wk.done;
-    rect(45,112,W-90,64,'#152d38c9');
-    text(done?'REPAIRS COMPLETE - RETURN TO CAB':'ON FOOT - WATCH THE MECHANICS',W/2,136,17,'#ffe36b');
-    text(done?'Walk to truck and press E':'WASD to move  |  Wait for repairs',W/2,161,13,'#fff');
-    // Driver on foot is shown in the workshop world using the current yard projection.
-    const fx=workshopFoot.x,fy=workshopFoot.y;
-    ctx.save();ctx.fillStyle='#e5e900';ctx.beginPath();ctx.arc(W/2, H-165, 9,0,Math.PI*2);ctx.fill();ctx.restore();
-    if(isTouch){drawStick();drawBtn([340,570,132,52],'ENTER CAB',false);}
-  } else if (isTouch) { drawStick(); drawBtns(DB); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 10, 82, 11, '#ccc', 'left');
+  if(wk.auto && !wk.done && wk.exitOffered) {
+    text('TRUCK PARKED - PRESS E TO CLIMB OUT',W/2,120,19,'#ffe36b');
+    if(isTouch)drawBtn([340,570,132,52],'CLIMB OUT',false);
+  }
+  if (isTouch) { drawStick(); drawBtns(DB); drawBtn(VIEW_BTN, VIEW_BTN[4], false); }
+  else text('V: change view', 10, 82, 11, '#ccc', 'left');
 }
 
 function render() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
-  if (state === 'workshop') drawWorkshop();
+  if (state === 'workshopfoot') drawWorkshopFoot();
+  else if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
   else if (state === 'ute' || state === 'uteend') drawUteScreen();
   else if (state === 'parkhandover') drawParkHandover();
