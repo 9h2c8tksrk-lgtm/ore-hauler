@@ -135,7 +135,7 @@ cv.addEventListener('pointerdown', e => {
   if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
-  if(state==='workshop'&&inR(p,[340,570,132,52])&&wk.auto&&!wk.done){onKey('KeyE');return;}
+  if(state==='workshop'&&inR(p,[340,570,132,52])&&!wk.done){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
   if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
@@ -254,7 +254,7 @@ function onKey(code) {
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
-  if (state==='workshop' && code==='KeyE' && wk.auto && !wk.done) {
+  if (state==='workshop' && code==='KeyE' && !wk.done) {
     enterWorkshopFoot(); return;
   }
   if (state==='workshopfoot' && code==='KeyE') {
@@ -730,7 +730,7 @@ function wkHome() {
 // around a safe observation area and watch independent repair animations.
 let footTime=0, footFacing=0;
 function enterWorkshopFoot() {
-  if(state!=='workshop'||!wk.auto||wk.done)return;
+  if(state!=='workshop'||wk.done)return;
   state='workshopfoot';workshopOnFoot=true;footTime=0;
   workshopFoot={x:13,y:10};footFacing=-Math.PI/2;
   wk.v=0;ptrs.clear();syncBtns();
@@ -3037,7 +3037,7 @@ function drawWorkshop() {
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
-  if(wk.auto && !wk.done && wk.exitOffered) {
+  if(!wk.done) {
     text('TRUCK PARKED - PRESS E TO CLIMB OUT',W/2,120,19,'#ffe36b');
     if(isTouch)drawBtn([340,570,132,52],'CLIMB OUT',false);
   }
