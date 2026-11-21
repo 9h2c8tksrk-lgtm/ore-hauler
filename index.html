@@ -134,6 +134,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
+  if(state==='workshop'&&workshopOnFoot&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
   if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
@@ -252,6 +253,12 @@ function onKey(code) {
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
+  if(state==='workshop'&&code==='KeyE'&&workshopOnFoot){
+    if(!wk.done){flash('Mechanics are still repairing the truck.');return;}
+    if(Math.hypot(workshopFoot.x-wk.x,workshopFoot.y-wk.y)>55){flash('Walk closer to the cab to climb back in.');return;}
+    workshopOnFoot=false;wk.auto=true;wk.v=0;ptrs.clear();syncBtns();
+    flash('Back in the cab. Workshop crew clear. Truck exiting the bay.');return;
+  }
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
   if (state === 'load') {
     if (code === 'Space') action();
@@ -663,9 +670,10 @@ function wkFresh() {
   const x = GATE.x, y = WORLD.h - 10;   // just inside the gate, heading up with the trailers still outside
   return { x, y, h: 0, v: 0, s: 0, j: straightChain(x, y, WK_SC), lap: 0, auto: false, done: false, fixed: [0, 0, 0, 0, 0], hp0: hp, bay: 0, fit: fitInit(), crew: crewInit(), crewReady: false };
 }
+let workshopOnFoot=false, workshopFoot={x:0,y:0}, workshopFootDir=0;
 function toWorkshop() {
   if (state !== 'drive') return;
-  state = 'workshop'; wk = wkFresh(); marks = []; yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
+  workshopOnFoot=false; state = 'workshop'; wk = wkFresh(); marks = []; yard = makeYard(); particles = []; ptrs.clear(); syncBtns();
   flash('Up the right side, round to the top, then line up with a bay');
 }
 // drag the trailer chain behind the cab
@@ -716,6 +724,20 @@ function updateWorkshop(dt) {
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
   yardUpdate(dt); crewUpdate(dt); trackMarks();
+  if(workshopOnFoot){
+    const mx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+    const my=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);
+    const n=Math.hypot(mx,my)||1;
+    workshopFoot.x=Math.max(WK.x+8,Math.min(WK.x+WK.w-8,workshopFoot.x+mx/n*60*dt));
+    workshopFoot.y=Math.max(WK.y+18,Math.min(WK.y+WK.h-10,workshopFoot.y+my/n*60*dt));
+  }
+  if(wk.auto&&!wk.done&&!workshopOnFoot&&wk.y>WK.y+25){
+    workshopOnFoot=true;
+    workshopFoot={x:wk.x+24,y:WK.y+WK.h-24};
+    wk.v=0;ptrs.clear();syncBtns();
+    flash('You climbed out. Watch the mechanics repair the truck.');
+  }
+
   const straighten = () => { wk.h = Math.PI + angDiff(wk.h, Math.PI) * (1 - Math.min(1, dt * 6)); };
   if (wk.auto) {
     const cx = wkBayX(wk.bay);
@@ -726,6 +748,16 @@ function updateWorkshop(dt) {
     }
     if (wk.bay === TYRE_BAY) { const p = idleSpot(); if (fitWalk(wk.fit, p.x, p.y, dt)) wk.fit.fa = Math.PI / 2; }
     if (!wk.done && !wk.crewReady) { wk.crewReady = wk.crew.every(m => !m.walk); wk.v = 0; return; }   // mechanics hurry over first
+    if(workshopOnFoot && !wk.done){
+      wk.repairClock=(wk.repairClock||0)+dt;
+      wk.crewReady=true;
+      if(wk.repairClock>=13){
+        wk.done=true;wk.fixed=[1,1,1,1,1];hp=100;
+        wk.auto=false;wk.v=0;
+        flash('Repair complete. Walk back to the cab and press E to climb in.');
+      }
+      return;
+    }
     wk.v = wk.done ? Math.min(60, wk.v + 60 * dt) : 38;
     straighten(); wk.x += (cx - wk.x) * Math.min(1, dt * 3);
     wk.y += wk.v * dt; wkChain();
@@ -743,6 +775,7 @@ function updateWorkshop(dt) {
     }
     return;
   }
+  if(workshopOnFoot){wk.v=0;return;}
   const px = wk.x, py = wk.y, ph = wk.h;
   const up = keys.ArrowUp || keys.KeyW || keys.TG, brake = keys.ArrowDown || keys.KeyS || keys.TB;
   wk.v += (up ? 70 : brake ? -140 : -30) * dt; wk.v = Math.max(0, Math.min(90, wk.v));
@@ -1757,17 +1790,17 @@ const officeLines = [
 ];
 function officeInteract() {
   if (state === 'walk' && shiftStart && wStage === 0 && nearOffice()) {
-    state='officeinside'; officePos={x:0,y:8}; officeHeading=-Math.PI/2;
+    state='officeinside'; officePos={x:0,y:23}; officeHeading=-Math.PI/2;
     officeStep=0; officeBreath=0; ptrs.clear(); syncBtns();
     flash('Inside Fleet Schedulers Office. Walk to the breathalyser by the entrance.');return;
   }
   if (state !== 'officeinside') return;
   if (officeStep === 0) {
-    if (Math.hypot(officePos.x+18,officePos.y+2)>23) { flash('Move closer to the breathalyser on the left wall.');return; }
+    if (Math.hypot(officePos.x+40,officePos.y+5)>24) { flash('Move closer to the breathalyser on the left wall.');return; }
     officeStep=1;flash('Hold E to complete the simulated breath test.');return;
   }
   if (officeStep === 2) {
-    if (Math.hypot(officePos.x,officePos.y+20)>30) {flash('Walk towards the Fleet Schedulers desk.');return;}
+    if (Math.hypot(officePos.x,officePos.y+35)>35) {flash('Walk towards the Fleet Schedulers desk.');return;}
     officeStep=3;officeLine=0;return;
   }
   if (officeStep === 0) { officeStep = 1; flash('Breathalyser ready. Hold E to blow (game simulation).'); }
@@ -1797,14 +1830,14 @@ function updateOffice(dt) {
     const nx=officePos.x+Math.cos(officeHeading)*35*fwd*dt;
     const ny=officePos.y+Math.sin(officeHeading)*35*fwd*dt;
     // Room bounds and the reception counter prevent walking through desks.
-    if(nx>-32&&nx<32&&!(ny< -7&&ny>-27&&Math.abs(nx)<29))officePos.x=nx;
-    if(ny>-38&&ny<24&&!(ny< -7&&ny>-27&&Math.abs(officePos.x)<29))officePos.y=ny;
+    if(nx>-57&&nx<57&&!(ny< -24&&ny>-42&&Math.abs(nx)<43))officePos.x=nx;
+    if(ny>-62&&ny<43&&!(ny< -24&&ny>-42&&Math.abs(officePos.x)<43))officePos.y=ny;
   }
   if(officeStep===1&&(keys.KeyE||officeTouchHeld)){
     officeBreath=Math.min(2.5,officeBreath+dt);
     if(officeBreath>=2.5){officeStep=2;officeTouchHeld=false;flash('SIMULATED RESULT: 0.000 BAC. Talk to the Fleet Schedulers.');}
   }
-  if(officeStep===4&&officePos.y>17){
+  if(officeStep===4&&officePos.y>38){
     state='walk';wStage=1;wp.x=OFFICE_DOOR.x;wp.y=OFFICE_DOOR.y-23;
     wp.dir=-Math.PI/2;wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
   }
@@ -1874,42 +1907,42 @@ function seatedScheduler(x,y,moustache=false) {
 function drawOffice() {
   // Camera follows the player inside the office, using the same 3D projection.
   const hx=Math.cos(officeHeading),hy=Math.sin(officeHeading);
-  wCam={x:officePos.x-hx*33,y:officePos.y-hy*33,hx,hy,rx:-hy,ry:hx};
+  wCam={x:officePos.x-hx*46,y:officePos.y-hy*46,hx,hy,rx:-hy,ry:hx};
   rect(0,0,W,H,'#d3d8d9');
-  wFlat(-40,-45,80,75,'#b5b1a6');
-  for(const [x,y,w,l] of [[-40,-45,80,2],[-40,-45,2,75],[38,-45,2,75]])wBox(x+w/2,y+l/2,w,l,0,31,'#c4c9ca','#dce1e1');
+  wFlat(-60,-65,120,110,'#b5b1a6');
+  for(const [x,y,w,l] of [[-60,-65,120,2],[-60,-65,2,110],[58,-65,2,110]])wBox(x+w/2,y+l/2,w,l,0,31,'#c4c9ca','#dce1e1');
   // Interior exit door on the entrance wall. The doorway is aligned with the
   // player's spawn and the existing exit trigger at y > 17.
-  wBox(-24,28,31,2,0,30,'#c4c9ca','#dce1e1');
-  wBox(24,28,31,2,0,30,'#c4c9ca','#dce1e1');
-  wBox(0,28,17,2,25,30,'#c4c9ca','#dce1e1');
+  wBox(-38,44,45,2,0,30,'#c4c9ca','#dce1e1');
+  wBox(38,44,45,2,0,30,'#c4c9ca','#dce1e1');
+  wBox(0,44,17,2,25,30,'#c4c9ca','#dce1e1');
   // Recessed blue-grey door, handle and EXIT sign.
-  wBox(0,28.5,15,1.3,0,24,'#5d7583','#6f8996');
-  wBox(5.3,29.5,1.5,1.2,11,13,'#e7c66b','#e7c66b');
-  wBox(0,27.8,12,1.1,26,29,'#277e5d','#277e5d');
-  wText('EXIT',0,26.9,31,8,'#ffffff');
+  wBox(0,44.5,15,1.3,0,24,'#5d7583','#6f8996');
+  wBox(5.3,45.5,1.5,1.2,11,13,'#e7c66b','#e7c66b');
+  wBox(0,43.8,12,1.1,26,29,'#277e5d','#277e5d');
+  wText('EXIT',0,42.9,31,8,'#ffffff');
   // Long reception counter, monitors, keyboards and paperwork.
   // L-shaped fleet scheduling desk: main counter and perpendicular return.
-  wBox(0,-17,58,11,0,12,'#765a42','#9e8060');
-  wBox(24,-7,11,30,0,12,'#765a42','#9e8060');
-  wBox(24,-7,11,30,12,13,'#a88766','#a88766');
-  for(const x of [-17,17]){
-    wBox(x,-22,13,2,13,25,'#252c34','#303c48');
-    wBox(x,-20,10,1,16,22,'#3c8ba5','#3c8ba5');
-    wBox(x,-11,11,4,12,13,'#30343b','#30343b');
-    wBox(x+8,-15,4,5,12,13,'#f0eee4','#f0eee4');
+  wBox(0,-34,86,13,0,12,'#765a42','#9e8060');
+  wBox(38,-19,12,43,0,12,'#765a42','#9e8060');
+  wBox(38,-19,12,43,12,13,'#a88766','#a88766');
+  for(const x of [-23,23]){
+    wBox(x,-40,13,2,13,25,'#252c34','#303c48');
+    wBox(x,-38,10,1,16,22,'#3c8ba5','#3c8ba5');
+    wBox(x,-28,11,4,12,13,'#30343b','#30343b');
+    wBox(x+8,-32,4,5,12,13,'#f0eee4','#f0eee4');
   }
   // Wall-mounted television displays: live fleet map and shift board.
-  for(const [x,y,w,l] of [[-17,-43,24,2],[17,-43,24,2],[37,-10,2,22]]){
+  for(const [x,y,w,l] of [[-22,-63,30,2],[22,-63,30,2],[57,-18,2,26]]){
     wBox(x,y,w,l,17,30,'#161c24','#161c24');
     wBox(x,y,w*.85,l+.3,19,28,'#2b607b','#2b607b');
     wBox(x,y,w*.72,l+.5,21,22,'#4cb0aa','#4cb0aa');
   }
-  wText('FLEET STATUS',0,-42,32,7,'#fff');
-  wBox(-33,0,4,12,0,16,'#657984','#657984');
-  wText('BAC',-31,0,19,6,'#fff');
+  wText('FLEET STATUS',0,-62,32,7,'#fff');
+  wBox(-55,-5,4,12,0,16,'#657984','#657984');
+  wText('BAC',-53,-5,19,6,'#fff');
   // Both schedulers remain behind the desk. One has a thick moustache.
-  seatedScheduler(-17,-31,true);seatedScheduler(17,-31,false);
+  seatedScheduler(-23,-51,true);seatedScheduler(23,-51,false);
   campHuman(officePos.x,officePos.y,false,true);
   rect(0,0,W,80,'#142536dd');text('FLEET SCHEDULERS OFFICE',W/2,27,22,'#ffea69');
   text('W / S walk    A / D turn    E interact',W/2,55,14,'#fff');
@@ -1918,9 +1951,9 @@ function drawOffice() {
     officeStep===2?'SIMULATED 0.000 BAC. Approach the desk, press E':
     officeStep===3?officeLines[Math.min(officeLine,officeLines.length-1)]:
     'Schedule collected. Turn around and walk to the EXIT door.';
-  rect(15,570,W-30,139,'#102337ed');text(instruction,W/2,610,14,'#fff');
-  if(officeStep===1)bar(80,630,340,15,officeBreath/2.5,'#7de0a3');
-  text('E: interact / continue',W/2,681,16,'#ffe65e');
+  // Compact status near the top: no opaque bar obscuring the player's view.
+  text(instruction,W/2,100,14,'#fff');
+  if(officeStep===1)bar(150,116,200,9,officeBreath/2.5,'#7de0a3');
   if(isTouch){drawStick();drawBtns(DB);drawBtn([340,558,132,52],'INTERACT',false);}
   if(msgT>0)text(msg,W/2,105,16,'#ffef79');
 }
@@ -2024,23 +2057,25 @@ function campHuman(x,y,moustache=false,player=false) {
   if(moustache){p=point(0,4.5);campOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
 }
 function campUteModel(x,y,col) {
-  wBox(x,y,24,31,2,10,col,col);
+  // Reverse-in parking: vehicle rear faces the bay and bonnet faces the aisle.
+  const parkedBox=(bx,by,w,l,z0,z1,wall,roof)=>wBox(2*x-bx,2*y-by,w,l,z0,z1,wall,roof);
+  parkedBox(x,y,24,31,2,10,col,col);
   for(const side of [-1,1])for(const off of [-10,10]){
-    wBox(x+side*12,y+off,4.5,6,0,9,'#15181c','#15181c');
+    parkedBox(x+side*12,y+off,4.5,6,0,9,'#15181c','#15181c');
   }
-  wBox(x,y-3,21,18,10,20,col,col);
-  wBox(x,y-4,19,13,20,22,'#6d8a9a','#9cb3c0');
-  wBox(x,y+11,22,12,9,12,'#737f86','#737f86');
-  wBox(x,y+16,22,2,8,14,'#bfc5c9','#bfc5c9');
+  parkedBox(x,y-3,21,18,10,20,col,col);
+  parkedBox(x,y-4,19,13,20,22,'#6d8a9a','#9cb3c0');
+  parkedBox(x,y+11,22,12,9,12,'#737f86','#737f86');
+  parkedBox(x,y+16,22,2,8,14,'#bfc5c9','#bfc5c9');
   for(const side of [-1,1]){
-    wBox(x+side*12,y-5,2,7,13,19,'#536e80','#536e80');
-    wBox(x+side*12.8,y-12,3,3,14,17,'#22282d','#22282d');
-    wBox(x+side*8,y+17,3,1,9,12,'#bf2929','#bf2929');
+    parkedBox(x+side*12,y-5,2,7,13,19,'#536e80','#536e80');
+    parkedBox(x+side*12.8,y-12,3,3,14,17,'#22282d','#22282d');
+    parkedBox(x+side*8,y+17,3,1,9,12,'#bf2929','#bf2929');
   }
-  wBox(x,y+6,19,2,12,27,'#c6cbd0','#c6cbd0');
-  wBox(x+8,y+6,1,1,27,43,'#444','#444');
-  wBox(x+8,y+6,9,1,40,43,'#f47718','#f47718');
-  wBox(x,y-4,5,4,22,24,'#dc9d22','#dc9d22');
+  parkedBox(x,y+6,19,2,12,27,'#c6cbd0','#c6cbd0');
+  parkedBox(x+8,y+6,1,1,27,43,'#444','#444');
+  parkedBox(x+8,y+6,9,1,40,43,'#f47718','#f47718');
+  parkedBox(x,y-4,5,4,22,24,'#dc9d22','#dc9d22');
 }
 function drawWalk() {
   const hx = Math.cos(wCamH), hy = Math.sin(wCamH);
@@ -2923,7 +2958,16 @@ function drawWorkshop() {
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive out through the yard gate' : wk.lap === 15 ? 'Straight in line with a bay, then drive in' : 'Up the right side, round to the top of the workshop', W / 2, 52, 14, '#ddd');
   if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
-  if (isTouch) { drawStick(); drawBtns(DB); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 10, 82, 11, '#ccc', 'left');
+  if(workshopOnFoot){
+    const done=wk.done;
+    rect(45,112,W-90,64,'#152d38c9');
+    text(done?'REPAIRS COMPLETE - RETURN TO CAB':'ON FOOT - WATCH THE MECHANICS',W/2,136,17,'#ffe36b');
+    text(done?'Walk to truck and press E':'WASD to move  |  Wait for repairs',W/2,161,13,'#fff');
+    // Driver on foot is shown in the workshop world using the current yard projection.
+    const fx=workshopFoot.x,fy=workshopFoot.y;
+    ctx.save();ctx.fillStyle='#e5e900';ctx.beginPath();ctx.arc(W/2, H-165, 9,0,Math.PI*2);ctx.fill();ctx.restore();
+    if(isTouch){drawStick();drawBtn([340,570,132,52],'ENTER CAB',false);}
+  } else if (isTouch) { drawStick(); drawBtns(DB); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 10, 82, 11, '#ccc', 'left');
 }
 
 function render() {
