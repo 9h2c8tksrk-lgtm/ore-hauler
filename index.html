@@ -147,6 +147,7 @@ cv.addEventListener('pointerdown', e => {
     for (let i = 0; i < NT; i++) { if (inR(p, lidBtn(i))) toggleLid(i); else if (inR(p, tipBtn(i))) tipTrailer(i); }
     return;
   }
+  if (state === 'parkhandover') { advanceHandover(); return; }
   if (state === 'menu' && inR(p, SKIP_BTN)) { skipLoad(); return; }
 
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
@@ -242,7 +243,8 @@ function onKey(code) {
     if (code === 'KeyF') { startFitter(); return; }
     if (code === 'KeyC') { bayReady = 0; toUte(); return; }
   }
-  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { shiftStart = false; skipLoad(); flash('In the truck - let\'s haul!'); } else toWalk(); return; }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { state='parkhandover'; handStep=0; ptrs.clear(); syncBtns(); } else toWalk(); return; }
+  if (state === 'parkhandover' && (code === 'Space' || code === 'Enter' || code === 'KeyE')) { advanceHandover(); return; }
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
@@ -1705,7 +1707,7 @@ function drawUteScreen() {
     rect(30, 200, W - 60, 300, '#000d');
     text(shiftStart ? 'AT THE TRUCK PARK!' : 'ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
     text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
-    text(isTouch ? (shiftStart ? 'Tap to climb in the truck' : 'Tap to hop out') : (shiftStart ? 'Press SPACE to climb in the truck' : 'Press SPACE to hop out'), W / 2, 440, 18, '#ff6');
+    text(isTouch ? (shiftStart ? 'Tap to begin driver handover' : 'Tap to hop out') : (shiftStart ? 'Press SPACE to begin driver handover' : 'Press SPACE to hop out'), W / 2, 440, 18, '#ff6');
   }
 }
 // ---------- change over, part 2: on foot from the car park to the schedule office, then to your room ----------
@@ -1807,6 +1809,51 @@ function updateOffice(dt) {
     wp.dir=-Math.PI/2;wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
   }
 }
+// Driver changeover is mandatory before entering the already-loaded road train.
+let handStep=0;
+const handLines=[
+  'Incoming driver: Gday mate, ready for the swap?',
+  'Outgoing driver: Yep. Road train is loaded and parked up.',
+  'Outgoing driver: Walk around the truck and check the trailers and load.',
+  'Incoming driver: Copy that. Any defects or issues to hand over?',
+  'Outgoing driver: All good. Paperwork is in the cab. Safe travels!',
+  'Incoming driver: Cheers. You take the ute back to Camp.'
+];
+function advanceHandover(){
+  if(state!=='parkhandover')return;
+  handStep++;
+  if(handStep>=handLines.length){
+    shiftStart=false;skipLoad();
+    // The truck is already loaded when the incoming driver takes over.
+    fills=Array(fills.length).fill(TRAILER_CAP);
+    flash('Handover complete. Check the load, then begin hauling.');
+  }
+}
+function drawParkHandover(){
+  rect(0,0,W,H,'#a86b45');
+  rect(25,145,W-50,460,'#515354');
+  for(let i=0;i<3;i++){
+    const yy=310+i*85;
+    rect(140,yy,220,67,'#9b5d39');rect(152,yy+10,196,48,'#be8152');
+    for(let j=0;j<5;j++)rect(166+j*36,yy+19,27,25,'#6c4431');
+    for(const xx of [156,342]){rect(xx,yy+13,11,16,'#181a1c');rect(xx,yy+43,11,16,'#181a1c');}
+  }
+  rect(145,188,210,116,'#ece8df');rect(166,206,166,47,'#6d94aa');
+  rect(155,277,190,13,'#40464a');text('LOADED ROAD TRAIN',W/2,178,17,'#fff');
+  rect(25,500,120,76,'#e2e5e7');rect(37,514,95,34,'#6a8da0');
+  // Two rounded hi-vis figures alongside the parked truck.
+  for(const x of [180,320]){
+    rect(x-10,461,8,30,'#253b55');rect(x+2,461,8,30,'#253b55');
+    rect(x-14,431,28,34,'#e4e800');rect(x-14,444,28,5,'#d9e3e8');
+    ctx.fillStyle='#d5a07b';ctx.beginPath();ctx.ellipse(x,418,12,14,0,0,Math.PI*2);ctx.fill();
+    rect(x-11,406,22,5,'#4b3529');
+  }
+  rect(16,18,W-32,105,'#15273ce9');text('HIGHWAY PARKING BAY - DRIVER CHANGEOVER',W/2,53,18,'#ffe568');
+  text('Truck and trailers are already loaded',W/2,85,15,'#fff');
+  rect(20,615,W-40,94,'#102136ee');
+  text(handLines[Math.min(handStep,handLines.length-1)],W/2,648,14,'#fff');
+  text(isTouch?'Tap to continue':'Press SPACE or E to continue',W/2,686,15,'#ffe568');
+}
 function drawOffice() {
   // Camera follows the player inside the office, using the same 3D projection.
   const hx=Math.cos(officeHeading),hy=Math.sin(officeHeading);
@@ -1815,13 +1862,23 @@ function drawOffice() {
   wFlat(-40,-45,80,75,'#b5b1a6');
   for(const [x,y,w,l] of [[-40,-45,80,2],[-40,-45,2,75],[38,-45,2,75]])wBox(x+w/2,y+l/2,w,l,0,31,'#c4c9ca','#dce1e1');
   // Long reception counter, monitors, keyboards and paperwork.
+  // L-shaped fleet scheduling desk: main counter and perpendicular return.
   wBox(0,-17,58,11,0,12,'#765a42','#9e8060');
+  wBox(24,-7,11,30,0,12,'#765a42','#9e8060');
+  wBox(24,-7,11,30,12,13,'#a88766','#a88766');
   for(const x of [-17,17]){
     wBox(x,-22,13,2,13,25,'#252c34','#303c48');
     wBox(x,-20,10,1,16,22,'#3c8ba5','#3c8ba5');
     wBox(x,-11,11,4,12,13,'#30343b','#30343b');
     wBox(x+8,-15,4,5,12,13,'#f0eee4','#f0eee4');
   }
+  // Wall-mounted television displays: live fleet map and shift board.
+  for(const [x,y,w,l] of [[-17,-43,24,2],[17,-43,24,2],[37,-10,2,22]]){
+    wBox(x,y,w,l,17,30,'#161c24','#161c24');
+    wBox(x,y,w*.85,l+.3,19,28,'#2b607b','#2b607b');
+    wBox(x,y,w*.72,l+.5,21,22,'#4cb0aa','#4cb0aa');
+  }
+  wText('FLEET STATUS',0,-42,32,7,'#fff');
   wBox(-33,0,4,12,0,16,'#657984','#657984');
   wText('BAC',-31,0,19,6,'#fff');
   // Both schedulers remain behind the desk. One has a thick moustache.
@@ -2848,6 +2905,7 @@ function render() {
   if (state === 'workshop') drawWorkshop();
   else if (state === 'load') drawYard();
   else if (state === 'ute' || state === 'uteend') drawUteScreen();
+  else if (state === 'parkhandover') drawParkHandover();
   else if (state === 'officeinside') drawOffice();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
