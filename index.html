@@ -3115,11 +3115,37 @@ function placeName() {
   Object.assign(nameIn.style, { left: r.left + (W / 2 - 120) * k + 'px', top: r.top + 262 * k + 'px', width: 240 * k + 'px', height: 38 * k + 'px', fontSize: 18 * k + 'px' });
 }
 let slowT = 0;
+
+// MOBILE PERFORMANCE MODE
+const mobilePerformance =
+  window.matchMedia("(pointer: coarse)").matches;
+
+const targetFPS = mobilePerformance ? 30 : 60;
+const frameInterval = 1000 / targetFPS;
+
+let lastRenderedFrame = 0;
+
 function loop(now) {
-  const raw = (now - last) / 1000, dt = Math.min(.05, raw); last = now;
+
+  requestAnimationFrame(loop);
+
+  if (document.hidden) {
+    last = now;
+    lastRenderedFrame = now;
+    return;
+  }
+
+  if (now - lastRenderedFrame < frameInterval) {
+    return;
+  }
+
+  lastRenderedFrame = now;
+
+  const raw = (now - last) / 1000;
+  const dt = Math.min(.05, raw);
+  last = now;
   // sustained slow frames: halve the backing-store resolution (4x fewer pixels) so the scroll stays smooth
   if (SS > 1 && state !== 'menu') { slowT = raw > .03 ? slowT + raw : Math.max(0, slowT - raw * 2); if (slowT > 1.5) { SS = 1; cv.width = W; cv.height = H; ctx.setTransform(1, 0, 0, 1, 0, 0); atmoCv = null; slowT = 0; } }
-  requestAnimationFrame(loop);   // scheduled first so one bad frame can't freeze the game
   try { update(dt); render(); placeName(); } catch (e) { console.error(e); }
 }
 requestAnimationFrame(loop);
