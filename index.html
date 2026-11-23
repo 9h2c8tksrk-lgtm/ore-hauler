@@ -150,7 +150,7 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   if (state === 'parkhandover') { if(inR(p,[15,610,450,100])) advanceHandover(); else {cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,p);syncBtns();} return; }
-  if (state === 'menu' && inR(p, SKIP_BTN)) { skipLoad(); return; }
+  if (state === 'menu' && inR(p, SKIP_BTN)) { homeRoom = -1; skipLoad(); return; }
 
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
   if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
@@ -172,6 +172,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
 let ldr, carrying, spills = [], pileSeg = [];   // pileSeg: remaining ore (0..1) in each slice of the pile, eaten away by scooping
+let homeRoom = -1;   // room the camp-start shift began in, so you return to the same room
 let shiftStart = false;   // the run began in a camp room: office, then the ute to the truck park, then the truck
 let bayReady = 0, bf = null;   // bayReady: -1/1 = parked in a parking bay on that side; bf: fitter visit in progress
 let best = +localStorage.oreBest || 0;
@@ -250,10 +251,10 @@ function onKey(code) {
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
-  if (state === 'menu' && code === 'KeyL') { skipLoad(); return; }
+  if (state === 'menu' && code === 'KeyL') { homeRoom = -1; skipLoad(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
-  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
+  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
   if (state==='workshop' && code==='KeyE') {
     enterWorkshopFoot(); return;
   }
@@ -281,7 +282,7 @@ const SKIP_BTN = [130, 590, 220, 30, 'SKIP LOADING (L)'], CAMP_BTN = [130, 624, 
 // begin the shift at your room: on foot to the Schedule Office, then your ute to the truck park, then into the truck
 function startAtCamp() {
   playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
-  shiftStart = true; toWalk();
+  homeRoom = -1; shiftStart = true; toWalk(); homeRoom = wRoom;
 }
 // skip the yard: begin the run already loaded, parked in the first left-hand parking bay
 function skipLoad() {
@@ -289,6 +290,7 @@ function skipLoad() {
   fills = [TRAILER_CAP, TRAILER_CAP, TRAILER_CAP, TRAILER_CAP];
   scroll = bayStarts[1] + 460; dist = scroll / 4; qx = ROAD_L - 13 - 40; speed = 0; steeringSpeed = 0;
   jts = straightChain(qx, qy, 1); cabAngle = 0; state = 'drive'; ptrs.clear(); syncBtns();
+  warned = 1;   // already on the highway: don't let the 'Highway!' banner overwrite the start message
   bayReady = rigInBay(); flash('Loaded and parked: use the Fitter, Change Over, or drive off');
 }
 function start() { hp = Math.max(30, 100 - Math.round(trDmg.reduce((a, b) => a + b, 0) / 4)); state = 'drive'; ptrs.clear(); syncBtns(); flash('Steep hill ahead - watch your speed!'); }
@@ -1935,7 +1937,8 @@ function toUte() {
   }else for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
   const cols = ['#f4f4f4', '#f4f4f4', '#eeeeee', '#ffffff'];
   const order = uslots.map((_, i) => i).sort(() => Math.random() - .5);
-  for (const i of order.slice(0, 14)) { uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
+  for (const i of order.slice(0, shiftStart ? 3 : 14)) {   // the 6-bay truck park keeps 3 bays free
+  uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
   flash(shiftStart?'Follow the dirt road to the highway truck parking bay':'Dual-cab ute: follow the dirt road to Camp');
 }
 function updateUte(dt) {
@@ -2125,9 +2128,7 @@ function officeInteract() {
     if (Math.hypot(officePos.x,officePos.y+35)>35) {flash('Walk towards the Fleet Schedulers desk.');return;}
     officeStep=3;officeLine=0;return;
   }
-  if (officeStep === 0) { officeStep = 1; flash('Breathalyser ready. Hold E to blow (game simulation).'); }
-  else if (officeStep === 2) { officeStep = 3; officeLine = 0; }
-  else if (officeStep === 3) {
+  if (officeStep === 3) {
     officeLine++;
     if (officeLine >= officeLines.length) {
       officeStep=4;flash('Schedule collected. Walk back to the office door to leave.');
@@ -2137,7 +2138,7 @@ function officeInteract() {
 
 function toWalk() {
   state = 'walk'; wp = { x: 805, y: 835, dir: Math.atan2(255, -95), ph: 0 }; wCamH = wp.dir; wStage = 0; wT = 0; wWrong = 0;   // facing the office
-  wRoom = Math.floor(Math.random() * CAMP_DOORS.length);   // a different room every time
+  wRoom = homeRoom >= 0 ? homeRoom : Math.floor(Math.random() * CAMP_DOORS.length);   // same room all swing if the shift began at camp
   officeStep = 0; officeBreath = 0; officeLine = 0; officeTouchHeld = false;
   if (shiftStart) {   // outside your own door, facing the office
     const d = CAMP_DOORS[wRoom]; wp = { x: d.x + d.nx * 14, y: d.y + d.ny * 14, dir: Math.atan2(OFFICE_DOOR.y - d.y, OFFICE_DOOR.x - d.x), ph: 0 }; wCamH = wp.dir;
@@ -2184,8 +2185,8 @@ function advanceHandover(){
       fills=Array(NT).fill(TRAILER_CAP);
       flash('Loaded truck received. Head to the Skyway and tip.');
     }else{
-      fills=Array(NT).fill(0);ret=true;scroll=0;dist=0;speed=0;
-      qx=LANE_X[0];jts=straightChain(qx,qy,1);
+      fills=Array(NT).fill(0);ret=true;   // same highway bay, now facing the return run to the ROM
+      bayReady=rigInBay();
       flash('Empty truck received. Drive to the ROM and load with both loaders.');
     }
   }
@@ -2316,7 +2317,7 @@ function drawOffice() {
   text(instruction,W/2,100,14,'#fff');
   if(officeStep===1)bar(150,116,200,9,officeBreath/2.5,'#7de0a3');
   if(isTouch){drawStick();drawBtns(DB);drawBtn([340,558,132,52],'INTERACT',false);}
-  if(msgT>0)text(msg,W/2,105,16,'#ffef79');
+  if(msgT>0)text(msg,W/2,140,16,'#ffef79');
 }
 function updateWalk(dt) {
   wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
@@ -2333,7 +2334,7 @@ function updateWalk(dt) {
     officeBreath = Math.min(2.5, officeBreath + dt);
     if (officeBreath >= 2.5) { officeTouchHeld = false; officeStep = 2; flash('SIMULATED breath test: 0.000 BAC. Press E to speak to the schedulers.'); }
   }
-  if (!shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(`Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
+  if (!shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(homeRoom >= 0 ? `Paperwork in! Back to Room ${CAMP_DOORS[wRoom].name}` : `Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
 
   if (shiftStart && wStage === 1 && Math.hypot(wp.x - YOUR_UTE.x, wp.y - YOUR_UTE.y) < 30) { toUte(); return; }
   if (wStage === 1 && !shiftStart) CAMP_DOORS.forEach((d, i) => {
