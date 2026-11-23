@@ -259,8 +259,8 @@ function onKey(code) {
     enterWorkshopFoot(); return;
   }
     if (state==='workshopfoot' && code==='KeyE') {
-      if(!cribReached){flash('Reach the Crib Room at the far end first.');return;}
-      if(workshopFoot.x<0||workshopFoot.y<SHOP_DEPTH-45){flash('Return to the workshop doors to re-enter the cab.');return;}
+      if(!cribReached){flash('Head out the Bay 1 side door to the crib room first.');return;}
+      if(!shopAtCab()){flash('Walk back to your cab door (driver side) to climb in.');return;}
       workshopOnFoot=false;state='workshop';wk.done=true;wk.auto=false;wk.v=0;
       ptrs.clear();syncBtns();flash('Crib Room mission complete. Drive out through the yard gate.');return;
     }
@@ -760,231 +760,385 @@ function wkHome() {
 let footTime=0, footFacing=0, cribReached=false, shopCrew=[];
 const workshopParked = () => state==='workshop' && wk && wk.v<8 &&
   (wk.auto || (wk.x>WK.x-40 && wk.x<WK.x+WK.w+40 && wk.y>WK.y-100 && wk.y<WK_MOUTH+115));
-// Expanded walkable interior, while the exterior yard footprint stays unchanged.
-const SHOP_DEPTH = 375, SHOP_HEIGHT = 112;
-const SHOP_CRIB = {x:-105,y:310,w:78,h:64}; // external transportable beside tyre bay
-const shopPit = i => ({x:wkBayX(i)-WK.x,y:58,w:34,h:SHOP_DEPTH-116});
-const shopToolboxes = [1,2,3,4,5].map(i=>({x:i*BAY_W,y:180,w:12,h:24}));
-function shopBlocked(x,y){
-  // Side exit from Bay 1 leads to the external transportable crib room.
-  const inCrib=x>SHOP_CRIB.x-SHOP_CRIB.w/2 && x<SHOP_CRIB.x+SHOP_CRIB.w/2 &&
-    y>SHOP_CRIB.y-SHOP_CRIB.h/2 && y<SHOP_CRIB.y+SHOP_CRIB.h/2;
-  const inYard=x>=-160 && x<0 && y>260 && y<SHOP_DEPTH+40;
-  if(inCrib || inYard) return false;
-  if(x<9||x>WK.w-9||y<9||y>SHOP_DEPTH-9)return true;
-  for(const i of PIT_BAYS){const p=shopPit(i);
-    if(x>p.x-p.w/2-5&&x<p.x+p.w/2+5&&y>p.y-4&&y<p.y+p.h+4)return true;
+// ---------- walk-in workshop: a real-scale 6-bay drive-through heavy vehicle shed ----------
+// Interior units: 26 units = 1 m (the walking crew are ~1.85 m tall). Bays are 6 m wide and the shed is
+// 30 m deep, so a prime mover and its lead side-tipper trailer fit nose-out in a bay. The yard's top-down
+// footprint (WK) is unchanged; this interior has its own coordinates: x across the bays, y from the back
+// wall (y = 0) to the open front roller doors (y = SH_D), z up.
+const SB = 156, SH_W = SB * 6, SH_D = 780, SH_H = 230, sbx = i => SB / 2 + i * SB;
+const SH_DOOR = { y0: 560, y1: 610 };            // personnel door in the left (Bay 1) wall
+const SH_CRIB = { x: -160, y: 585, w: 130, h: 80 }; // transportable crib room outside that door
+const SH_OFFICE = { x0: 0, x1: 2 * SB, y1: 80 };   // two-storey parts store / office across the back of bays 1-2
+const shopPit = i => ({ x: sbx(i), y0: 180, y1: SH_D - 70, w: 30 });
+let shopL = null;   // vehicle layout for this visit
+function shopLayout() {
+  const bay = wk.auto ? wk.bay : Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W)));
+  const free = [2, 5, 3, 4, 1, 0].filter(b => b !== bay);
+  const F = SH_D - 60, K = F - 255;                // front bumper and kingpin of your rig
+  return { bay, F, T0: K + 25, loaded: ore() > 0,
+    pm: { bay: free[0], F: SH_D - 95, col: '#f4f4f4', fleet: 'C514' },   // a second prime mover in for service
+    tr: { bay: free[1], T0: SH_D - 110 } };                              // a trailer up on column hoists
+}
+// solid footprints on the shed floor: [cx, cy, w, l]
+function shopSolids() {
+  const L = shopL, o = [];
+  o.push([sbx(L.bay), (L.F + 4 + L.T0 - 302) / 2, 74, L.F + 4 - (L.T0 - 302)]);
+  o.push([sbx(L.pm.bay), L.pm.F - 155, 74, 320]);
+  o.push([sbx(L.tr.bay), L.tr.T0 - 150, 108, 310]);
+  o.push([40, 120, 46, 38]); o.push([365, 92, 100, 20]);   // tyre cage, mezzanine stairs
+                                        // tyre inflation cage
+  o.push([22, 360, 30, 320]);                                      // tyre rack along the Bay 1 wall
+  for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
+  o.push([SH_W - 24, 620, 32, 42]); o.push([SH_W - 42, 172, 56, 56]); o.push([SH_W - 26, 700, 34, 40]);
+  for (let i = 0; i <= 6; i++) o.push([i * SB, SH_D - 6, 14, 14]);     // front door columns
+  return o;
+}
+function shopBlocked(x, y) {
+  if (x < 0) {   // the yard outside the personnel door
+    if (x < -280 || y < SH_DOOR.y0 - 120 || y > SH_DOOR.y1 + 120) return true;
+    return Math.abs(x - SH_CRIB.x) < SH_CRIB.w / 2 + 4 && Math.abs(y - SH_CRIB.y) < SH_CRIB.h / 2 + 4;
   }
-  for(const t of shopToolboxes)if(Math.abs(x-t.x)<t.w/2+5&&Math.abs(y-t.y)<t.h/2+5)return true;
-  // Truck and first trailer occupy the selected service bay, with side access.
-  if(wk && Math.abs(x-(wkBayX(wk.bay)-WK.x))<18 && y>95&&y<290)return true;
-  return shopCrew.some(m=>Math.hypot(x-m.x,y-m.y)<7);
+  if (x < 8) return !(y > SH_DOOR.y0 + 6 && y < SH_DOOR.y1 - 6);
+  if (x > SH_W - 8 || y < 8 || y > SH_D - 8) return true;
+  if (x < SH_OFFICE.x1 + 6 && y < SH_OFFICE.y1 + 6) return true;
+  for (const i of PIT_BAYS) { const p = shopPit(i); if (Math.abs(x - p.x) < p.w / 2 + 5 && y > p.y0 - 5 && y < p.y1 + 5) return true; }
+  if (shopSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 5 && Math.abs(y - cy) < l / 2 + 5)) return true;
+  return shopCrew.some(m => Math.hypot(x - m.x, y - m.y) < 9);
 }
-function shopCrewInit(){
- const crew=(role,x,y,points,col,mullet=false)=>({role,x,y,points,col,mullet,i:0,wait:0,phase:0,walk:false,heading:-Math.PI/2});
- shopCrew=[
- crew('MECHANIC',125,42,[[125,42],[144,54],[125,45]],'#e6bb21'),
- crew('MECHANIC',257,45,[[257,45],[275,54],[257,45]],'#d6a82b'),
- crew('MULLET MECHANIC',191,325,[[191,325],[194,305],[191,325]],'#ec9d27',true),
- crew('TYRE FITTER',45,65,[[45,65],[51,83],[45,65]],'#e45c37'),
- crew('AUTO SPARKY',344,318,[[344,318],[351,303],[344,318]],'#5ba8d5')];
+const shopCabDoor = () => ({ x: sbx(shopL.bay) - 46, y: shopL.F - 104 });   // driver's door: right-hand drive, on the -x side
+const shopAtCab = () => workshopFoot.x > 0 && Math.hypot(workshopFoot.x - shopCabDoor().x, workshopFoot.y - shopCabDoor().y) < 40;
+function shopCrewInit() {
+  const L = shopL, bx = sbx(L.bay), px = sbx(L.pm.bay), tx = sbx(L.tr.bay);
+  const crew = (role, points, col, mullet = false) => ({ role, x: points[0][0], y: points[0][1], points, col, mullet, i: 0, wait: 0, phase: Math.random() * 6, walk: false, heading: -Math.PI / 2 });
+  shopCrew = [
+    crew('MECHANIC', [[bx + 50, L.F - 60], [bx + 50, L.F - 190]], '#e6bb21'),
+    crew('MECHANIC', [[bx - 50, L.T0 - 228], [bx - 50, L.T0 - 120]], '#d6a82b'),
+    crew('TYRE FITTER', L.bay === 0 ? [[bx + 52, L.T0 - 255], [bx + 52, L.F - 48]] : [[78, 150], [78, 220]], '#e45c37'),
+    crew('MULLET MECHANIC', [[SH_W - 56, 300], [SH_W - 56, 440]], '#ec9d27', true),
+    crew('AUTO SPARKY', [[px + 50, L.pm.F - 70], [px + 50, L.pm.F - 140]], '#5ba8d5'),
+    crew('LEADING HAND', [[tx - 62, L.tr.T0 - 230], [tx - 62, L.tr.T0 - 40]], '#f0f0f0'),
+    crew('STORE PERSON', [[360, 120], [720, 120]], '#3f9d5a')];
 }
-function enterWorkshopFoot(){
-  if(!workshopParked()){flash('Stop near the workshop or in a bay, then press E to climb out.');return;}
-  state='workshopfoot';workshopOnFoot=true;footTime=0;cribReached=false;
-  workshopFoot={x:19,y:SHOP_DEPTH-20};footFacing=-Math.PI/2;
-  shopCrewInit();wk.v=0;ptrs.clear();syncBtns();
-  flash('Walk through Bay 1, then exit left to the outside crib room.');
+function enterWorkshopFoot() {
+  if (!workshopParked()) { flash('Stop near the workshop or in a bay, then press E to climb out.'); return; }
+  state = 'workshopfoot'; workshopOnFoot = true; footTime = 0; cribReached = false;
+  shopL = shopLayout();
+  const bx = sbx(shopL.bay), s = shopL.bay === 0 ? 1 : -1;
+  workshopFoot = { x: bx + s * 62, y: SH_D - 26 }; footFacing = Math.atan2(-120, -s * 62);   // front corner of your rig, looking along it
+  shopCrewInit(); wk.v = 0; ptrs.clear(); syncBtns();
+  flash('Walk to the Bay 1 side door and out to the crib room.');
 }
-function updateWorkshopFoot(dt){
-  time+=dt;msgT-=dt;footTime+=dt;
-  footFacing+=steerAxis()*2.0*dt;
-  const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-((keys.KeyS||keys.ArrowDown||keys.TB)?.65:0);
-  const speed=38*fwd*dt;
-  const nx=workshopFoot.x+Math.cos(footFacing)*speed,ny=workshopFoot.y+Math.sin(footFacing)*speed;
-  if(!shopBlocked(nx,workshopFoot.y))workshopFoot.x=nx;
-  if(!shopBlocked(workshopFoot.x,ny))workshopFoot.y=ny;
-  for(const m of shopCrew){
-    m.phase+=dt;
-    if(m.wait>0){m.wait-=dt;m.walk=false;continue;}
-    const [tx,ty]=m.points[m.i],dx=tx-m.x,dy=ty-m.y,d=Math.hypot(dx,dy);
-    if(d<2){m.i=(m.i+1)%m.points.length;m.wait=1.3+(m.i%3)*.8;m.walk=false;continue;}
-    const step=Math.min(d,(m.mullet?21:15)*dt);
-    m.heading=Math.atan2(dy,dx);m.x+=dx/d*step;m.y+=dy/d*step;m.walk=true;
+function updateWorkshopFoot(dt) {
+  time += dt; msgT -= dt; footTime += dt;
+  footFacing += steerAxis() * 2.0 * dt;
+  const fwd = (keys.KeyW || keys.ArrowUp || keys.TG ? 1 : 0) - ((keys.KeyS || keys.ArrowDown || keys.TB) ? .65 : 0);
+  const st = 62 * fwd * dt;
+  const nx = workshopFoot.x + Math.cos(footFacing) * st, ny = workshopFoot.y + Math.sin(footFacing) * st;
+  if (!shopBlocked(nx, workshopFoot.y)) workshopFoot.x = nx;
+  if (!shopBlocked(workshopFoot.x, ny)) workshopFoot.y = ny;
+  for (const m of shopCrew) {
+    m.phase += dt;
+    if (m.wait > 0) { m.wait -= dt; m.walk = false; continue; }
+    const [tx, ty] = m.points[m.i], dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+    if (d < 2) { m.i = (m.i + 1) % m.points.length; m.wait = 2 + (m.i % 3) * 1.2; m.walk = false; continue; }
+    if (Math.hypot(workshopFoot.x - m.x - dx / d * 8, workshopFoot.y - m.y - dy / d * 8) < 12) { m.walk = false; continue; }   // wait for the player to pass
+    const step = Math.min(d, (m.mullet ? 34 : 28) * dt);
+    m.heading = Math.atan2(dy, dx); m.x += dx / d * step; m.y += dy / d * step; m.walk = true;
   }
-  if(!cribReached&&workshopFoot.x<SHOP_CRIB.x+22&&Math.abs(workshopFoot.y-SHOP_CRIB.y)<22){
-    cribReached=true;wk.done=true;wk.fixed=wk.fixed.map(()=>1);hp=100;
-    flash('CRIB ROOM REACHED! Mission complete. Return to the entrance and press E.');
+  if (!cribReached && workshopFoot.x < SH_CRIB.x + SH_CRIB.w / 2 + 18 && Math.abs(workshopFoot.y - SH_CRIB.y) < 24) {
+    cribReached = true; wk.done = true; wk.fixed = wk.fixed.map(() => 1); hp = 100;
+    flash('CRIB ROOM REACHED! Smoko done - walk back to your cab door and press E.');
   }
 }
-function drawWorkshopFoot(){
-  // Perspective projection with a low first-person eye and near-plane clipping.
-  const fx=Math.cos(footFacing),fy=Math.sin(footFacing),rx=-fy,ry=fx;
-  const eye=26,focus=370,horizon=340,near=3;
-  const camPt=(x,y,z)=>{const dx=x-workshopFoot.x,dy=y-workshopFoot.y;return [dx*rx+dy*ry,dx*fx+dy*fy,z-eye];};
-  const face=(points,col)=>{
-    const src=points.map(p=>camPt(...p)),out=[];
-    for(let i=0;i<src.length;i++){
-      const a=src[i],b=src[(i+1)%src.length],inside=a[1]>=near,other=b[1]>=near;
-      if(inside)out.push(a);
-      if(inside!==other){const t=(near-a[1])/(b[1]-a[1]);out.push([a[0]+(b[0]-a[0])*t,near,a[2]+(b[2]-a[2])*t]);}
+function drawWorkshopFoot() {
+  const fx = Math.cos(footFacing), fy = Math.sin(footFacing), rx = -fy, ry = fx;
+  const CX = workshopFoot.x, CY = workshopFoot.y, eye = 42, focus = 370, horizon = 330, near = 3;
+  const camPt = (x, y, z) => { const dx = x - CX, dy = y - CY; return [dx * rx + dy * ry, dx * fx + dy * fy, z - eye]; };
+  const scr = v => [W / 2 + focus * v[0] / v[1], horizon - focus * v[2] / v[1]];
+  const face = (points, col) => {
+    const src = points.map(p => camPt(...p)), out = [];
+    for (let i = 0; i < src.length; i++) {
+      const a = src[i], b = src[(i + 1) % src.length], ia = a[1] >= near, ib = b[1] >= near;
+      if (ia) out.push(a);
+      if (ia !== ib) { const t = (near - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, near, a[2] + (b[2] - a[2]) * t]); }
     }
-    if(out.length<3)return;
-    ctx.fillStyle=col;ctx.beginPath();out.forEach((v,i)=>{const x=W/2+focus*v[0]/v[1],y=horizon-focus*v[2]/v[1];i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();ctx.fill();
+    if (out.length < 3) return;
+    ctx.fillStyle = col; ctx.beginPath(); out.forEach((v, i) => { const [sx, sy] = scr(v); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.closePath(); ctx.fill();
   };
-  const box=(x,y,w,l,h,col,top=col,z=0)=>{
-    const p=[[x-w/2,y-l/2],[x+w/2,y-l/2],[x+w/2,y+l/2],[x-w/2,y+l/2]];
-    for(let i=0;i<4;i++){const a=p[i],b=p[(i+1)%4];face([[...a,z],[...b,z],[...b,z+h],[...a,z+h]],i%2?col:shade(col,.72));}
-    face(p.map(v=>[...v,z+h]),top);
+  // solid box with back-face culling, so near sides never get painted over by far ones
+  const box = (x, y, w, l, h, col, top = col, z = 0) => {
+    const x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, z1 = z + h;
+    if (CY < y0) face([[x0, y0, z], [x1, y0, z], [x1, y0, z1], [x0, y0, z1]], col);
+    if (CY > y1) face([[x0, y1, z], [x1, y1, z], [x1, y1, z1], [x0, y1, z1]], col);
+    if (CX < x0) face([[x0, y0, z], [x0, y1, z], [x0, y1, z1], [x0, y0, z1]], shade(col, .78));
+    if (CX > x1) face([[x1, y0, z], [x1, y1, z], [x1, y1, z1], [x1, y0, z1]], shade(col, .78));
+    if (eye > z1) face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], top);
+    else if (eye < z) face([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], shade(col, .6));
   };
-  const human=m=>{
-    const stride=m.walk?Math.sin(m.phase*8)*5:0;
-    const gesture=m.walk?0:Math.sin(m.phase*5)*2;
-    // Rounded joints, hands, boots, reflective shirt, neck and face.
-    const limb=(x1,y1,z1,x2,y2,z2,r,c)=>{
-      const a=camPt(x1,y1,z1),b=camPt(x2,y2,z2);
-      if(a[1]<near||b[1]<near)return;
-      ctx.strokeStyle=c;ctx.lineCap='round';ctx.lineWidth=Math.max(1,focus*r/Math.max(a[1],b[1]));
-      ctx.beginPath();ctx.moveTo(W/2+focus*a[0]/a[1],horizon-focus*a[2]/a[1]);
-      ctx.lineTo(W/2+focus*b[0]/b[1],horizon-focus*b[2]/b[1]);ctx.stroke();
+  const flat = (x0, y0, x1, y1, z, col) => face([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], col);
+  const N = 12, ring = Array.from({ length: N }, (_, k) => [Math.cos(k / N * 2 * Math.PI), Math.sin(k / N * 2 * Math.PI)]);
+  // tyre: cylinder on an axle across the truck (x axis), with rim and hub on the camera side
+  const tyre = (x, y, r, w, rim = '#c9ced2') => {
+    const x0 = x - w / 2, x1 = x + w / 2;
+    for (let k = 0; k < N; k++) {
+      const [c0, s0] = ring[k], [c1, s1] = ring[(k + 1) % N], nc = (c0 + c1) / 2, ns = (s0 + s1) / 2;
+      if ((CY - y) * nc + (eye - r) * ns <= 0) continue;
+      face([[x0, y + c0 * r, r + s0 * r], [x1, y + c0 * r, r + s0 * r], [x1, y + c1 * r, r + s1 * r], [x0, y + c1 * r, r + s1 * r]], k % 2 ? '#1b1c1e' : '#232527');
+    }
+    const sx = CX > x1 ? x1 : CX < x0 ? x0 : null; if (sx === null) return;
+    face(ring.map(([c, s]) => [sx, y + c * r, r + s * r]), '#151617');
+    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .2, y + c * r * .62, r + s * r * .62]), rim);
+    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .4, y + c * r * .22, r + s * r * .22]), shade(rim, .6));
+  };
+  // upright cylinder (exhaust stacks, air cleaners, drums, hoist rams)
+  const vcyl = (x, y, r, z0, z1, col, top = col) => {
+    for (let k = 0; k < N; k++) {
+      const [c0, s0] = ring[k], [c1, s1] = ring[(k + 1) % N];
+      if ((CX - x) * (c0 + c1) + (CY - y) * (s0 + s1) <= 0) continue;
+      face([[x + c0 * r, y + s0 * r, z0], [x + c1 * r, y + s1 * r, z0], [x + c1 * r, y + s1 * r, z1], [x + c0 * r, y + s0 * r, z1]], shade(col, .7 + .3 * Math.abs(c0)));
+    }
+    if (eye > z1) face(ring.map(([c, s]) => [x + c * r, y + s * r, z1]), top);
+  };
+  const label = (x, y, z, s, size, col) => {
+    const q = camPt(x, y, z); if (q[1] < 20) return;
+    const px = focus * size / q[1]; if (px < 4) return;
+    const [sx, sy] = scr(q); text(s, sx, sy, Math.min(60, px), col);
+  };
+  const human = m => {
+    const stride = m.walk ? Math.sin(m.phase * 8) * 5 : 0, gesture = m.walk ? 0 : Math.sin(m.phase * 5) * 2;
+    const limb = (x1, y1, z1, x2, y2, z2, r, c) => {
+      const a = camPt(x1, y1, z1), b = camPt(x2, y2, z2); if (a[1] < near || b[1] < near) return;
+      ctx.strokeStyle = c; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(1, focus * r / Math.max(a[1], b[1]));
+      ctx.beginPath(); ctx.moveTo(...scr(a)); ctx.lineTo(...scr(b)); ctx.stroke();
     };
-    for(const side of [-1,1]){
-      const sx=m.x+side*3,dy=side*stride;
-      limb(sx,m.y,17,sx,m.y+dy*.5,9,4,'#293b56');
-      limb(sx,m.y+dy*.5,9,sx,m.y+dy,3,3.5,'#293b56');
-      box(sx,m.y+dy+2,6,10,4,'#202329');
-      limb(m.x+side*7,m.y,31,m.x+side*9,m.y+dy*.4,23,3,m.col);
-      limb(m.x+side*9,m.y+dy*.4,23,m.x+side*9,m.y+dy+gesture,16,2.5,'#c99572');
+    const hx = Math.cos(m.heading), hy = Math.sin(m.heading), sxv = -hy, syv = hx;   // walk along their heading
+    for (const side of [-1, 1]) {
+      const bx = m.x + sxv * side * 3, by = m.y + syv * side * 3, st = side * stride;
+      limb(bx, by, 17, bx + hx * st * .5, by + hy * st * .5, 9, 4, '#293b56');
+      limb(bx + hx * st * .5, by + hy * st * .5, 9, bx + hx * st, by + hy * st, 3, 3.5, '#293b56');
+      box(bx + hx * st, by + hy * st, 6, 6, 4, '#202329');
+      const ax = m.x + sxv * side * 7, ay = m.y + syv * side * 7;
+      limb(ax, ay, 31, ax + sxv * side * 2 - hx * st * .4, ay + syv * side * 2 - hy * st * .4, 23, 3, m.col);
+      limb(ax + sxv * side * 2, ay + syv * side * 2, 23, ax + sxv * side * 2 + hx * gesture, ay + syv * side * 2 + hy * gesture, 16, 2.5, '#c99572');
     }
-    box(m.x,m.y,14,9,20,m.col,m.col,15);
-    box(m.x,m.y,14.5,9.5,2,'#e7ecee','#e7ecee',25);
-    box(m.x,m.y,5,5,4,'#c99572','#c99572',35);
-    box(m.x,m.y,9,8,9,'#d7a07b','#d7a07b',38);
-    box(m.x,m.y-1,10,9,3,m.mullet?'#51301c':'#f3eddd',m.mullet?'#51301c':'#f3eddd',46);
-    if(m.mullet)box(m.x,m.y+5,9,4,12,'#51301c','#51301c',35);
+    box(m.x, m.y, 12, 12, 20, m.col, m.col, 15);
+    box(m.x, m.y, 12.5, 12.5, 2, '#e7ecee', '#e7ecee', 25);   // reflective tape
+    box(m.x, m.y, 5, 5, 4, '#c99572', '#c99572', 35);
+    box(m.x, m.y, 9, 9, 9, '#d7a07b', '#d7a07b', 38);
+    box(m.x, m.y, 10, 10, 3, m.mullet ? '#51301c' : '#f3eddd', m.mullet ? '#51301c' : '#f3eddd', 46);
+    if (m.mullet) box(m.x - hx * 4, m.y - hy * 4, 8, 8, 12, '#51301c', '#51301c', 35);
   };
-  rect(0,0,W,H,'#9daeb9');rect(0,horizon,W,H-horizon,'#6d747b');
-  // Large interior is deliberately deeper than its exterior footprint.
-  face([[0,0,0],[WK.w,0,0],[WK.w,SHOP_DEPTH,0],[0,SHOP_DEPTH,0]],'#737b80');
-  face([[0,0,SHOP_HEIGHT],[WK.w,0,SHOP_HEIGHT],[WK.w,SHOP_DEPTH,SHOP_HEIGHT],[0,SHOP_DEPTH,SHOP_HEIGHT]],'#c2cbd1');
-  const objects=[];
-  const add=(x,y,fn)=>objects.push({d:(x-workshopFoot.x)*fx+(y-workshopFoot.y)*fy,fn});
-  for(const i of PIT_BAYS){const p=shopPit(i);add(p.x,p.y+p.h/2,()=>{
-    face([[p.x-p.w/2-3,p.y-3,.1],[p.x+p.w/2+3,p.y-3,.1],[p.x+p.w/2+3,p.y+p.h+3,.1],[p.x-p.w/2-3,p.y+p.h+3,.1]],'#e8b100');
-    face([[p.x-p.w/2,p.y,.3],[p.x+p.w/2,p.y,.3],[p.x+p.w/2,p.y+p.h,.3],[p.x-p.w/2,p.y+p.h,.3]],'#101418');
-  });}
-  for(let i=0;i<6;i++){const x=wkBayX(i)-WK.x;add(x,190,()=>box(x,190,1.5,SHOP_DEPTH-36,.5,'#e8b100'));}
-  for(const x of [4,WK.w-4])for(const y of [4,SHOP_DEPTH-4])add(x,y,()=>box(x,y,7,7,SHOP_HEIGHT,'#5e6c77'));
-  // Tool chests between pits, with unobstructed cross aisles at y<55 and y>320.
-  for(const t of shopToolboxes)add(t.x,t.y,()=>{
-    box(t.x,t.y,t.w,t.h,19,'#b52d2d','#d44739');
-    for(let z=7;z<18;z+=4)box(t.x,t.y+t.h/2+.2,t.w-2,1,1,'#c9d2d8','#c9d2d8',z);
-  });
-  // Parked C509 and first trailer in the currently selected bay.
-  const tx=wk?wkBayX(wk.bay)-WK.x:100;
-  add(tx,192,()=>{
-    box(tx,226,31,105,37,'#b8237a','#e26aa6',12);
-    box(tx,126,30,50,44,'#f062a4','#e579b4',12);
-    box(tx,88,25,45,28,'#f062a4','#f8a2ca',12);
-    for(const side of [-1,1])for(const yy of [110,145,185,210,245])box(tx+side*19,yy,7,10,14,'#17191b');
-  });
-  // Tyre bay 1: floor-to-ceiling wall of heavy truck tyres on a rack.
-  for(let row=0;row<5;row++)for(let col=0;col<4;col++){
-    const yy=64+row*45,zz=10+col*20;
-    add(15,yy,()=>{
-      box(15,yy,13,30,13,'#111315','#282a2c',zz);
-      box(15,yy,14,15,2,'#969da2','#c4c9cd',zz+5);
+  const objs = [], outside = [];
+  const add = (x, y, fn, list = objs) => list.push({ d: (x - CX) * fx + (y - CY) * fy, fn });
+  const chrome = '#cfd5da', black = '#1d2023', safety = '#edc321';
+
+  // ----- prime mover: conventional bonnet, bull bar, sleeper, twin stacks, tandem drive. Front at y = F, facing +y (out the doors)
+  function primeMover(cx, F, col, fleet) {
+    const P = (x, y, f) => add(cx + x, F - y, f);
+    P(0, 5, () => {   // bull bar: frame, hoops and lower bumper
+      box(cx, F - 3, 70, 5, 8, '#9ea6ad', '#c3cacf', 10);
+      box(cx, F - 3, 70, 4, 4, '#9ea6ad', '#c3cacf', 44);
+      for (const x of [-33, -18, 18, 33]) box(cx + x, F - 3, 4, 4, 38, '#a9b0b6', '#c3cacf', 8);
+      box(cx, F - 9, 64, 7, 12, '#2b2f33', '#3a3f44', 16);
     });
-  }
-  add(48,120,()=>box(48,120,17,23,18,'#d7dce0','#f4f5f6'));
-  // Open roller-door side, outdoor path and separate transportable crib room.
-  face([[-160,260,0],[0,260,0],[0,SHOP_DEPTH+40,0],[-160,SHOP_DEPTH+40,0]],'#a76a45');
-  add(SHOP_CRIB.x,SHOP_CRIB.y,()=>{
-    box(SHOP_CRIB.x,SHOP_CRIB.y,SHOP_CRIB.w,SHOP_CRIB.h,42,'#d0d5d8','#758a9a');
-    box(SHOP_CRIB.x+25,SHOP_CRIB.y+SHOP_CRIB.h/2+1,15,2,30,'#244d6c');
-  });
-  // High roof trusses and suspended lights.
-  for(const yy of [55,145,235,325])add(200,yy,()=>{
-    box(198,yy,WK.w-16,3,3,'#65737c','#aab5bc',SHOP_HEIGHT-10);
-    for(const xx of [60,190,325])box(xx,yy,28,8,2,'#dbe5ed','#fff4c8',SHOP_HEIGHT-15);
-  });
-  // MGM-inspired workshop reference upgrade: corrugated walls, steel portals,
-  // yellow overhead cranes, inspection-pit guardrails, rim stacks and safety furniture.
-  // Approximate placement only: reference photos do not establish measured dimensions.
-  const steel='#74818a', darkSteel='#53616b', safety='#edc321';
-  // Corrugated side walls with regularly spaced portal frames and girts.
-  for(const side of [0,WK.w]){
-    for(let yy=18;yy<SHOP_DEPTH-12;yy+=14){
-      add(side,yy,()=>box(side,yy,1.5,12,SHOP_HEIGHT-9,'#9da8ae','#b7c0c5'));
+    P(0, 14, () => { box(cx, F - 13, 36, 2, 40, chrome, chrome, 30); for (let z = 34; z < 68; z += 5) box(cx, F - 12, 32, 1, 1.6, '#333a40', '#333a40', z); });   // grille
+    P(0, 46, () => box(cx, F - 46, 42, 64, 40, col, shade(col, 1.08), 32));                          // bonnet
+    for (const s of [-1, 1]) {
+      P(s * 28, 44, () => { box(cx + s * 28, F - 44, 15, 56, 8, col, shade(col, 1.05), 29); box(cx + s * 28, F - 19, 13, 2, 6, '#fff7cf', '#fff', 33); box(cx + s * 28, F - 18.5, 5, 1.5, 3, '#ffa21a', '#ffa21a', 40); });   // guards + lights
+      P(s * 27, 48, () => tyre(cx + s * 27, F - 48, 13.5, 11));                                            // steer tyre
+      P(s * 36, 74, () => { vcyl(cx + s * 36, F - 74, 6, 38, 86, chrome); box(cx + s * 36, F - 74, 2, 2, 8, '#888', '#888', 86); });   // air cleaner
+      P(s * 36, 150, () => { box(cx + s * 37, F - 150, 13, 54, 18, chrome, '#e6eaed', 10); box(cx + s * 37, F - 150, 13.5, 2, 18.5, '#8e979e', '#8e979e', 10); });   // fuel tank + strap
+      P(s * 34, 112, () => { box(cx + s * 36, F - 112, 9, 18, 2, '#9aa2a8', '#c0c6cb', 14); box(cx + s * 36, F - 112, 9, 18, 2, '#9aa2a8', '#c0c6cb', 25); });   // cab steps
+      P(s * 33, 137, () => { vcyl(cx + s * 33, F - 137, 3.6, 40, 152, chrome); box(cx + s * 33, F - 137, 8, 8, 30, '#aab2b8', '#c8ced2', 70); });   // exhaust stack + heat shield
+      P(s * 21, 266, () => box(cx + s * 21, F - 266, 26, 76, 2, '#2c2f33', '#3c4045', 30));             // drive guards
+      for (const y of [250, 283]) for (const o of [15, 26]) P(s * o, y, () => tyre(cx + s * o, F - y, 13.5, 10));
+      P(s * 22, 306, () => box(cx + s * 22, F - 306, 22, 1.2, 16, '#111', '#111', 4));                  // mudflaps
+      P(s * 30, 300, () => box(cx + s * 30, F - 302, 6, 2, 3, '#e01818', '#e01818', 26));               // tail lights
     }
-    for(const yy of [18,102,190,278,355])add(side,yy,()=>{
-      box(side,yy,7,7,SHOP_HEIGHT,steel,'#aab4bb');
-      box(side,yy,9,9,5,darkSteel,'#7f8d96');
+    P(0, 210, () => box(cx, F - 210, 32, 210, 10, black, '#2b2f33', 22));                                 // chassis rails
+    P(0, 105, () => {                                                                                  // day cab
+      box(cx, F - 105, 64, 54, 52, col, shade(col, 1.08), 34);
+      box(cx, F - 78.4, 56, 1, 19, '#25404f', '#25404f', 64); box(cx, F - 78, 2, 1.4, 19, '#333', '#333', 64);   // split windscreen
+      for (const s of [-1, 1]) { box(cx + s * 32.3, F - 96, 1, 26, 17, '#2a4554', '#2a4554', 66); box(cx + s * 32.4, F - 112, 1, 3, 2, chrome, chrome, 58);
+        box(cx + s * 39, F - 82, 2, 5, 14, '#2e3236', '#2e3236', 64); }   // side windows, handles, mirrors
+      box(cx, F - 80, 64, 8, 3, col, shade(col, 1.1), 86);
+      for (const x of [-24, -12, 0, 12, 24]) box(cx + x, F - 79, 4, 3, 2, '#ffa21a', '#ffc34a', 89);   // visor marker lights
     });
-    for(const zz of [30,65,93])add(side,185,()=>box(side,185,3,SHOP_DEPTH-15,2,darkSteel,darkSteel,zz));
+    P(0, 158, () => { box(cx, F - 158, 64, 52, 70, col, shade(col, 1.08), 34); box(cx, F - 158, 60, 46, 4, '#d9dde0', '#e9ecee', 104); });   // sleeper + roof
+    P(0, 255, () => { box(cx, F - 255, 46, 40, 5, '#202326', '#383d42', 33); box(cx, F - 260, 10, 14, 1, '#5a5f63', '#6c7278', 38); });   // fifth wheel
+    P(0, 190, () => { box(cx - 6, F - 190, 2, 30, 2, '#c22', '#c22', 44); box(cx + 6, F - 190, 2, 30, 2, '#2255cc', '#2255cc', 44); });   // air lines to the trailer
+    P(-33, 105, () => label(cx - 32.5, F - 104, 50, fleet, 7, '#fff'));
+    P(33, 105, () => label(cx + 32.5, F - 104, 50, fleet, 7, '#fff'));
   }
-  // Large open bay mouths, lintels and protective yellow bollards.
-  for(let i=0;i<6;i++){
-    const bx=wkBayX(i)-WK.x;
-    add(bx,SHOP_DEPTH-4,()=>{
-      box(bx,SHOP_DEPTH-4,BAY_W-5,3,10,'#75818a','#aeb9c0',SHOP_HEIGHT-15);
-      for(const side of [-1,1]){
-        box(bx+side*(BAY_W/2-3),SHOP_DEPTH-9,5,6,37,safety,safety);
-        box(bx+side*(BAY_W/2-3),SHOP_DEPTH-9,7,7,2,'#5b5c55');
-      }
-    });
-  }
-  // Overhead yellow gantry crane rails, cross-beams and suspended hoist blocks.
-  for(const yy of [115,270])add(WK.w/2,yy,()=>{
-    for(const xx of [12,WK.w-12])box(xx,yy,6,72,8,safety,'#f9d849',SHOP_HEIGHT-25);
-    box(WK.w/2,yy,WK.w-22,8,14,'#d7a90e','#f3c62a',SHOP_HEIGHT-20);
-    box(WK.w/2,yy,24,16,9,'#5b6168','#747b82',SHOP_HEIGHT-31);
-    box(WK.w/2,yy,3,3,19,'#34393e','#34393e',SHOP_HEIGHT-49);
-  });
-  // Recessed inspection pits: yellow rail posts, double guard rails and access gates.
-  for(const i of PIT_BAYS){
-    const pit=shopPit(i), py0=pit.y, py1=pit.y+pit.h;
-    for(const side of [-1,1]){
-      const xx=pit.x+side*(pit.w/2+6);
-      for(let yy=py0+10;yy<py1-8;yy+=33)add(xx,yy,()=>box(xx,yy,2.4,2.4,23,safety,safety));
-      add(xx,(py0+py1)/2,()=>{
-        box(xx,(py0+py1)/2,2,py1-py0-20,2,safety,safety,14);
-        box(xx,(py0+py1)/2,2,py1-py0-20,2,safety,safety,23);
+  // ----- side-tipper ore trailer: tub with ribs, tip rams, landing legs, tri-axle duals. Front at y = T0
+  function trailer(cx, T0, lift = 0, loaded = false) {
+    const P = (x, y, f) => add(cx + x, T0 - y, f), z = lift, col = '#b8237a';
+    P(0, 150, () => box(cx, T0 - 150, 34, 300, 10, black, '#2b2f33', 34 + z));
+    for (let k = 0; k < 6; k++) {   // tub in sections so it sorts well against people walking beside it
+      const yc = 25 + k * 50;
+      P(0, yc, () => {
+        box(cx, T0 - yc, 54, 50, 14, shade(col, .85), col, 44 + z);
+        box(cx, T0 - yc, 66, 50, 38, col, '#7a1752', 58 + z);
+        for (const s of [-1, 1]) { box(cx + s * 33.4, T0 - yc + 24, 1.6, 4, 38, shade(col, .7), shade(col, .7), 58 + z); box(cx + s * 33.6, T0 - yc, 2, 50, 3, '#d9409a', '#e766b0', 93 + z); }
+        if (loaded) box(cx, T0 - yc, 60, 50, 6, '#8a5a44', '#9b6a52', 92 + z);
       });
     }
-    add(pit.x,py0+9,()=>box(pit.x,py0+9,pit.w+12,2,3,safety,safety,22));
-  }
-  // Heavy-duty workbenches and red drawer cabinets along the right-hand wall.
-  for(const yy of [72,152,245,315])add(WK.w-20,yy,()=>{
-    box(WK.w-19,yy,27,35,16,'#b6a16e','#d6c194');
-    box(WK.w-28,yy,13,25,18,'#a72b2b','#d2473c');
-    for(const zz of [6,11,16])box(WK.w-28,yy+13,10,1,1,'#c7cdd1','#e3e7e8',zz);
-  });
-  // Silver wheel-rim stacks and tyre storage from the workshop reference images.
-  for(const yy of [92,126,160])add(42,yy,()=>{
-    for(const zz of [3,11,19,27]){
-      box(42,yy,18,18,5,'#68737a','#dce1e3',zz);
-      box(42,yy,11,11,1,'#4e5960','#9ca6ac',zz+5);
+    P(0, 2, () => { box(cx, T0 - 1, 66, 2, 40, shade(col, .8), '#7a1752', 56 + z); vcyl(cx, T0 - 4, 4, 30 + z, 92 + z, chrome); });   // headboard + front tip ram
+    P(0, 298, () => { box(cx, T0 - 298, 66, 2, 40, shade(col, .8), '#7a1752', 56 + z); vcyl(cx, T0 - 296, 4, 30 + z, 92 + z, chrome);
+      box(cx, T0 - 303, 64, 4, 8, '#2b2f33', '#3a3f44', 22 + z); for (const s of [-1, 1]) box(cx + s * 26, T0 - 305, 8, 1, 4, '#e01818', '#e01818', 24 + z); });
+    for (const s of [-1, 1]) {
+      P(s * 20, 70, () => { box(cx + s * 20, T0 - 70, 5, 5, 32 + z, '#5a6066', '#6a7076', 2); box(cx + s * 20, T0 - 70, 12, 10, 2, '#3b4045', '#4a5056', 0); });   // landing legs
+      P(s * 27, 243, () => box(cx + s * 27, T0 - 243, 24, 104, 2, '#2c2f33', '#3c4045', 32 + z));
+      if (!z) for (const y of [215, 243, 271]) for (const o of [15, 26]) P(s * o, y, () => tyre(cx + s * o, T0 - y, 13.5, 10));
+      P(s * 22, 290, () => box(cx + s * 22, T0 - 290, 22, 1.2, 16, '#111', '#111', 6 + z));
     }
+    if (z) for (const s of [-1, 1]) for (const y of [215, 243, 271]) P(s * 20, y, () => box(cx + s * 20, T0 - y, 6, 6, 12, '#555c62', '#707880', z + 22));   // bare hubs
+  }
+  // ----- mobile column hoist (yellow), one per wheel position
+  const hoist = (x, y, h) => add(x, y, () => { box(x, y, 16, 22, 4, '#2b2f33', '#3b4045'); box(x, y, 10, 10, h + 30, safety, '#f6d64a', 4); box(x, y, 4, 18, 3, '#444', '#555', h + 8); box(x, y, 12, 12, 8, '#d8a90f', '#e9bd25', h + 28); });
+
+  // ----- outside: sky, red-dirt yard, crib room
+  rect(0, 0, W, horizon, '#a7c3d9'); rect(0, horizon - 14, W, 14, '#8b9d7a'); rect(0, horizon, W, H - horizon, '#9c5634');
+  flat(-600, -400, SH_W + 600, SH_D + 900, -.05, '#a35a36');
+  add(SH_CRIB.x, SH_CRIB.y, () => {
+    const c = SH_CRIB, ex = c.x + c.w / 2;
+    box(c.x, c.y, c.w, c.h, 10, '#6d6f71', '#7d7f81');                     // skid base
+    box(c.x, c.y, c.w, c.h, 50, '#e3e6e8', '#9aa3aa', 10);
+    box(c.x, c.y, c.w + 6, c.h + 6, 3, '#1d5fb4', '#1d5fb4', 60);           // roof trim
+    box(ex + .6, c.y, 1, 20, 36, '#1d5fb4', '#1d5fb4', 10);                 // door
+    for (const s of [-1, 1]) box(ex + .6, c.y + s * 26, 1, 16, 12, '#2a4554', '#2a4554', 34);
+    box(ex + 10, c.y, 20, 28, 9, '#8d9297', '#a3a8ad', 0); box(ex + 6, c.y, 12, 28, 4, '#8d9297', '#a3a8ad', 9);   // steps
+    box(c.x - 10, c.y - c.h / 2 - 5, 24, 8, 16, '#d8dcdf', '#bfc5ca', 28);  // split-system AC
+    if (CX > ex) label(ex + 1, c.y, 66, 'CRIB ROOM', 10, '#1d5fb4');   // sign is on the door side only
+  }, outside);
+  add(-60, 480, () => { vcyl(-60, 480, 22, 0, 70, '#5e7f5a', '#4e6b4b'); }, outside);   // water tank
+  add(-240, 640, () => { box(-240, 640, 40, 60, 30, '#b5482f', '#9a3a26'); }, outside);  // sea container end
+
+  // ----- the shed shell (always behind everything inside it)
+  const inside = CX >= 0;
+  const shell = () => {
+    flat(0, 0, SH_W, SH_D, 0, '#8d9296');                                   // polished slab
+    for (let i = 0; i < 6; i++) {
+      const x = sbx(i);
+      flat(x - SB / 2 + 4, 12, x - SB / 2 + 8, SH_D - 4, .1, safety); flat(x + SB / 2 - 8, 12, x + SB / 2 - 4, SH_D - 4, .1, safety);   // bay lines
+      if (i % 2 === 0) flat(x - SB / 2 + 10, SH_D - 30, x + SB / 2 - 10, SH_D - 26, .1, '#e8e8e8');  // stop line
+    }
+    flat(4, 90, SH_W - 4, 100, .1, '#2fa84a'); flat(4, 104, SH_W - 4, 108, .1, '#2fa84a');   // green pedestrian walkway across the back
+    for (const i of PIT_BAYS) {
+      const p = shopPit(i), x0 = p.x - p.w / 2, x1 = p.x + p.w / 2;
+      flat(x0 - 4, p.y0 - 4, x1 + 4, p.y1 + 4, .15, safety);
+      for (let y = p.y0 - 4; y < p.y1 + 4; y += 16) flat(x0 - 4, y, x1 + 4, y + 8, .16, '#232323');   // hazard stripes
+      flat(x0, p.y0, x1, p.y1, .2, '#121518');
+      for (let y = p.y1 - 6; y > p.y1 - 40; y -= 8) flat(x0 + 2, y, x1 - 2, y + 2, .25, '#4a4f54');  // stairs down
+    }
+    // ceiling, purlins and high-bay LED lights
+    flat(0, 0, SH_W, SH_D, SH_H, '#c8ced2');
+    for (let y = 30; y < SH_D; y += 60) flat(0, y, SH_W, y + 3, SH_H - .5, '#97a1a8');
+    for (let i = 0; i < 6; i++) for (let y = 130; y < SH_D; y += 160) flat(sbx(i) - 12, y - 6, sbx(i) + 12, y + 6, SH_H - 1, '#fffbe6');
+    // walls (inner faces) with corrugation, girts and portal frames
+    const wall = (pts, col) => face(pts, col);
+    wall([[0, 0, 0], [SH_W, 0, 0], [SH_W, 0, SH_H], [0, 0, SH_H]], '#b9c1c6');
+    wall([[SH_W, 0, 0], [SH_W, SH_D, 0], [SH_W, SH_D, SH_H], [SH_W, 0, SH_H]], '#aab3b9');
+    wall([[0, 0, 0], [0, SH_DOOR.y0, 0], [0, SH_DOOR.y0, SH_H], [0, 0, SH_H]], '#aab3b9');
+    wall([[0, SH_DOOR.y1, 0], [0, SH_D, 0], [0, SH_D, SH_H], [0, SH_DOOR.y1, SH_H]], '#aab3b9');
+    wall([[0, SH_DOOR.y0, 56], [0, SH_DOOR.y1, 56], [0, SH_DOOR.y1, SH_H], [0, SH_DOOR.y0, SH_H]], '#aab3b9');
+    wall([[0, SH_D, 185], [SH_W, SH_D, 185], [SH_W, SH_D, SH_H], [0, SH_D, SH_H]], '#9aa4ab');   // front header
+    for (let y = 10; y < SH_D; y += 20) { if (y > SH_DOOR.y0 - 4 && y < SH_DOOR.y1 + 4) continue; face([[1, y, 0], [1, y + 4, 0], [1, y + 4, SH_H], [1, y, SH_H]], '#9ca6ad'); face([[SH_W - 1, y, 0], [SH_W - 1, y + 4, 0], [SH_W - 1, y + 4, SH_H], [SH_W - 1, y, SH_H]], '#9ca6ad'); }
+    for (const z of [60, 120, 175]) { face([[1, 0, z], [1, SH_D, z], [1, SH_D, z + 3], [1, 0, z + 3]], '#7e8a92'); face([[SH_W - 1, 0, z], [SH_W - 1, SH_D, z], [SH_W - 1, SH_D, z + 3], [SH_W - 1, 0, z + 3]], '#7e8a92'); }
+    // back wall: closed roller doors for bays 3-6, a two-storey store and office across bays 1-2
+    for (let i = 2; i < 6; i++) {
+      const x = sbx(i);
+      face([[x - 62, 1, 0], [x + 62, 1, 0], [x + 62, 1, 180], [x - 62, 1, 180]], '#d4d9dc');
+      for (let z = 8; z < 180; z += 9) face([[x - 62, 1.5, z], [x + 62, 1.5, z], [x + 62, 1.5, z + 1.5], [x - 62, 1.5, z + 1.5]], '#aab1b6');
+      face([[x - 66, 1.2, 0], [x - 62, 1.2, 0], [x - 62, 1.2, 186], [x - 66, 1.2, 186]], '#6c777f'); face([[x + 62, 1.2, 0], [x + 66, 1.2, 0], [x + 66, 1.2, 186], [x + 62, 1.2, 186]], '#6c777f');
+    }
+    // lines on the floor are part of the slab; signage on the walls
+    face([[SH_W - 1.5, 470, 95], [SH_W - 1.5, 560, 95], [SH_W - 1.5, 560, 140], [SH_W - 1.5, 470, 140]], '#f4f6f7');   // whiteboard
+  };
+  const leftWallOutside = () => {   // seen from the yard: the shed's corrugated Bay 1 wall with its door opening
+    const c = '#c7ced3';
+    face([[0, 0, 0], [0, SH_DOOR.y0, 0], [0, SH_DOOR.y0, SH_H], [0, 0, SH_H]], c);
+    face([[0, SH_DOOR.y1, 0], [0, SH_D, 0], [0, SH_D, SH_H], [0, SH_DOOR.y1, SH_H]], c);
+    face([[0, SH_DOOR.y0, 56], [0, SH_DOOR.y1, 56], [0, SH_DOOR.y1, SH_H], [0, SH_DOOR.y0, SH_H]], c);
+    for (let y = 10; y < SH_D; y += 20) if (y < SH_DOOR.y0 - 4 || y > SH_DOOR.y1 + 4) face([[-.5, y, 0], [-.5, y + 4, 0], [-.5, y + 4, SH_H], [-.5, y, SH_H]], '#aeb6bc');
+    face([[-1, SH_DOOR.y0 - 3, 56], [-1, SH_DOOR.y1 + 3, 56], [-1, SH_DOOR.y1 + 3, 60], [-1, SH_DOOR.y0 - 3, 60]], '#1d5fb4');
+    label(-1, (SH_DOOR.y0 + SH_DOOR.y1) / 2, 70, 'WORKSHOP', 9, '#1d5fb4');
+  };
+
+  // ----- interior objects
+  const L = shopL;
+  primeMover(sbx(L.bay), L.F, '#f062a4', 'C509');
+  trailer(sbx(L.bay), L.T0, 0, L.loaded);
+  primeMover(sbx(L.pm.bay), L.pm.F, L.pm.col, L.pm.fleet);
+  trailer(sbx(L.tr.bay), L.tr.T0, 16, false);
+  for (const s of [-1, 1]) for (const y of [L.tr.T0 - 40, L.tr.T0 - 243]) hoist(sbx(L.tr.bay) + s * 46, y, 16);
+  // pit guard rails where no vehicle is over the pit
+  for (const i of PIT_BAYS) if (i !== L.bay && i !== L.pm.bay && i !== L.tr.bay) {
+    const p = shopPit(i);
+    for (const s of [-1, 1]) for (let y = p.y0 + 20; y < p.y1 - 10; y += 80) {
+      const x = p.x + s * (p.w / 2 + 6);
+      add(x, y + 40, () => { box(x, y, 2.4, 2.4, 28, safety); box(x, y + 40, 2, 80, 2, safety, safety, 26); box(x, y + 40, 2, 80, 2, safety, safety, 15); });
+    }
+  }
+  // two-storey parts store / office across the back of bays 1-2, with stairs
+  add(SB, 40, () => {
+    const o = SH_OFFICE;
+    box(SB, 40, o.x1, 80, 200, '#e1e4e6', '#c6ccd0');
+    face([[30, 80.5, 30], [270, 80.5, 30], [270, 80.5, 70], [30, 80.5, 70]], '#2b4655');   // parts counter window
+    box(150, 84, 240, 8, 3, '#7a7f84', '#9aa0a5', 30);                                     // counter
+    face([[20, 80.5, 120], [290, 80.5, 120], [290, 80.5, 170], [20, 80.5, 170]], '#335468');  // office windows upstairs
+    box(SB, 84, o.x1, 8, 2, '#5a6066', '#7a8086', 100);                                     // mezzanine floor edge
+    box(SB, 87, o.x1, .8, 1.5, safety, safety, 128); box(SB, 87, o.x1, .8, 1.2, safety, safety, 114);   // mezzanine handrail
+    label(150, 81, 82, 'PARTS', 12, '#1d5fb4'); label(150, 81, 180, 'WORKSHOP OFFICE', 9, '#1d5fb4');
   });
-  // Blue/red wheelie bins and yellow bollards near open entrances.
-  for(const [xx,yy,col] of [[24,SHOP_DEPTH-45,'#256fc3'],[WK.w-22,SHOP_DEPTH-45,'#9d2d32'],[WK.w-28,52,'#226cbd']])add(xx,yy,()=>{
-    box(xx,yy,16,18,27,col,col);
-    box(xx,yy,19,21,3,'#1d2931','#303d48',27);
-    box(xx-7,yy+9,4,4,4,'#20252a');box(xx+7,yy+9,4,4,4,'#20252a');
+  for (let k = 0; k < 10; k++) { const x = 410 - k * 10; add(x, 92, () => box(x, 92, 10, 18, (k + 1) * 10, '#6c757c', '#8a939a')); }   // stairs up to the mezzanine
+  add(365, 101, () => box(365, 101.5, 100, 1.2, 1.5, safety, safety, 40));
+  // tyre bay gear: rack of new tyres on the Bay 1 wall, inflation cage, wheel dolly
+  for (let k = 0; k < 9; k++) { const y = 215 + k * 34; add(22, y, () => { tyre(22, y, 13.5, 12, '#7d858c'); }); }
+  add(22, 360, () => { box(8, 360, 2, 320, 2, '#d62828', '#d62828', 30); box(8, 360, 2, 320, 2, '#d62828', '#d62828', 4); });
+  add(40, 120, () => { box(40, 120, 46, 38, 2, '#333', '#444'); for (const [x, y] of [[-21, -17], [21, -17], [-21, 17], [21, 17]]) box(40 + x, 120 + y, 3, 3, 46, '#d62828'); for (const z of [14, 30, 46]) { box(40, 103, 46, 2, 2, '#d62828', '#d62828', z); box(40, 137, 46, 2, 2, '#d62828', '#d62828', z); box(19, 120, 2, 38, 2, '#d62828', '#d62828', z); box(61, 120, 2, 38, 2, '#d62828', '#d62828', z); } });
+  add(40, 120, () => tyre(40, 120, 13.5, 12));
+  // right wall: workbenches with vices, tool cabinets, bulk oil, parts washer, hose reels, extinguishers
+  for (const y of [260, 380, 500]) add(SH_W - 24, y, () => {
+    box(SH_W - 24, y, 30, 60, 3, '#7d6f52', '#a8946a', 32);
+    for (const s of [-1, 1]) box(SH_W - 24, y + s * 27, 28, 3, 32, '#3b4b5c');
+    box(SH_W - 30, y - 18, 8, 10, 6, '#245c9e', '#2f6fb8', 35);   // vice
+    face([[SH_W - 1.4, y - 30, 45], [SH_W - 1.4, y + 30, 45], [SH_W - 1.4, y + 30, 90], [SH_W - 1.4, y - 30, 90]], '#6f7a83');   // pegboard
   });
-  // Warm industrial fixtures on the gantries. No per-frame gradients for mobile performance.
-  for(const yy of [55,145,235,325])for(const xx of [65,195,325])add(xx,yy,()=>{
-    box(xx,yy,18,9,2,'#e8e4ce','#fff8d5',SHOP_HEIGHT-18);
+  add(SH_W - 24, 620, () => { box(SH_W - 24, 620, 30, 40, 44, '#b52d2d', '#d44739'); for (let z = 6; z < 42; z += 6) box(SH_W - 39.5, 620, 1, 34, 1, '#e0e4e7', '#e0e4e7', z); });
+  add(SH_W - 42, 172, () => { for (const [x, y, c] of [[-14, -14, '#1f4fa0'], [14, -14, '#1f4fa0'], [-14, 14, '#2b7a3d'], [14, 14, '#d9a400']]) vcyl(SH_W - 42 + x, 172 + y, 11, 0, 34, c); });   // 205 L oil drums
+  add(SH_W - 26, 700, () => { box(SH_W - 26, 700, 34, 40, 34, '#2f6f9f', '#3a82b8'); box(SH_W - 26, 700, 30, 36, 2, '#9aa3aa', '#c3cacf', 34); });   // parts washer
+  for (let i = 1; i < 6; i++) add(i * SB, 60, () => {   // hose reel post between the bays: air, oil and grease
+    box(i * SB, 60, 8, 8, 120, '#5e6c77', '#7a8892');
+    for (const [z, c] of [[100, '#d62828'], [84, '#1f4fa0'], [68, '#2fa84a']]) { box(i * SB, 64, 14, 4, 14, c, shade(c, 1.2), z); }
   });
-  for(const m of shopCrew)add(m.x,m.y,()=>human(m));
-  objects.sort((a,b)=>b.d-a.d);for(const o of objects)if(o.d>-60)o.fn();
-  rect(0,0,W,77,'#152633e8');text('WORKSHOP - FIRST PERSON',W/2,26,19,'#ffe568');
-  text('W/S walk  A/D turn  |  Avoid pits and workers',W/2,52,13,'#fff');
-  text(cribReached?'MISSION COMPLETE - RETURN TO ENTRANCE':'OBJECTIVE: EXIT BAY 1 LEFT TO EXTERNAL CRIB ROOM',W/2,102,15,cribReached?'#83f5a3':'#ffe568');
-  if(msgT>0)text(msg,W/2,133,13,'#ffe568');
-  if(isTouch){drawStick();drawBtns(DB);if(cribReached&&workshopFoot.x>0&&workshopFoot.y>SHOP_DEPTH-45)drawBtn([340,570,132,52],'ENTER CAB',false);}
-  ctx.strokeStyle='#fff9';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(235,350);ctx.lineTo(245,350);ctx.moveTo(240,345);ctx.lineTo(240,355);ctx.stroke();
+  for (const [x, y] of [[SH_W - 3, 330], [SH_W - 3, 560], [3, 520], [3, 650]]) add(x, y, () => { vcyl(x + Math.sign(SH_W / 2 - x) * 4, y, 3, 30, 46, '#d62828'); box(x, y, 1, 16, 20, '#e8e8e8', '#e8e8e8', 50); });
+  // portal frames on the side walls carrying the overhead crane runway
+  for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#6b7881', '#8a97a0'); });
+  for (const x of [9, SH_W - 9]) for (let y = 65; y < SH_D; y += 130) add(x, y, () => box(x, y, 8, 130, 8, safety, '#f6d64a', SH_H - 48));
+  // two overhead gantry cranes spanning the shed, in per-bay sections so they sort cleanly
+  for (const [gy, hoistBay] of [[300, L.pm.bay], [600, 3]]) for (let i = 0; i < 6; i++) add(sbx(i), gy, () => {
+    box(sbx(i), gy, SB, 10, 12, '#d7a90e', '#f3c62a', SH_H - 52);
+    if (i === hoistBay) { box(sbx(i), gy, 22, 18, 10, '#4d545a', '#62696f', SH_H - 64); box(sbx(i), gy, 1.2, 1.2, 60, '#222', '#222', SH_H - 124); box(sbx(i), gy, 6, 4, 6, safety, safety, SH_H - 128); }
+  });
+  // open front: columns with bollards, rolled-up roller doors and bay numbers
+  for (let i = 0; i <= 6; i++) add(i * SB, SH_D - 6, () => { box(i * SB, SH_D - 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, SH_D + 6, 8, 8, 34, safety, '#f6d64a'); });
+  for (let i = 0; i < 6; i++) add(sbx(i), SH_D - 8, () => { box(sbx(i), SH_D - 10, SB - 12, 12, 14, '#c9cfd3', '#dde2e5', 178); label(sbx(i), SH_D - 1, 205, `BAY ${i + 1}`, 14, i === L.bay ? '#ffe568' : '#fff'); });
+  for (const m of shopCrew) add(m.x, m.y, () => human(m));
+
+  if (inside) { outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
+  shell();
+  objs.sort((a, b) => b.d - a.d); for (const o of objs) if (o.d > -80) o.fn();
+  if (!inside) { leftWallOutside(); outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
+
+  // ----- HUD
+  const atCab = cribReached && shopAtCab();
+  rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - ON FOOT', W / 2, 26, 19, '#ffe568');
+  text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
+  text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (C509, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: BAY 1 SIDE DOOR, THEN THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
+  if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
+  if (isTouch) { drawStick(); drawBtns(DB); if (atCab) drawBtn([340, 570, 132, 52], 'ENTER CAB', false); }
+  ctx.strokeStyle = '#fff9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(235, horizon); ctx.lineTo(245, horizon); ctx.moveTo(240, horizon - 5); ctx.lineTo(240, horizon + 5); ctx.stroke();
 }
 function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
@@ -1210,7 +1364,7 @@ const P = (x, y, z = 0) => {
 const rgbCache = {};
 function shade(c, f) {
   let v = rgbCache[c];
-  if (!v) { let s = c.slice(1); if (s.length === 3) s = s.replace(/./g, m => m + m); v = rgbCache[c] = [0, 2, 4].map(i => parseInt(s.substr(i, 2), 16)); }
+  if (!v) { if (c[0] === 'r') v = rgbCache[c] = c.match(/\d+/g).slice(0, 3).map(Number); else { let s = c.slice(1); if (s.length === 3) s = s.replace(/./g, m => m + m); v = rgbCache[c] = [0, 2, 4].map(i => parseInt(s.substr(i, 2), 16)); } }
   return `rgb(${Math.min(255, v[0] * f) | 0},${Math.min(255, v[1] * f) | 0},${Math.min(255, v[2] * f) | 0})`;
 }
 function poly(pts, col) {
