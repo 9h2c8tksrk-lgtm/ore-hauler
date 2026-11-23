@@ -906,6 +906,75 @@ function drawWorkshopFoot(){
     box(198,yy,WK.w-16,3,3,'#65737c','#aab5bc',SHOP_HEIGHT-10);
     for(const xx of [60,190,325])box(xx,yy,28,8,2,'#dbe5ed','#fff4c8',SHOP_HEIGHT-15);
   });
+  // MGM-inspired workshop reference upgrade: corrugated walls, steel portals,
+  // yellow overhead cranes, inspection-pit guardrails, rim stacks and safety furniture.
+  // Approximate placement only: reference photos do not establish measured dimensions.
+  const steel='#74818a', darkSteel='#53616b', safety='#edc321';
+  // Corrugated side walls with regularly spaced portal frames and girts.
+  for(const side of [0,WK.w]){
+    for(let yy=18;yy<SHOP_DEPTH-12;yy+=14){
+      add(side,yy,()=>box(side,yy,1.5,12,SHOP_HEIGHT-9,'#9da8ae','#b7c0c5'));
+    }
+    for(const yy of [18,102,190,278,355])add(side,yy,()=>{
+      box(side,yy,7,7,SHOP_HEIGHT,steel,'#aab4bb');
+      box(side,yy,9,9,5,darkSteel,'#7f8d96');
+    });
+    for(const zz of [30,65,93])add(side,185,()=>box(side,185,3,SHOP_DEPTH-15,2,darkSteel,darkSteel,zz));
+  }
+  // Large open bay mouths, lintels and protective yellow bollards.
+  for(let i=0;i<6;i++){
+    const bx=wkBayX(i)-WK.x;
+    add(bx,SHOP_DEPTH-4,()=>{
+      box(bx,SHOP_DEPTH-4,BAY_W-5,3,10,'#75818a','#aeb9c0',SHOP_HEIGHT-15);
+      for(const side of [-1,1]){
+        box(bx+side*(BAY_W/2-3),SHOP_DEPTH-9,5,6,37,safety,safety);
+        box(bx+side*(BAY_W/2-3),SHOP_DEPTH-9,7,7,2,'#5b5c55');
+      }
+    });
+  }
+  // Overhead yellow gantry crane rails, cross-beams and suspended hoist blocks.
+  for(const yy of [115,270])add(WK.w/2,yy,()=>{
+    for(const xx of [12,WK.w-12])box(xx,yy,6,72,8,safety,'#f9d849',SHOP_HEIGHT-25);
+    box(WK.w/2,yy,WK.w-22,8,14,'#d7a90e','#f3c62a',SHOP_HEIGHT-20);
+    box(WK.w/2,yy,24,16,9,'#5b6168','#747b82',SHOP_HEIGHT-31);
+    box(WK.w/2,yy,3,3,19,'#34393e','#34393e',SHOP_HEIGHT-49);
+  });
+  // Recessed inspection pits: yellow rail posts, double guard rails and access gates.
+  for(const i of PIT_BAYS){
+    const pit=shopPit(i), py0=pit.y, py1=pit.y+pit.h;
+    for(const side of [-1,1]){
+      const xx=pit.x+side*(pit.w/2+6);
+      for(let yy=py0+10;yy<py1-8;yy+=33)add(xx,yy,()=>box(xx,yy,2.4,2.4,23,safety,safety));
+      add(xx,(py0+py1)/2,()=>{
+        box(xx,(py0+py1)/2,2,py1-py0-20,2,safety,safety,14);
+        box(xx,(py0+py1)/2,2,py1-py0-20,2,safety,safety,23);
+      });
+    }
+    add(pit.x,py0+9,()=>box(pit.x,py0+9,pit.w+12,2,3,safety,safety,22));
+  }
+  // Heavy-duty workbenches and red drawer cabinets along the right-hand wall.
+  for(const yy of [72,152,245,315])add(WK.w-20,yy,()=>{
+    box(WK.w-19,yy,27,35,16,'#b6a16e','#d6c194');
+    box(WK.w-28,yy,13,25,18,'#a72b2b','#d2473c');
+    for(const zz of [6,11,16])box(WK.w-28,yy+13,10,1,1,'#c7cdd1','#e3e7e8',zz);
+  });
+  // Silver wheel-rim stacks and tyre storage from the workshop reference images.
+  for(const yy of [92,126,160])add(42,yy,()=>{
+    for(const zz of [3,11,19,27]){
+      box(42,yy,18,18,5,'#68737a','#dce1e3',zz);
+      box(42,yy,11,11,1,'#4e5960','#9ca6ac',zz+5);
+    }
+  });
+  // Blue/red wheelie bins and yellow bollards near open entrances.
+  for(const [xx,yy,col] of [[24,SHOP_DEPTH-45,'#256fc3'],[WK.w-22,SHOP_DEPTH-45,'#9d2d32'],[WK.w-28,52,'#226cbd']])add(xx,yy,()=>{
+    box(xx,yy,16,18,27,col,col);
+    box(xx,yy,19,21,3,'#1d2931','#303d48',27);
+    box(xx-7,yy+9,4,4,4,'#20252a');box(xx+7,yy+9,4,4,4,'#20252a');
+  });
+  // Warm industrial fixtures on the gantries. No per-frame gradients for mobile performance.
+  for(const yy of [55,145,235,325])for(const xx of [65,195,325])add(xx,yy,()=>{
+    box(xx,yy,18,9,2,'#e8e4ce','#fff8d5',SHOP_HEIGHT-18);
+  });
   for(const m of shopCrew)add(m.x,m.y,()=>human(m));
   objects.sort((a,b)=>b.d-a.d);for(const o of objects)if(o.d>-60)o.fn();
   rect(0,0,W,77,'#152633e8');text('WORKSHOP - FIRST PERSON',W/2,26,19,'#ffe568');
