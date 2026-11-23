@@ -367,7 +367,10 @@ function spawn() {
     traffic.push({ x: LANE_X[lane], lx: LANE_X[lane], y: -100, w: 34, h: truck ? 90 : 56, v: (oncoming ? -110 : 40 + Math.random() * 40) * D().vel, col, truck, oncoming });
   } else {
     const dir = Math.random() < .5 ? 1 : -1;
-    animals.push({ x: (dir > 0 ? ROAD_L - 40 : ROAD_R + 40) + roadAt(scroll + qy + 40), y: -40, dir, w: 44, h: 28, type: Math.random() < .5 ? 'cow' : 'roo', col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', vx: (35 + Math.random() * 25) * D().vel, ph: 0 });
+    const r = Math.random(), type = r < .45 ? 'cow' : r < .82 ? 'roo' : 'emu';
+    const vx = type === 'cow' ? 30 + Math.random() * 15 : type === 'roo' ? 45 + Math.random() * 20 : 60 + Math.random() * 20;   // cattle amble, roos bound, emus run
+    animals.push({ x: (dir > 0 ? ROAD_L - 40 : ROAD_R + 40) + roadAt(scroll + qy + 40), y: -40, dir, w: type === 'cow' ? 46 : 30, h: type === 'cow' ? 22 : 16, type,
+      col: ['#1e1e1e', '#6b3e1f', '#bdb6aa'][Math.floor(Math.random() * 3)], vx: vx * D().vel, ph: Math.random() * 6 });
   }
 }
 
@@ -1254,9 +1257,9 @@ function update(dt) {
   bayReady = bf ? 0 : rigInBay();
   const ro0 = roadAt(scroll);
   if ((qx < ROAD_L + ro0 - 10 || qx > ROAD_R + ro0 + 10) && speed > 90 && !bayAtS(scroll)) speed -= 200 * dt;
-  if (!ret && warned < 1 && scroll > HILL) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
+  if (!ret && warned < 1 && scroll > HILL) { warned = 1; flash('Highway! Dodge traffic, cattle, roos & emus'); }
   else if (!ret && warned < 2 && scroll > R - CLIMB - 300) { warned = 2; flash('Steep climb ahead!'); }
-  else if (ret && warned < 1 && scroll > CLIMB) { warned = 1; flash('Highway! Dodge traffic, cows & kangaroos'); }
+  else if (ret && warned < 1 && scroll > CLIMB) { warned = 1; flash('Highway! Dodge traffic, cattle, roos & emus'); }
   else if (ret && warned < 2 && scroll > R - HILL) { warned = 2; flash('Uphill to the ROM - keep the throttle on'); }
 
   dist += speed * dt / 4; scroll += speed * dt;
@@ -1286,7 +1289,10 @@ function update(dt) {
   for (const a of animals) {
     a.y += speed * dt;
     if (a.hit) { a.x += a.fvx * dt; a.y += a.fvy * dt; a.fvx *= 1 - Math.min(1, dt * 1.5); a.fvy *= 1 - Math.min(1, dt * 1.5); a.rot += a.fw * dt; a.fw *= 1 - Math.min(1, dt * 1.2); a.t += dt; }
-    else { a.x += a.dir * a.vx * dt; a.ph += dt * 8; }
+    else {   // a roo covers ground in bursts while it's in the air; an emu's legs cycle faster
+      const k = a.type === 'roo' ? .35 + 1.3 * Math.max(0, Math.sin((a.ph * .6) % (2 * Math.PI))) : 1;
+      a.x += a.dir * a.vx * k * dt; a.ph += dt * (a.type === 'emu' ? 11 : a.type === 'cow' ? 5 : 8);
+    }
   }
   const parts = [{ x: qx, y: qy, w: 30, h: 44, idx: -1 }];
   for (let i = 0; i < NT; i++) { const p = chainPose(jts, i); parts.push({ x: p.x, y: p.y, w: 34, h: 54, idx: i }); }
@@ -1298,8 +1304,8 @@ function update(dt) {
     if (o.type) {
       const side = o.x < qx ? -1 : 1;
       Object.assign(o, { fvx: side * (90 + speed * .5), fvy: -(60 + speed * .6), fw: side * (7 + Math.random() * 4), rot: 0, t: 0 });
-      burst(o.x, o.y, o.type === 'cow' ? o.col : '#c8895a', 12);
-      damage(o.type === 'cow' ? 30 : 15, `${o.type === 'cow' ? 'Cow collision' : 'Kangaroo strike'}! ${isTouch ? 'Tap WORKSHOP' : 'H = workshop'}`, p.idx);
+      burst(o.x, o.y, o.type === 'cow' ? o.col : o.type === 'emu' ? '#4a3b2e' : '#b8653a', 12);
+      damage(o.type === 'cow' ? 30 : o.type === 'emu' ? 12 : 15, `${o.type === 'cow' ? 'Cow collision' : o.type === 'emu' ? 'Emu strike' : 'Kangaroo strike'}! ${isTouch ? 'Tap WORKSHOP' : 'H = workshop'}`, p.idx);
       speed *= .4; hurtByStock = true;
     }
     else damage(25, p.idx < 0 ? 'Hit a vehicle!' : `Trailer ${p.idx + 1} clipped!`, p.idx), speed *= .3;
@@ -1752,37 +1758,72 @@ function trailer3(x, y, i, f, lid) {
     for (let k = 1; k < 5; k++) topRect(x0, y0 + k * l / 5, x0 + lw, y0 + k * l / 5 + 1.5, TOP + 3, 'rgba(0,0,0,.12)');
   }
 }
+// highway wildlife, built from boxes in the driving view. Faces +x when dir = 1. Cattle (black, Hereford, Brahman),
+// red kangaroos that lean and hop in bursts, and emus.
 function animal3(a) {
-  const d = a.dir, { x, y } = a, s = Math.sin(a.ph);
+  const d = a.dir, { x, y } = a, X = k => x + d * k;
   if (a.type === 'cow') {
-    const dark = a.col === '#1e1e1e', sw = Math.sin(a.ph), bob = Math.abs(Math.sin(a.ph)) * 1.2, hide = dark ? '#f1f1f1' : '#f0e4d0';
-    shadow(x, y, 46, 22);
-    // legs swing in diagonal pairs along the body, hooves dark
-    for (const [ox, oy, k] of [[-13, -6, 1], [-13, 6, -1], [12, -6, -1], [12, 6, 1]]) {
-      const lx = x + ox * d + k * sw * 4 * d, lift = Math.max(0, k * Math.cos(a.ph)) * 2;
-      box(lx, y + oy, 4, 4, lift, 11, a.col); box(lx, y + oy, 4.4, 4.4, lift, 3 + lift, '#151515');
+    const c = a.col, brahman = c === '#bdb6aa', hereford = c === '#6b3e1f', white = '#efe8dc', dk = shade(c, .78);
+    const walk = a.go !== false, sw = walk ? Math.sin(a.ph) : 0, bob = walk ? Math.abs(Math.cos(a.ph)) * .8 : 0;
+    shadow(x, y, 50, 20);
+    for (const [ox, oy, k] of [[-12, -5, 1], [11, -5, -1], [-12, 5, -1], [11, 5, 1]]) {   // far legs first; diagonal pairs swing together
+      const sx = X(ox) + k * sw * 3.5 * d, lift = Math.max(0, k * Math.cos(a.ph)) * (walk ? 1.6 : 0);
+      box(X(ox), y + oy, 4, 4, 8, 16, dk);                                  // upper leg
+      box(sx, y + oy, 3, 3, lift + 1.5, 9, dk);                             // lower leg
+      box(sx, y + oy, 3.6, 3.6, lift, lift + 2, '#141414');                 // hoof
     }
-    box(x - d * 1, y, 34, 20, 10 + bob, 27 + bob, a.col);
-    box(x - d * 4, y, 10, 21, 17 + bob, 26 + bob, hide);          // white saddle patch
-    box(x + d * 8, y - 3, 8, 8, 20 + bob, 27.5 + bob, hide);
-    box(x + d * 14, y, 9, 15, 15 + bob, 26 + bob, a.col);         // shoulder / neck base
-    const hd = Math.sin(a.ph * .5) * 1.5 + (a.go === false ? -2 : 0);       // grazing head dip while standing
-    box(x + d * 21, y, 11, 11, 13 + hd + bob, 25 + hd + bob, a.col);
-    box(x + d * 27, y, 5, 8, 13 + hd + bob, 19 + hd + bob, dark ? '#d9b8a8' : '#e8c9b4');   // muzzle
-    for (const sy of [-6.5, 6.5]) box(x + d * 19, y + sy, 4, 3, 24 + hd + bob, 26 + hd + bob, a.col);
-    for (const sy of [-3, 3]) box(x + d * 21, y + sy, 1.5, 1.5, 25.5 + hd + bob, 29 + hd + bob, '#ddd');
-    const tw = Math.sin(a.ph * 1.3) * 3;                           // tail swish
-    box(x - d * 18, y + tw, 2, 2, 12, 27 + bob, '#151515'); box(x - d * 18, y + tw * 1.4, 4, 4, 6, 12, '#151515');
+    box(X(-10), y, 13, 15, 14 + bob, 29 + bob, c);                         // haunch
+    box(X(0), y, 12, 17, 13 + bob, 30 + bob, c);                           // barrel
+    box(X(10), y, 11, 15, 14 + bob, 29 + bob, c);                          // chest
+    box(X(0), y, 22, 12, 12 + bob, 14 + bob, dk);                          // belly
+    if (brahman) box(X(12), y, 7, 9, 29 + bob, 34 + bob, shade(c, .9));    // hump
+    box(X(18), y, 8, 9, 18 + bob, 28 + bob, c);                            // neck
+    box(X(19), y, 4, 4, 12 + bob, 18 + bob, hereford ? white : dk);       // dewlap
+    const hd = walk ? Math.sin(a.ph * .5) : -4 + Math.sin(a.ph * .4) * 1.5;   // nods while walking, grazes when stopped
+    box(X(24), y, 9, 9, 14 + hd + bob, 24 + hd + bob, hereford ? white : c);   // head
+    box(X(29), y, 4, 7, 13 + hd + bob, 19 + hd + bob, brahman ? '#3a3632' : hereford ? '#e6c9b6' : '#2a2a2a');   // muzzle
+    for (const s of [-1, 1]) {
+      box(X(22), y + s * 6.5, 4, brahman ? 3 : 4, (brahman ? 15 : 19) + hd + bob, (brahman ? 21 : 22) + hd + bob, brahman ? shade(c, .85) : c);   // ears (droopy on a Brahman)
+      if (!brahman) box(X(23), y + s * 3.5, 2, 2, 24 + hd + bob, 26.5 + hd + bob, '#d9cfb6');   // horns
+    }
+    const tw = Math.sin(a.ph * 1.3) * 2.5;                                 // tail swish
+    box(X(-17), y + tw * .5, 2, 2, 16, 29 + bob, dk); box(X(-17), y + tw, 3.5, 3.5, 9, 16, '#161616');
+  } else if (a.type === 'emu') {
+    const walk = a.go !== false, sw = walk ? Math.sin(a.ph) : 0, bob = Math.abs(Math.cos(a.ph)) * 1.5;
+    shadow(x, y, 22, 12);
+    for (const [oy, k] of [[-2.5, 1], [2.5, -1]]) {
+      const f = X(k * sw * 5), lift = Math.max(0, k * Math.cos(a.ph)) * 3;
+      box(X(-1), y + oy, 2.6, 2.6, 13, 21 + bob, '#7d7466');               // thigh
+      box(f, y + oy, 2, 2, lift + 1, 14, '#8a8172');                         // shank
+      box(f + d * 1.5, y + oy, 5, 2.5, lift, lift + 1.2, '#5e574c');        // foot
+    }
+    box(X(0), y, 18, 11, 18 + bob, 31 + bob, '#4a3b2e');                    // shaggy body
+    box(X(-7), y, 7, 9, 20 + bob, 29 + bob, '#3e3126');                     // rump feathers
+    box(X(0), y, 14, 9, 31 + bob, 33 + bob, '#5a4836');
+    box(X(8), y, 3.5, 3.5, 28 + bob, 38 + bob, '#5b6878');                  // neck
+    box(X(9.5), y, 3, 3, 38 + bob, 45 + bob, '#7b8a9e');
+    box(X(10.5), y, 4.5, 4, 44 + bob, 48 + bob, '#3a3a3a');                 // head
+    box(X(13.5), y, 3, 2, 45 + bob, 46.5 + bob, '#2a2a2a');                 // beak
   } else {
-    const hop = Math.abs(Math.sin(a.ph * .6)) * 10;
-    shadow(x, y, 20, 16);
-    box(x - d * 12, y, 15, 5, 4 + hop, 10 + hop, '#b97a4a');
-    box(x - d * 3, y, 8, 12, hop + 3, hop + 12, '#b97a4a');
-    box(x, y, 12, 12, hop + 8, hop + 30, '#c8895a');
-    box(x + d * 4, y, 9, 9, hop + 30, hop + 38, '#c8895a');
-    box(x + d * 8, y, 4, 6, hop + 31, hop + 35, '#d9a07a');
-    for (const sx of [-2, 2]) box(x + d * 4 + sx * 1.5, y, 2, 3, hop + 38, hop + 47, '#c8895a');
-    box(x + d * 4, y + 5, 6, 3, hop + 18, hop + 21, '#b97a4a');
+    // red kangaroo: upright with its weight on the tail when standing; in a hop it lifts, tips forward about 30 degrees and stretches out
+    const hp = (a.ph * .6) % (2 * Math.PI), still = a.go === false, air = still ? 0 : Math.max(0, Math.sin(hp)), h = air * 12, L = still ? 0 : .45 + air * .35;
+    const fur = '#b8653a', pale = '#dcae86', dark = '#8d4a28', K = 1.15, Z = z => h + z * K, F = k => X(k * K);
+    shadow(x + d * 2, y, 26, 12);
+    for (const s of [-1, 1]) {
+      box(F(3 + air * 3), y + s * 3.4, 12 * K, 3, h, h + 2.5, dark);           // long hind feet
+      box(F(-1 + air * 2), y + s * 3.4, 6, 3.6, Z(2), Z(9), fur);              // shins
+    }
+    box(F(-2), y, 11 * K, 10, Z(7), Z(17), fur);                               // big thighs
+    box(F(-10 - L * 2), y, 8, 5, Z(7 - L * 2), Z(12 - L * 2), fur);           // tail: thick at the base...
+    box(F(-17 - L * 3), y, 8, 3.6, Z(3 - L * 2), Z(7 - L * 2), fur);
+    box(F(-23 - L * 4), y, 7, 2.6, Math.max(0, Z(-L * 3)), Z(3.5 - L * 2), dark);   // ...tapering towards the ground
+    box(F(0 + L * 2), y, 9, 9, Z(15), Z(25 - L), fur);                         // lower body
+    box(F(2 + L * 5), y, 7, 7.5, Z(23 - L * 1.5), Z(31 - L * 2.5), pale);      // chest
+    box(F(6 + L * 6), y, 3.5, 6.5, Z(21 - L * 2), Z(24 - L * 2), fur);         // forearms held in
+    box(F(4 + L * 7), y, 6, 6, Z(30 - L * 2.5), Z(36 - L * 2.5), fur);         // head
+    box(F(8 + L * 7), y, 5, 3.5, Z(30.5 - L * 2.5), Z(33.5 - L * 2.5), pale);  // snout
+    box(F(10.4 + L * 7), y, 1.2, 2, Z(31.5 - L * 2.5), Z(33 - L * 2.5), '#2a1a12');   // nose
+    for (const s of [-1, 1]) box(F(3 + L * 7), y + s * 1.8, 2, 1.6, Z(35 - L * 2.5), Z(42 - L * 3), fur);   // tall ears
   }
 }
 function drawAnimal3(a) {
@@ -2251,8 +2292,8 @@ campWing('D', 635, 748, 85, 38, 'S', 0); campWing('D', 635, 890, 85, 38, 'S', 0)
 campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 3, 0, -1); campDoors('D', 673, 786, 673, 890, 3, 1, 0);
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
 const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [760, 1100, 85, 160], office: [670, 1090, 80, 45] };
-const CAR_SPOTS = [805, 835, 865].map(y => ({ x: 744, y: y - 8, w: 28, h: 16, mine: y === 835 }));
-const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: 758, y: 835, nx: 0, ny: 0 };
+const CAR_SPOTS = [805, 835, 865].map(y => ({ x: 730, y: y - 13, w: 64, h: 26, mine: y === 835 }));   // utes nose-out towards the aisle
+const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: 762, y: 835, nx: 0, ny: 0 };
 const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
 const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
@@ -2490,7 +2531,8 @@ function updateWalk(dt) {
   }
   if (!shiftStart && wStage === 0 && atDoor(OFFICE_DOOR, wp)) { wStage = 1; flash(homeRoom >= 0 ? `Paperwork in! Back to Room ${CAMP_DOORS[wRoom].name}` : `Paperwork in! You're in Room ${CAMP_DOORS[wRoom].name}`); msgT = 4; }
 
-  if (shiftStart && wStage === 1 && Math.hypot(wp.x - YOUR_UTE.x, wp.y - YOUR_UTE.y) < 30) { toUte(); return; }
+  const mu = CAR_SPOTS.find(c => c.mine);   // close to any side of your ute (it's parked between two others, so the nose and tray are the way in)
+  if (shiftStart && wStage === 1 && Math.hypot(Math.max(mu.x - wp.x, 0, wp.x - mu.x - mu.w), Math.max(mu.y - wp.y, 0, wp.y - mu.y - mu.h)) < 16) { toUte(); return; }
   if (wStage === 1 && !shiftStart) CAMP_DOORS.forEach((d, i) => {
     if (!atDoor(d, wp)) return;
     if (i === wRoom) { wStage = 2; state = 'walkend'; ptrs.clear(); syncBtns(); }
@@ -2501,7 +2543,9 @@ function updateWalk(dt) {
 const WF = 520, WCY = H * .5, WPH = .45, WCH = 70, WNEAR = 6, wCos = Math.cos(WPH), wSin = Math.sin(WPH);
 const wCamPt = (x, y, z) => { const dx = x - wCam.x, dy = y - wCam.y, v = z - WCH, f = dx * wCam.hx + dy * wCam.hy; return [dx * wCam.rx + dy * wCam.ry, f * wCos - v * wSin, v * wCos + f * wSin]; };
 const wProj = q => [W / 2 + WF * q[0] / q[1], WCY - WF * q[2] / q[1]];
+let polySink = null;   // when set, wPoly queues polygons (sorted and flushed by the caller) instead of drawing
 function wPoly(pts, col) {
+  if (polySink) { let d = 0; for (const p of pts) d += wCamPt(p[0], p[1], p[2])[1]; polySink.push({ d: d / pts.length, pts, col }); return; }
   let q = pts.map(p => wCamPt(p[0], p[1], p[2])), o = [];
   for (let i = 0; i < q.length; i++) {   // clip against the near plane
     const A = q[i], B = q[(i + 1) % q.length], ia = A[1] >= WNEAR, ib = B[1] >= WNEAR;
@@ -2586,26 +2630,47 @@ function campHuman(x,y,moustache=false,player=false) {
   const faces=ovalSink;ovalSink=outerSink;
   faces.sort((a,b)=>b.d-a.d);for(const f of faces)wPoly(f.q,f.col);
 }
-function campUteModel(x,y,col) {
-  // Reverse-in parking: vehicle rear faces the bay and bonnet faces the aisle.
-  const parkedBox=(bx,by,w,l,z0,z1,wall,roof)=>wBox(2*x-bx,2*y-by,w,l,z0,z1,wall,roof);
-  parkedBox(x,y,24,31,2,10,col,col);
-  for(const side of [-1,1])for(const off of [-10,10]){
-    parkedBox(x+side*12,y+off,4.5,6,0,9,'#15181c','#15181c');
+// wheel on an axle across the vehicle (world y axis): tread, sidewall and a white steel rim on the camera side
+function wWheel(x, y, r, w, rim = '#e9ebec') {
+  const N = 12, y0 = y - w / 2, y1 = y + w / 2;
+  for (let k = 0; k < N; k++) {
+    const a0 = k / N * 2 * Math.PI, a1 = (k + 1) / N * 2 * Math.PI, nc = Math.cos((a0 + a1) / 2), ns = Math.sin((a0 + a1) / 2);
+    if ((wCam.x - x) * nc + (WCH - r) * ns <= 0) continue;
+    wPoly([[x + Math.cos(a0) * r, y0, r + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, r + Math.sin(a1) * r], [x + Math.cos(a1) * r, y1, r + Math.sin(a1) * r], [x + Math.cos(a0) * r, y1, r + Math.sin(a0) * r]], k % 2 ? '#1c1d1f' : '#26282a');
   }
-  parkedBox(x,y-3,21,18,10,20,col,col);
-  parkedBox(x,y-4,19,13,20,22,'#6d8a9a','#9cb3c0');
-  parkedBox(x,y+11,22,12,9,12,'#737f86','#737f86');
-  parkedBox(x,y+16,22,2,8,14,'#bfc5c9','#bfc5c9');
-  for(const side of [-1,1]){
-    parkedBox(x+side*12,y-5,2,7,13,19,'#536e80','#536e80');
-    parkedBox(x+side*12.8,y-12,3,3,14,17,'#22282d','#22282d');
-    parkedBox(x+side*8,y+17,3,1,9,12,'#bf2929','#bf2929');
-  }
-  parkedBox(x,y+6,19,2,12,27,'#c6cbd0','#c6cbd0');
-  parkedBox(x+8,y+6,1,1,27,43,'#444','#444');
-  parkedBox(x+8,y+6,9,1,40,43,'#f47718','#f47718');
-  parkedBox(x,y-4,5,4,22,24,'#dc9d22','#dc9d22');
+  const sy = wCam.y < y0 ? y0 : wCam.y > y1 ? y1 : null; if (sy === null) return;
+  const disc = (k, col, dy) => wPoly(Array.from({ length: N }, (_, i) => [x + Math.cos(i / N * 2 * Math.PI) * r * k, sy + dy, r + Math.sin(i / N * 2 * Math.PI) * r * k]), col);
+  const o = Math.sign(sy - y);
+  disc(1, '#161718', 0); disc(.6, rim, o * .15); disc(.22, shade(rim, .62), o * .3);
+}
+// white mine-spec dual-cab ute, nose towards +x (out to the car park aisle): about as tall as the walker
+function campUteModel(x, y, col) {
+  const outer = polySink; polySink = [];
+  const B = (u, v, l, w, z0, z1, c, roof = c) => wBox(x + u, y + v, l, w, z0, z1, c, roof);
+  B(0, 0, 58, 20, 5, 9, '#25282b');                                   // chassis
+  for (const u of [19, -18]) for (const s of [-1, 1]) { B(u, s * 11.8, 16, 4, 12.6, 15, '#202326'); wWheel(x + u, y + s * 11.5, 6.2, 5); }   // flares + wheels
+  B(23, 0, 16, 23, 9, 20, col, shade(col, 1.04));                    // bonnet
+  B(31.2, 0, 1.5, 15, 11, 18, '#2c3034');                            // grille
+  for (const s of [-1, 1]) { B(31.4, s * 8.5, 1, 4, 15, 17.5, '#fff8d8'); B(31.4, s * 10.8, 1, 1.6, 13, 14.5, '#ffa21a'); }
+  B(34, 0, 2.5, 26, 6, 9, '#2f3337'); B(34, 0, 2, 24, 18, 20, '#2f3337');                     // bull bar
+  for (const v of [-11, -4, 4, 11]) B(34, v, 2, 2, 8, 19, '#3a3f44');
+  B(2, 0, 28, 24, 9, 21, col, shade(col, 1.04));                     // dual cab lower body
+  B(2.5, 0, 24, 23, 21, 30, '#2e4a5b', '#2e4a5b');                    // glasshouse
+  for (const u of [-9, 2.5, 14]) B(u, 0, 1.6, 23.4, 21, 30, col);     // pillars (A, B, C)
+  B(2.5, 0, 25, 24, 30, 32.5, col, shade(col, 1.08));                // roof
+  B(13, 0, 2, 20, 32.5, 34, '#1f2326'); for (const v of [-7, -2.5, 2, 6.5]) B(13.6, v, .6, 3.5, 32.7, 33.8, '#fff6c0');   // LED light bar
+  B(-6, 0, 3, 3, 32.5, 36, '#ff7a12', '#ffb04a');                    // amber beacon
+  B(16, 12.4, 2.2, 2.2, 14, 33, '#1c1f22'); B(17.5, 12.4, 3, 2.6, 33, 35, '#1c1f22');   // snorkel
+  for (const s of [-1, 1]) { B(16, s * 13.4, 2, 1, 23, 27, '#26292c'); B(2, s * 12.1, 26, .4, 13, 14.5, s < 0 ? '#d42020' : '#d42020'); }   // mirrors, reflective tape
+  B(-21, 0, 22, 25, 12, 13.5, '#a9b0b6', '#c7cdd2');                  // alloy tray
+  for (const s of [-1, 1]) { B(-21, s * 12, 22, 1, 13.5, 19, '#b7bec4', '#d3d8dc'); B(-21, s * 12.6, 22, .3, 14, 15.5, '#e8e8e8'); }   // drop sides + white tape
+  B(-31.5, 0, 1, 25, 13.5, 19, '#b7bec4', '#d3d8dc'); B(-10.5, 0, 1.2, 25, 13.5, 31, '#8f979d', '#aab1b7');   // tailgate, headboard
+  B(-24, 0, 12, 20, 13.5, 20, '#c4cacf', '#dde1e4');                 // toolbox on the tray
+  for (const s of [-1, 1]) { B(-32, s * 9.5, 1, 4, 11, 13, '#d01818'); B(-30, s * 9, 1, 6, 1, 7, '#151515'); }   // tail lights, mudflaps
+  B(-30, -11, 1, 1, 19, 64, '#e8e8e8');                              // buggy whip
+  B(-30, -14.5, 1, 7, 54, 63, '#ff6a00', '#ff8a2a');                 // safety flag
+  const faces = polySink; polySink = outer;
+  faces.sort((a, b) => b.d - a.d); for (const f of faces) wPoly(f.pts, f.col);
 }
 function drawWalk() {
   const hx = Math.cos(wCamH), hy = Math.sin(wCamH);
@@ -2630,7 +2695,7 @@ function drawWalk() {
   for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.mess, 'WET MESS', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
     add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, 30, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, 34, 11, '#fff'); }));
   const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
-  CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 29, 9, '#fff'); }));
+  CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 48, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
     const hz = d.ny !== 0, tx = -d.ny, ty = d.nx, px = d.x + d.nx * 3.2, py = d.y + d.ny * 3.2;
     wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, hz ? d.hw * 2 : 3, hz ? 3 : d.hw * 2, 0, 16, on ? '#ffe040' : '#7d8688', on ? '#ffe040' : '#7d8688');
@@ -3280,18 +3345,37 @@ function drawYardLife() {
   for (let k = 0; k < 3; k++) tyreDisc(TY_RACK.x, TY_RACK.y - k * 3, 9);
   for (let k = 0; k < 3 + wk.fit.piled; k++) tyreDisc(TY_SCRAP.x + ((k * 7) % 13) - 6, TY_SCRAP.y + ((k * 5) % 11) - 5 - Math.floor(k / 4) * 3, 8);
 }
+// automated drive-through truck wash: roofed bay with spray arches, brushes, drains, blast walls and a water tank
+const WASH_ARCH = [-62, 0, 62];   // spray arch positions along the bay, relative to WASH.y
+function washRigNow() {   // the rig cycling through the wash: cab y and its trailers, or null between visits
+  const cycle = (washClock % 34) / 34; if (cycle >= .72) return null;
+  const y = WASH.y + WASH.h / 2 + 130 - cycle / .72 * (WASH.h + 320), j = chainLine(WASH.x, y, 0, WK_SC * .75);
+  return { y, j, ys: [y, ...Array.from({ length: NT }, (_, i) => chainPose(j, i).y)] };
+}
+const washArchOn = (rig, ay) => rig && rig.ys.some(y => Math.abs(y - (WASH.y + ay)) < 34);
 function drawWashTop(){
-  const w=WASH;
-  rect(w.x-w.w/2,w.y-w.h/2,w.w,w.h,'#687c82');
-  for(let y=w.y-w.h/2;y<w.y+w.h/2;y+=18)rect(w.x-w.w/2,y,w.w,3,'#9dc7d7');
-  for(const x of [w.x-w.w/2,w.x+w.w/2])rect(x-3,w.y-w.h/2,6,w.h,'#e8b100');
-  text('TRUCK WASH',w.x,w.y-w.h/2-15,14,'#fff');
-  const cycle=(washClock%34)/34;
-  if(cycle<.72){
-    const y=w.y+w.h/2+130-cycle/.72*(w.h+320);
-    const j=chainLine(w.x,y,0,WK_SC*.75);
-    drawRig(j,w.x,y,0,WK_SC*.75,{fill:.2});
+  const w=WASH, x0=w.x-w.w/2, y0=w.y-w.h/2, t=washClock;
+  rect(x0-10,y0-14,w.w+20,w.h+28,'#9aa0a3');                       // apron
+  rect(x0,y0,w.w,w.h,'#5f6f75');                                   // wet concrete
+  for(const [px,py,r] of [[-14,-50,13],[10,30,10],[-6,74,9],[16,-80,7]]){ctx.fillStyle='rgba(150,200,225,.35)';ctx.beginPath();ctx.ellipse(w.x+px,w.y+py,r,r*.6,0,0,7);ctx.fill();}
+  rect(w.x-3,y0+6,6,w.h-12,'#2b3135'); for(let y=y0+8;y<y0+w.h-8;y+=5)rect(w.x-3,y,6,1,'#5b6469');   // drain grate
+  for(const x of [x0,x0+w.w-4])rect(x,y0,4,w.h,'#c9ccce');                                            // blast walls
+  for(const [bx,by] of [[x0-6,y0-10],[x0+w.w+2,y0-10],[x0-6,y0+w.h+6],[x0+w.w+2,y0+w.h+6]])rect(bx,by,4,4,'#e8b100');
+  const rig=washRigNow();
+  if(rig)drawRig(rig.j,w.x,rig.y,0,WK_SC*.75,{fill:.2});
+  for(const ay of WASH_ARCH){
+    const on=washArchOn(rig,ay), y=w.y+ay;
+    rect(x0-3,y-3,w.w+6,6,'#1d5fb4'); for(let x=x0+4;x<x0+w.w-2;x+=8)rect(x,y-1,2,2,'#9fd3ff');
+    if(on)for(let k=0;k<14;k++){const px=x0+4+((k*17+t*90)%(w.w-8)),py=y+Math.sin(k*2.1+t*14)*9;ctx.fillStyle='rgba(205,235,255,.55)';ctx.beginPath();ctx.arc(px,py,3+((k+t*20)%3),0,7);ctx.fill();}
   }
+  const brushOn=washArchOn(rig,-31);
+  for(const s of [-1,1]){const bx=w.x+s*(w.w/2-7),by=w.y-31;ctx.fillStyle='#173f80';ctx.beginPath();ctx.arc(bx,by,6,0,7);ctx.fill();
+    ctx.strokeStyle='#3f86d8';ctx.lineWidth=2;ctx.beginPath();const a=brushOn?t*12*s:0;ctx.moveTo(bx+Math.cos(a)*6,by+Math.sin(a)*6);ctx.lineTo(bx-Math.cos(a)*6,by-Math.sin(a)*6);ctx.stroke();}
+  ctx.fillStyle='rgba(205,214,220,.32)';ctx.fillRect(x0-6,y0+4,w.w+12,w.h-8);                         // translucent roof
+  for(const y of [y0+4,w.y,y0+w.h-8])for(const x of [x0-6,x0+w.w+2])rect(x,y,4,4,'#6c777f');           // roof posts
+  ctx.fillStyle='#3f6e4a';ctx.beginPath();ctx.arc(x0+w.w+30,y0+28,17,0,7);ctx.fill();ctx.fillStyle='#4f8a5c';ctx.beginPath();ctx.arc(x0+w.w+30,y0+28,12,0,7);ctx.fill();   // water tank
+  rect(x0+w.w+16,y0+56,28,22,'#c9ccce');rect(x0+w.w+16,y0+56,28,4,'#1d5fb4');                          // pump shed
+  text('TRUCK WASH',w.x,y0-20,14,'#fff');
 }
 function drawStructures() {
   for (const c of CONT) {
@@ -3383,17 +3467,31 @@ function drawWorkshopChase() {
   wall(GATE.x - GATE.w / 2 - 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100'); wall(GATE.x + GATE.w / 2 + 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100');
   { const [vx, vy] = V(GATE.x, WORLD.h - 50); if (near(vy)) list.push({ y: vy, fn: () => { const [sx, sy] = P(vx, vy, 30); text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', sx, sy, 14 * sc(vy), wk.done ? '#6f6' : '#ffd23a'); } }); }
   // Automated drive-through wash near the crib buildings.
-    flat(WASH.x-WASH.w/2,WASH.y-WASH.h/2,WASH.x+WASH.w/2,WASH.y+WASH.h/2,'#687c82');
-    for(const side of [-1,1])wall(WASH.x+side*WASH.w/2,WASH.y,5,WASH.h,0,34,'#e8b100');
-    for(const y of [WASH.y-WASH.h/2+12,WASH.y+WASH.h/2-12])wall(WASH.x,y,WASH.w,5,34,40,'#9dc7d7');
-    const washPhase=(washClock%34)/34;
-    if(washPhase<.72){
-      const wy=WASH.y+WASH.h/2+130-washPhase/.72*(WASH.h+320);
-      const wj=chainLine(WASH.x,wy,0,WK_SC*.75);
-      const washRig={x:WASH.x,y:wy,h:0,j:wj};
-      const [wx,wyv]=V(washRig.x,washRig.y);
-      if(near(wyv))list.push({y:wyv,fn:()=>chaseCab(wx,wyv,-th)});
-      for(let i=0;i<NT;i++){const p=chainPose(wj,i),[vx,vy]=V(p.x,p.y);if(near(vy))list.push({y:vy,fn:()=>chaseTrailer(vx,vy,p.a-th,i,.2,32,45)});}
+    { const w=WASH, x0=w.x-w.w/2, x1=w.x+w.w/2, y0=w.y-w.h/2, y1=w.y+w.h/2, rig=washRigNow();
+      flat(x0-10,y0-14,x1+10,y1+14,'#9aa0a3'); flat(x0,y0,x1,y1,'#5f6f75');
+      for(const [px,py,r] of [[-14,-50,13],[10,30,10],[-6,74,9],[16,-80,7]]){const [vx,vy]=V(w.x+px,w.y+py);if(near(vy))flatEllipse(vx,vy,r*Z,r*Z*.6,'rgba(150,200,225,.35)');}
+      flat(w.x-3,y0+6,w.x+3,y1-6,'#2b3135');
+      for(const sx of [x0+2,x1-2])wall(sx,w.y,4,w.h,0,14,'#c9ccce');                                   // concrete blast walls
+      for(const [bx,by] of [[x0-4,y0-8],[x1+4,y0-8],[x0-4,y1+8],[x1+4,y1+8]]){const [vx,vy]=V(bx,by);if(near(vy))list.push({y:vy,fn:()=>prism(vx,vy,5,5,0,22,'#e8b100',ang)});}
+      for(const ay of WASH_ARCH){   // blue spray arches: legs, cross beam, nozzles, and water when the rig is under them
+        const y=w.y+ay, on=washArchOn(rig,ay);
+        for(const sx of [x0-2,x1+2]){const [vx,vy]=V(sx,y);if(near(vy))list.push({y:vy,fn:()=>prism(vx,vy,4,4,0,56,'#1d5fb4',ang)});}
+        const [cx,cy]=V(w.x,y);
+        if(near(cy))list.push({y:cy+.5,fn:()=>{prism(cx,cy,(w.w+8)*Z,4,52,57,'#1d5fb4',ang);
+          if(on)for(let k=0;k<26;k++){const f=((k*.137+washClock*1.7)%1),u=(k%13)/12-.5,[px,py]=V(w.x+u*(w.w-6),y+Math.sin(k*3.1)*5),z=52-f*44;
+            const [sx,sy]=P(px,py,z),r=(1.6+f*2.4)*sc(py);ctx.fillStyle=`rgba(210,238,255,${.75-f*.5})`;ctx.beginPath();ctx.arc(sx,sy,r,0,7);ctx.fill();}}});
+      }
+      const bOn=washArchOn(rig,-31);
+      for(const s2 of [-1,1]){const [vx,vy]=V(w.x+s2*(w.w/2-7),w.y-31);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,10,10,2,44,'#173f80',ang);
+        for(let k=0;k<4;k++){const z=6+k*10+(bOn?(washClock*30)%10:0);if(z<44)prism(vx,vy,11,11,z,z+2,'#3f86d8',ang);}}});}
+      if(rig){const [wx,wyv]=V(w.x,rig.y);if(near(wyv))list.push({y:wyv,fn:()=>chaseCab(wx,wyv,-th)});
+        for(let i=0;i<NT;i++){const p=chainPose(rig.j,i),[vx,vy]=V(p.x,p.y);if(near(vy))list.push({y:vy,fn:()=>chaseTrailer(vx,vy,p.a-th,i,.2,32,45)});}}
+      for(const py of [y0+4,w.y,y1-4])for(const px of [x0-7,x1+7]){const [vx,vy]=V(px,py);if(near(vy))list.push({y:vy,fn:()=>prism(vx,vy,4,4,0,66,'#6c777f',ang)});}
+      for(let k=0;k<6;k++){const yy=y0+w.h*(k+.5)/6,[vx,vy]=V(w.x,yy);   // translucent polycarbonate roof, in slices so it sorts over the rig
+        if(near(vy))list.push({y:vy+40,fn:()=>{ctx.globalAlpha=.38;prism(vx,vy,(w.w+18)*Z,w.h/6*Z,64,67,'#cfd8de',ang);ctx.globalAlpha=1;}});}
+      {const [vx,vy]=V(x1+30,y0+28);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,30*Z,30*Z,0,52,'#4f8a5c',ang);prism(vx,vy,31*Z,31*Z,52,55,'#3f6e4a',ang);}});}
+      {const [vx,vy]=V(x1+30,y0+67);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,28*Z,22*Z,0,30,'#c9ccce',ang);prism(vx,vy,29*Z,23*Z,30,33,'#1d5fb4',ang);}});}
+      {const [vx,vy]=V(w.x,y0-16);if(near(vy))list.push({y:vy,fn:()=>{const [sx,sy]=P(vx,vy,74);text('TRUCK WASH',sx,sy,14*sc(vy),'#fff');}});}
     }
     // workshop side walls, sea containers and the arched shelter
   // workshop shell: side walls, then a front and back wall with a doorway for every bay
