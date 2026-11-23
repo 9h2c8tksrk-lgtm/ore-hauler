@@ -45,7 +45,8 @@ const onHwy = () => ret ? scroll < R - HILL : scroll >= HILL;
 const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyway
 const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
 const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
-const GATE = { x: 960, w: 140 };   // yard entry/exit gap in the bottom fence
+const GATE = { x: 960, w: 140 };
+const BUND = 24, BUND_H = 26, BUND_GAP = GATE.w / 2 + 8;   // earth bund round the yard edge: width, height, half-width of the opening at the gate   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const LADDER = { x: 88, y: 1102 }, BEACON_AT = { x: 95, y: 1104, z: 48 };   // beside the second parked truck's cab; its left roof beacon is being swapped
@@ -1208,7 +1209,8 @@ function updateWorkshop(dt) {
 
   const fx = wk.x + Math.sin(wk.h) * 14, fy = wk.y - Math.cos(wk.h) * 14;
   if (wk.done && fy > WORLD.h - 8 && Math.abs(fx - GATE.x) < GATE.w / 2) return wkHome();
-  if (fx < 8 || fx > WORLD.w - 8 || fy < 8 || fy > WORLD.h - 8) return crash(wk.done ? 'Use the yard gate to leave' : 'Out of the yard! Start again');
+  const inGate = Math.abs(fx - GATE.x) < BUND_GAP - 6;
+  if (fx < BUND || fx > WORLD.w - BUND || fy < BUND || fy > WORLD.h - 4 || (fy > WORLD.h - BUND && !inGate)) return crash(wk.done ? 'Hit the bund! Use the yard gate to leave' : 'Ran into the bund! Start again');
   if (wkInside(fx, fy)) {
     if (wk.done) return crash('Crashed into the workshop!');
     if (fy > WK.y + 14) return wkBump('Crashed into the workshop!');
@@ -3367,6 +3369,25 @@ function washRigNow() {   // every rig part (cab or trailer) inside the wash, fr
   return ys.length ? { ys } : null;
 }
 const washArchOn = (rig, ay) => rig && rig.ys.some(y => Math.abs(y - (WASH.y + ay)) < 34);
+// earth bund round the yard: outer slope, crest and inner slope, with rocks and spinifex, open at the gate
+function bundSegs() {   // edge runs as [x0, y0, x1, y1, inward normal]
+  const g0 = GATE.x - BUND_GAP, g1 = GATE.x + BUND_GAP, Wd = WORLD.w, Hd = WORLD.h;
+  return [[0, 0, Wd, 0, 0, 1], [Wd, 0, Wd, Hd, -1, 0], [Wd, Hd, g1, Hd, 0, -1], [g0, Hd, 0, Hd, 0, -1], [0, Hd, 0, 0, 1, 0]];
+}
+function drawBundTop() {
+  for (const [x0, y0, x1, y1, nx, ny] of bundSegs()) {
+    const band = (a, b, col) => { const ax = Math.min(x0, x1) + (nx > 0 ? a : nx < 0 ? -b : 0), ay = Math.min(y0, y1) + (ny > 0 ? a : ny < 0 ? -b : 0);
+      rect(ax, ay, nx ? b - a : Math.abs(x1 - x0), ny ? b - a : Math.abs(y1 - y0), col); };
+    band(0, 7, '#7a3219'); band(7, 13, '#c8703f'); band(13, BUND, '#a5492a'); band(BUND, BUND + 4, 'rgba(60,20,8,.22)');
+  }
+  for (let i = 0; i < 140; i++) {   // rocks and spinifex tufts on the bund
+    const [x0, y0, x1, y1, nx, ny] = bundSegs()[i % 5], t = hash(i * 7.3), o = 3 + hash(i * 3.1) * (BUND - 6);
+    const x = x0 + (x1 - x0) * t + nx * o, y = y0 + (y1 - y0) * t + ny * o;
+    if (hash(i * 1.7) < .5) { ctx.fillStyle = '#5e2a16'; ctx.beginPath(); ctx.ellipse(x, y, 3 + hash(i) * 3, 2 + hash(i) * 2, 0, 0, 7); ctx.fill(); }
+    else { ctx.fillStyle = '#9a9a4a'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill(); }
+  }
+  for (const s of [-1, 1]) { ctx.fillStyle = '#a5492a'; ctx.beginPath(); const ex = GATE.x + s * BUND_GAP; ctx.moveTo(ex, WORLD.h); ctx.lineTo(ex, WORLD.h - BUND); ctx.lineTo(ex + s * 10, WORLD.h - BUND); ctx.lineTo(ex + s * 10, WORLD.h); ctx.fill(); }   // ramped ends at the opening
+}
 function drawWashTop(){
   const w=WASH, x0=w.x-w.w/2, y0=w.y-w.h/2, t=washClock;
   rect(x0-10,y0-14,w.w+20,w.h+28,'#9aa0a3');                       // apron
@@ -3438,6 +3459,12 @@ function drawWorkshopChase() {
   const V = (x, y) => { const dx = (x - wk.x) * Z, dy = (y - wk.y) * Z; return [W / 2 + dx * c - dy * sn, VY + dx * sn + dy * c]; };
   const near = y => y > -140 && y < H + 70;
   drawSky();
+  // Pilbara ranges beyond the yard: three layers that slide past as the rig turns
+  for (const [col, base, amp, k, par] of [['#8f6a86', 30, 26, .011, 140], ['#9a4c38', 14, 18, .023, 220], ['#b0583a', 4, 9, .05, 320]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, HOR + 2);
+    for (let x = 0; x <= W; x += 6) { const xx = x + th * par; ctx.lineTo(x, HOR - base - amp * (Math.max(0, Math.sin(xx * k)) * .7 + Math.sin(xx * k * 2.3 + 1) * .3 + .3)); }
+    ctx.lineTo(W, HOR + 2); ctx.fill();
+  }
   const g = ctx.createLinearGradient(0, HOR, 0, H);
   g.addColorStop(0, '#d29a74'); g.addColorStop(.18, '#b4552f'); g.addColorStop(1, '#8c3820');
   ctx.fillStyle = g; ctx.fillRect(0, HOR, W, H - HOR);
@@ -3482,9 +3509,23 @@ function drawWorkshopChase() {
     const [vx, vy] = V(x, y); if (near(vy)) flatEllipse(vx, vy, 18 * Z, 18 * Z * .8, wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.22)');
   }
   // fence posts round the yard, with the gate gap in the bottom side
-  const post = (x, y) => { const [vx, vy] = V(x, y); if (near(vy)) list.push({ y: vy, fn: () => prism(vx, vy, 8, 8, 0, 20, '#5a3a2a', ang) }); };
-  for (let x = 8; x <= WORLD.w - 8; x += 40) { post(x, 8); if (Math.abs(x - GATE.x) > GATE.w / 2) post(x, WORLD.h - 8); }
-  for (let y = 8; y <= WORLD.h - 8; y += 40) { post(8, y); post(WORLD.w - 8, y); }
+  // earth bund: each run cut into short sections (outer slope, crest, inner slope) so it sorts against the trucks
+  for (const [x0, y0, x1, y1, nx, ny] of bundSegs()) {
+    const len = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(len / 30);
+    for (let k = 0; k < n; k++) {
+      const ta = k / n, tb = (k + 1) / n, pt = (t, o, z) => { const [vx, vy] = V(x0 + (x1 - x0) * t + nx * o, y0 + (y1 - y0) * t + ny * o); return [vx, vy, z]; };
+      const [, my] = V(x0 + (x1 - x0) * (ta + tb) / 2 + nx * BUND, y0 + (y1 - y0) * (ta + tb) / 2 + ny * BUND);
+      const [, oy] = V(x0 + (x1 - x0) * (ta + tb) / 2, y0 + (y1 - y0) * (ta + tb) / 2);
+      if (!near(my) && !near(oy)) continue;
+      list.push({ y: Math.min(my, oy) - 30, fn: () => {
+        const q = (a, b, c, d, col) => poly([a, b, c, d].map(v => P(v[0], v[1], v[2])), col);
+        const ridge = k % 3 ? 0 : 3 * hash(k + x0 + y0);   // a little lumpiness along the crest
+        q(pt(ta, 0, 0), pt(tb, 0, 0), pt(tb, 9, BUND_H), pt(ta, 9, BUND_H), '#7a3219');
+        q(pt(ta, 9, BUND_H), pt(tb, 9, BUND_H), pt(tb, 14, BUND_H + ridge), pt(ta, 14, BUND_H + ridge), '#c8703f');
+        q(pt(ta, 14, BUND_H + ridge), pt(tb, 14, BUND_H + ridge), pt(tb, BUND, 0), pt(ta, BUND, 0), '#a5492a');
+      } });
+    }
+  }
   wall(GATE.x - GATE.w / 2 - 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100'); wall(GATE.x + GATE.w / 2 + 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100');
   { const [vx, vy] = V(GATE.x, WORLD.h - 50); if (near(vy)) list.push({ y: vy, fn: () => { const [sx, sy] = P(vx, vy, 30); text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', sx, sy, 14 * sc(vy), wk.done ? '#6f6' : '#ffd23a'); } }); }
   // Automated drive-through wash near the crib buildings.
@@ -3589,7 +3630,7 @@ function drawWorkshop() {
   rect(0, 0, WORLD.w, WORLD.h, '#a74626');
   for (let i = 0; i < 160; i++) rect((i * 97) % WORLD.w, (i * 61) % WORLD.h, 6, 6, '#85371f');
   ctx.fillStyle = 'rgba(40,16,8,.4)'; for (const m of marks) ctx.fillRect(m.x - 1.2, m.y - 1.2, 2.4, 2.4);
-  ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 10; ctx.setLineDash([24, 12]); ctx.strokeRect(5, 5, WORLD.w - 10, WORLD.h - 10); ctx.setLineDash([]);
+  drawBundTop();
   rect(GATE.x - GATE.w / 2, WORLD.h - 12, GATE.w, 12, '#a74626');
   rect(GATE.x - GATE.w / 2 - 6, WORLD.h - 40, 6, 40, '#e8b100'); rect(GATE.x + GATE.w / 2, WORLD.h - 40, 6, 40, '#e8b100');
   text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', GATE.x, WORLD.h - 50, 14, wk.done ? '#6f6' : '#ffd23a');
