@@ -554,10 +554,10 @@ function startReturn() {
 const PIT_BAYS = [1, 3, 4];   // bays 2, 4 and 5 (labelled from 1) have inspection pits
 const pitRect = i => ({ x0: wkBayX(i) - 17, x1: wkBayX(i) + 17, y0: WK.y + 22, y1: WK_MOUTH - 22 });
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
-// drive-through truck wash beside the gate road: trucks enter at the south end (coming in from the gate) and
-// leave from the north end onto the yard road to the workshop. WASH_IN / WASH_OUT are the approach points.
-const WASH={x:840,y:1240,w:66,h:190}; let washClock=0;
-const WASH_IN={x:840,y:WASH.y+WASH.h/2+70}, WASH_OUT={x:840,y:WASH.y-WASH.h/2-60};
+// drive-through truck wash on the west side of the yard, left of the crib buildings: trucks turn in off the top road,
+// enter at the north end and leave from the south end onto the west lane. WASH_IN / WASH_OUT are the approach points.
+const WASH={x:79,y:600,w:66,h:150}; let washClock=0;
+const WASH_IN={x:79,y:WASH.y-WASH.h/2-50}, WASH_OUT={x:79,y:WASH.y+WASH.h/2+45};
 const TYRE_BAY = 0, TY_RACK = { x: WK.x - 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x - 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
 const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK_MOUTH - 60 });
@@ -581,12 +581,13 @@ function makeYard() {
   const mech = (col, pts, mv, u, side) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6, mv, u, side });
   const pa = lap(1, false), pb = lap(3, true);
   // the wash truck: north through the wash, round the yard road and into bay 5, then back down the west side of the wash to come in again
-  const bw = wkBayX(4), pw = [P(840, 1420, { lk: 1 }), P(840, WASH.y, { lk: 1, stop: 5 }), P(840, WASH_OUT.y, { lk: 1 }), P(900, 1000), P(960, 900), P(960, TY),
-    P(bw + 100, TY), P(bw, 390, { lk: 1 }), P(bw, WK_MOUTH - 42, { lk: 1, stop: 10 }), P(bw, 860, { lk: 1 }), P(bw - 20, 1000), P(740, 1060), P(740, 1380), P(760, 1440), P(800, 1460)];
+  // the wash truck: down through the wash, round the yard road and into bay 5, then back along the top road to turn in again
+  const bw = wkBayX(4), pw = [P(79, 470, { lk: 1 }), P(79, WASH.y, { lk: 1, stop: 5 }), P(79, 770, { lk: 1 }), P(150, 870), P(150, 1000), P(960, 1000), P(960, TY),
+    P(bw + 100, TY), P(bw, 390, { lk: 1 }), P(bw, WK_MOUTH - 42, { lk: 1, stop: 10 }), P(bw, 860, { lk: 1 }), P(bw + 80, 1000), P(960, 1000), P(960, TY), P(150, TY), P(150, 390)];
   return {
     parked: [park(55, 1100, 0, .8), park(100, 1100, 0, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
     movers: [
-      truck(.7, pa, 1, .5), truck(0, pb, 5, .5), truck(.15, pw, 2, .2),
+      truck(.7, pa, 1, .5), truck(0, pb, 5, .5), truck(.15, pw, 1, .5),
       ute([P(380, 1150), P(620, 1150), P(620, 1400), P(380, 1400)])],
     // everyone stays in the workshop; only the odd one (green, pink) walks out to a truck stopped in its bay, then heads back
     mechs: [
@@ -3361,7 +3362,7 @@ function drawYardLife() {
   for (let k = 0; k < 3 + wk.fit.piled; k++) tyreDisc(TY_SCRAP.x + ((k * 7) % 13) - 6, TY_SCRAP.y + ((k * 5) % 11) - 5 - Math.floor(k / 4) * 3, 8);
 }
 // automated drive-through truck wash: roofed bay with spray arches, brushes, drains, blast walls and a water tank
-const WASH_ARCH = [-62, 0, 62];   // spray arch positions along the bay, relative to WASH.y
+const WASH_ARCH = [-50, 0, 50];   // spray arch positions along the bay, relative to WASH.y
 function washRigNow() {   // every rig part (cab or trailer) inside the wash, from the yard trucks and your own rig
   const ys = [], inside = p => Math.abs(p.x - WASH.x) < WASH.w / 2 && Math.abs(p.y - WASH.y) < WASH.h / 2 + 20;
   for (const m of yard ? yard.movers : []) if (m.j) for (const p of [{ x: m.x, y: m.y }, ...Array.from({ length: NT }, (_, i) => chainPose(m.j, i))]) if (inside(p)) ys.push(p.y);
@@ -3402,23 +3403,23 @@ function drawWashTop(){
     rect(x0-3,y-3,w.w+6,6,'#1d5fb4'); for(let x=x0+4;x<x0+w.w-2;x+=8)rect(x,y-1,2,2,'#9fd3ff');
     if(on)for(let k=0;k<14;k++){const px=x0+4+((k*17+t*90)%(w.w-8)),py=y+Math.sin(k*2.1+t*14)*9;ctx.fillStyle='rgba(205,235,255,.55)';ctx.beginPath();ctx.arc(px,py,3+((k+t*20)%3),0,7);ctx.fill();}
   }
-  const brushOn=washArchOn(rig,-31);
-  for(const s of [-1,1]){const bx=w.x+s*(w.w/2-7),by=w.y-31;ctx.fillStyle='#173f80';ctx.beginPath();ctx.arc(bx,by,6,0,7);ctx.fill();
+  const brushOn=washArchOn(rig,-25);
+  for(const s of [-1,1]){const bx=w.x+s*(w.w/2-7),by=w.y-25;ctx.fillStyle='#173f80';ctx.beginPath();ctx.arc(bx,by,6,0,7);ctx.fill();
     ctx.strokeStyle='#3f86d8';ctx.lineWidth=2;ctx.beginPath();const a=brushOn?t*12*s:0;ctx.moveTo(bx+Math.cos(a)*6,by+Math.sin(a)*6);ctx.lineTo(bx-Math.cos(a)*6,by-Math.sin(a)*6);ctx.stroke();}
   const tx=WASH_TANK.x,ty=WASH_TANK.y;
   ctx.fillStyle='#3f6e4a';ctx.beginPath();ctx.arc(tx,ty,15,0,7);ctx.fill();ctx.fillStyle='#4f8a5c';ctx.beginPath();ctx.arc(tx,ty,10,0,7);ctx.fill();   // water tank
   rect(WASH_PUMP.x-12,WASH_PUMP.y-10,24,20,'#c9ccce');rect(WASH_PUMP.x-12,WASH_PUMP.y-10,24,4,'#1d5fb4');   // pump shed
-  for(const [ax,ay,lab] of [[WASH_IN.x,WASH_IN.y,'WASH IN ▲'],[WASH_OUT.x,WASH_OUT.y,'▲ OUT']]){            // painted arrows on the approach and exit
-    rect(ax-2,ay-24,4,30,'rgba(255,255,255,.6)');ctx.fillStyle='rgba(255,255,255,.6)';ctx.beginPath();ctx.moveTo(ax-8,ay-22);ctx.lineTo(ax,ay-34);ctx.lineTo(ax+8,ay-22);ctx.fill();
-    text(lab,ax,ay+20,11,'#fff');}
-  text('TRUCK WASH',x0-10,w.y+4,14,'#fff','right');
+  for(const [ax,ay,lab] of [[WASH_IN.x,WASH_IN.y,'WASH IN'],[WASH_OUT.x,WASH_OUT.y,'OUT']]){            // painted arrows pointing down the way through
+    rect(ax-2,ay-18,4,26,'rgba(255,255,255,.6)');ctx.fillStyle='rgba(255,255,255,.6)';ctx.beginPath();ctx.moveTo(ax-8,ay+6);ctx.lineTo(ax,ay+18);ctx.lineTo(ax+8,ay+6);ctx.fill();
+    text(lab,ax+12,ay+2,11,'#fff','left');}
+  text('TRUCK WASH',w.x,WASH_IN.y-28,13,'#fff');
 }
 function drawWashRoof(){   // over the trucks, so you see them through it
   const w=WASH, x0=w.x-w.w/2, y0=w.y-w.h/2;
   ctx.fillStyle='rgba(205,214,220,.32)';ctx.fillRect(x0-6,y0+4,w.w+12,w.h-8);
   for(const y of [y0+4,w.y,y0+w.h-8])for(const x of [x0-6,x0+w.w+2])rect(x,y,4,4,'#6c777f');
 }
-const WASH_TANK={x:WASH.x+WASH.w/2+24,y:WASH.y-WASH.h/2+30}, WASH_PUMP={x:WASH.x+WASH.w/2+24,y:WASH.y-WASH.h/2+72};
+const WASH_TANK={x:44,y:WASH.y+WASH.h/2+77}, WASH_PUMP={x:44,y:WASH.y+WASH.h/2+36};   // tucked against the bund beside the exit
 function drawStructures() {
   for (const c of CONT) {
     rect(c.x + 3, c.y + 3, c.w, c.h, '#0004'); rect(c.x, c.y, c.w, c.h, c.c);
@@ -3543,15 +3544,15 @@ function drawWorkshopChase() {
           if(on)for(let k=0;k<26;k++){const f=((k*.137+washClock*1.7)%1),u=(k%13)/12-.5,[px,py]=V(w.x+u*(w.w-6),y+Math.sin(k*3.1)*5),z=52-f*44;
             const [sx,sy]=P(px,py,z),r=(1.6+f*2.4)*sc(py);ctx.fillStyle=`rgba(210,238,255,${.75-f*.5})`;ctx.beginPath();ctx.arc(sx,sy,r,0,7);ctx.fill();}}});
       }
-      const bOn=washArchOn(rig,-31);
-      for(const s2 of [-1,1]){const [vx,vy]=V(w.x+s2*(w.w/2-7),w.y-31);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,10,10,2,44,'#173f80',ang);
+      const bOn=washArchOn(rig,-25);
+      for(const s2 of [-1,1]){const [vx,vy]=V(w.x+s2*(w.w/2-7),w.y-25);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,10,10,2,44,'#173f80',ang);
         for(let k=0;k<4;k++){const z=6+k*10+(bOn?(washClock*30)%10:0);if(z<44)prism(vx,vy,11,11,z,z+2,'#3f86d8',ang);}}});}
       for(const py of [y0+4,w.y,y1-4])for(const px of [x0-7,x1+7]){const [vx,vy]=V(px,py);if(near(vy))list.push({y:vy,fn:()=>prism(vx,vy,4,4,0,66,'#6c777f',ang)});}
       for(let k=0;k<6;k++){const yy=y0+w.h*(k+.5)/6,[vx,vy]=V(w.x,yy);   // translucent polycarbonate roof, in slices so it sorts over the rig
         if(near(vy))list.push({y:vy+40,fn:()=>{ctx.globalAlpha=.38;prism(vx,vy,(w.w+18)*Z,w.h/6*Z,64,67,'#cfd8de',ang);ctx.globalAlpha=1;}});}
       {const [vx,vy]=V(WASH_TANK.x,WASH_TANK.y);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,26*Z,26*Z,0,52,'#4f8a5c',ang);prism(vx,vy,27*Z,27*Z,52,55,'#3f6e4a',ang);}});}
       {const [vx,vy]=V(WASH_PUMP.x,WASH_PUMP.y);if(near(vy))list.push({y:vy,fn:()=>{prism(vx,vy,24*Z,20*Z,0,30,'#c9ccce',ang);prism(vx,vy,25*Z,21*Z,30,33,'#1d5fb4',ang);}});}
-      {const [vx,vy]=V(w.x,y0-16);if(near(vy))list.push({y:vy,fn:()=>{const [sx,sy]=P(vx,vy,74);text('TRUCK WASH',sx,sy,14*sc(vy),'#fff');}});}
+      {const [vx,vy]=V(w.x,WASH_IN.y-28);if(near(vy))list.push({y:vy,fn:()=>{const [sx,sy]=P(vx,vy,30);text('TRUCK WASH',sx,sy,14*sc(vy),'#fff');}});}
     }
     // workshop side walls, sea containers and the arched shelter
   // workshop shell: side walls, then a front and back wall with a doorway for every bay
