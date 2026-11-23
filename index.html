@@ -2294,10 +2294,10 @@ function toWalk() {
   state = 'walk'; wp = { x: 805, y: 835, dir: Math.atan2(255, -95), ph: 0 }; wCamH = wp.dir; wStage = 0; wT = 0; wWrong = 0;   // facing the office
   wRoom = homeRoom >= 0 ? homeRoom : Math.floor(Math.random() * CAMP_DOORS.length);   // same room all swing if the shift began at camp
   officeStep = 0; officeBreath = 0; officeLine = 0; officeTouchHeld = false;
-  if (shiftStart) {   // outside your own door, facing the office
-    const d = CAMP_DOORS[wRoom]; wp = { x: d.x + d.nx * 14, y: d.y + d.ny * 14, dir: Math.atan2(OFFICE_DOOR.y - d.y, OFFICE_DOOR.x - d.x), ph: 0 }; wCamH = wp.dir;
+  if (shiftStart) {   // just stepped out of your room: facing your door, chase cam out in the walkway
+    const d = CAMP_DOORS[wRoom]; wp = { x: d.x + d.nx * 14, y: d.y + d.ny * 14, dir: Math.atan2(-d.ny, -d.nx), ph: 0 }; wCamH = wp.dir;
   }
-  ptrs.clear(); syncBtns(); flash(shiftStart ? `Room ${CAMP_DOORS[wRoom].name}: pick up your schedule at the office` : 'Hand your paperwork in at the Schedule Office');
+  ptrs.clear(); syncBtns(); flash(shiftStart ? `Room ${CAMP_DOORS[wRoom].name}: turn around and head to the office` : 'Hand your paperwork in at the Schedule Office');
 }
 function updateOffice(dt) {
   wT+=dt;msgT-=dt;
@@ -2541,11 +2541,15 @@ function campOval(x,y,z,rx,ry,rz,base) {
     P.push(row);
   }
   for(let j=0;j<rings;j++)for(let i=0;i<sides;i++){
-    const ni=(i+1)%sides;
-    const f=.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings);
-    wPoly([P[j][i],P[j][ni],P[j+1][ni],P[j+1][i]],shade(base,Math.max(.52,Math.min(1.18,f))));
+    const ni=(i+1)%sides, q=[P[j][i],P[j][ni],P[j+1][ni],P[j+1][i]];
+    const mx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4, my=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4, mz=(q[0][2]+q[1][2]+q[2][2]+q[3][2])/4;
+    // skip faces turned away from the camera so the back of the shape never paints over the front
+    if(((mx-x)/(rx*rx))*(wCam.x-mx)+((my-y)/(ry*ry))*(wCam.y-my)+((mz-z)/(rz*rz))*(WCH-mz)<=0)continue;
+    const f=.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings), col=shade(base,Math.max(.52,Math.min(1.18,f)));
+    if(ovalSink)ovalSink.push({d:wCamPt(mx,my,mz)[1],q,col});else wPoly(q,col);
   }
 }
+let ovalSink=null;   // when set, campOval queues its faces so a whole figure can be depth-sorted
 // Camp models use the same projected world geometry and chase camera as the buildings.
 function campHuman(x,y,moustache=false,player=false) {
   const a=player?(state==='officeinside'?officeHeading:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
@@ -2553,7 +2557,8 @@ function campHuman(x,y,moustache=false,player=false) {
     ? (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB)
     : (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB));
   const moving=player?(walking?Math.sin(wT*10)*2.1:0):Math.sin(wT*3+x)*1.1;
-  const originalOval=campOval;
+  const originalOval=campOval, outerSink=ovalSink;
+  ovalSink=[];   // collect every face of this person, then paint far to near
   const scale=player?.70:1;
   const scaledOval=(xx,yy,zz,ww,ll,hh,col)=>originalOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col);
   const point=(side,front=0)=>[x+rx*side+fx*front,y+ry*side+fy*front];
@@ -2574,9 +2579,12 @@ function campHuman(x,y,moustache=false,player=false) {
   scaledOval(x,y,22,6.1,4.35,1,'#e4e8e9');
   scaledOval(x,y,26,2.1,2.2,2.5,'#c78e6a');
   scaledOval(x,y,31,4.7,4.2,5.8,'#d8a27b');
-  let p=point(0,-1.5);campOval(p[0],p[1],35,4.7,3.9,2.5,'#49332b');
-  p=point(0,4);campOval(p[0],p[1],30,2.4,1.1,1.1,'#bd8566');
-  if(moustache){p=point(0,4.5);campOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
+  let p=point(0,-1.5);scaledOval(p[0],p[1],35,4.7,3.9,2.5,'#49332b');   // hair
+  p=point(0,-2.4);scaledOval(p[0],p[1],31.5,4.3,2.6,4.6,'#49332b');      // back of the head
+  p=point(0,4);scaledOval(p[0],p[1],30,2.4,1.1,1.1,'#bd8566');          // nose
+  if(moustache){p=point(0,4.5);scaledOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
+  const faces=ovalSink;ovalSink=outerSink;
+  faces.sort((a,b)=>b.d-a.d);for(const f of faces)wPoly(f.q,f.col);
 }
 function campUteModel(x,y,col) {
   // Reverse-in parking: vehicle rear faces the bay and bonnet faces the aisle.
@@ -2615,9 +2623,12 @@ function drawWalk() {
   for (const v of CAMP_VERANDAS) { const ex = v.nx * 18, ey = v.ny * 18; wPoly([[v.x1, v.y1, .3], [v.x2, v.y2, .3], [v.x2 + ex, v.y2 + ey, .3], [v.x1 + ex, v.y1 + ey, .3]], '#c58a5e'); }
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   const [kx, ky, kw, kh] = CAMP_BIG.kitchen, [mx, my, mw, mh] = CAMP_BIG.mess, [ox, oy, ow, oh] = CAMP_BIG.office;
-  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof));
+  // a building between the chase camera and the walker is drawn see-through so you never lose sight of yourself
+  const blocksView = (x, y, w, h) => { for (let t = .05; t < .97; t += .04) { const px = wCam.x + (wp.x - wCam.x) * t, py = wCam.y + (wp.y - wCam.y) * t; if (px > x - 4 && px < x + w + 4 && py > y - 4 && py < y + h + 4) return true; } return false; };
+  const ghost = (x, y, w, h, fn) => () => { const g = blocksView(x, y, w, h); if (g) ctx.globalAlpha = .28; fn(); ctx.globalAlpha = 1; };
+  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, ghost(b.x, b.y, b.w, b.h, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof)));
   for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.mess, 'WET MESS', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
-    add(o[0] + o[2] / 2, o[1] + o[3] / 2, () => { wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, 30, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, 34, 11, '#fff'); });
+    add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, 30, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, 34, 11, '#fff'); }));
   const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 29, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
