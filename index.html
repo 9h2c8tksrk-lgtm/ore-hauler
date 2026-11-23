@@ -245,7 +245,7 @@ function onKey(code) {
     if (code === 'KeyF') { startFitter(); return; }
     if (code === 'KeyC') { bayReady = 0; toUte(); return; }
   }
-  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { state='parkhandover'; handStep=0; ptrs.clear(); syncBtns(); } else toWalk(); return; }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { state='parkhandover'; handStep=0; handoverLoaded=Math.random()<.5; ptrs.clear(); syncBtns(); } else toWalk(); return; }
   if (state === 'parkhandover' && (code === 'Space' || code === 'Enter' || code === 'KeyE')) { advanceHandover(); return; }
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
@@ -503,11 +503,11 @@ function updateSkyway(dt) {
   }
 }
 function startSecondLoad() {
-  trip = 2; ret = false; state = 'load'; shake = 0; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
+  trip++; ret = false; state = 'load'; shake = 0; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
   qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
   train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
   ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
-  flash('Back at the ROM! Load up for trip 2');
+  flash('Back at the ROM! Load up for trip ' + trip + '. Total hauled: ' + tons + 't');
 }
 function startReturn() {
   ret = true; state = 'drive'; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
@@ -520,6 +520,7 @@ function startReturn() {
 const PIT_BAYS = [1, 3, 4];   // bays 2, 4 and 5 (labelled from 1) have inspection pits
 const pitRect = i => ({ x0: wkBayX(i) - 17, x1: wkBayX(i) + 17, y0: WK.y + 22, y1: WK_MOUTH - 22 });
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
+const WASH={x:265,y:840,w:66,h:190}; let washClock=0;
 const TYRE_BAY = 0, TY_RACK = { x: WK.x - 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x - 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
 const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK_MOUTH - 60 });
@@ -758,7 +759,7 @@ function enterWorkshopFoot(){
 function updateWorkshopFoot(dt){
   time+=dt;msgT-=dt;footTime+=dt;
   footFacing+=steerAxis()*2.0*dt;
-  const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-(keys.KeyS||keys.ArrowDown||keys.TB?.65:0);
+  const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-((keys.KeyS||keys.ArrowDown||keys.TB)?.65:0);
   const speed=38*fwd*dt;
   const nx=workshopFoot.x+Math.cos(footFacing)*speed,ny=workshopFoot.y+Math.sin(footFacing)*speed;
   if(!shopBlocked(nx,workshopFoot.y))workshopFoot.x=nx;
@@ -840,7 +841,7 @@ function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0);
-  yardUpdate(dt); crewUpdate(dt); trackMarks();
+  yardUpdate(dt); crewUpdate(dt); trackMarks(); washClock+=dt;
   // Stop in the workshop bay. The player can now leave the cab with E.
   if (wk.auto && !wk.done && !wk.exitOffered && wk.y >= WK.y + 22 && Math.abs(wk.x-wkBayX(wk.bay))<25) {
     wk.exitOffered = true; wk.v = 0;
@@ -993,10 +994,7 @@ function update(dt) {
   animals = animals.filter(a => a.y < H + 60 && a.x > -80 && a.x < W + 80 && !(a.hit && a.t > 1.8));
 
   if (state === 'drive' && ret && dist >= TRIP) {
-    if (trip === 1) { startSecondLoad(); return; }
-    score = Math.round((tons * 10 + hp * 5 + Math.max(0, 800 - time) * 2) * D().mult);
-    if (score > best) { best = score; localStorage.oreBest = best; }
-    state = 'win'; speed = 0; recordRun(true);
+    startSecondLoad(); return;
   } else if (state === 'drive' && !ret && dist >= TRIP) {
     state = 'skyway'; arrivalOre = ore(); tons += arrivalOre; speed = 0; particles = []; ptrs.clear(); syncBtns();
     flash('The Skyway! Open each lid, then tip over the ledge');
@@ -1476,7 +1474,7 @@ function drawWorld3D(playerX, menu) {
   if (bf && !menu) {   // fitter signs off the job
     const tw = BF.arrive + BF.out + BF.walk + BF.work, fp = fitPose(), who = fp.man || fp.ute;
     if (who && bf.t > tw - .1 && bf.t < tw + BF.back + BF.inn + BF.leave * .5) {
-      const [bx, by] = P(who.x, who.y, 62), msg = 'It will be right mate, just send it!';
+      const [bx, by] = P(who.x, who.y, 62), msg = 'It Will be Alright now mate, Just Send it!';
       ctx.font = 'bold 13px system-ui,sans-serif'; const bw = ctx.measureText(msg).width + 18, x = Math.max(4, Math.min(W - bw - 4, bx - bw / 2)), yy = by - 34;
       rect(x, yy, bw, 24, '#fffe'); ctx.fillStyle = '#fffe'; ctx.beginPath(); ctx.moveTo(bx - 6, yy + 24); ctx.lineTo(bx + 6, yy + 24); ctx.lineTo(bx, yy + 33); ctx.fill();
       text(msg, x + bw / 2, yy + 17, 13, '#222');
@@ -1502,7 +1500,7 @@ function rigInBay() {
   }
   return 0;
 }
-function startFitter() { bf = { t: 0, hp0: hp, side: bayReady, qx0: qx }; bayReady = 0; flash('Fitter on the way...'); }
+function startFitter() { if(state!=='drive'||!bayReady||bf)return; bf = { t: 0, hp0: hp, side: bayReady, qx0: qx }; bayReady = 0; flash('Fitter on the way...'); }
 // where the white ute and the fitter are at time bf.t
 function fitPose() {
   const { side, t } = bf, xu = Math.max(30, Math.min(W - 40, bf.qx0 + side * 66)), yPark = qy + 150, xw = bf.qx0 + side * 34, dir = Math.sign(xw - xu), door = xu + dir * 14;
@@ -1712,6 +1710,11 @@ function uOff(s) {
   return ramp * (95 * Math.sin(s / 520) + 45 * Math.sin(s / 190 + 1));
 }
 function toUte() {
+  if(state==='drive' && !shiftStart){
+    score=Math.round((tons*10+hp*5)*D().mult);
+    if(score>best){best=score;localStorage.oreBest=best;}
+    recordRun(true);
+  }
   state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; uh = 0; ud = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uTank = 0; uoncoming = []; udust = []; particles = []; ptrs.clear(); syncBtns();
   ucows = [];
   for (let s = 800; s < CP0 - 600; s += 380 + Math.random() * 380) {   // lone cows, well spaced
@@ -1720,7 +1723,7 @@ function toUte() {
   }
   uslots = []; ucars = [];
   for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
-  const cols = ['#f4f4f4', '#f4f4f4', '#d8d8d8', '#c33', '#3a6fc4', '#b8a37a', '#2e8b57'];
+  const cols = ['#f4f4f4', '#f4f4f4', '#eeeeee', '#ffffff'];
   const order = uslots.map((_, i) => i).sort(() => Math.random() - .5);
   for (const i of order.slice(0, 14)) { uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
   flash('Dual-cab ute: follow the dirt road to Camp');
@@ -1942,23 +1945,28 @@ function updateOffice(dt) {
   }
 }
 // Driver changeover is mandatory before entering the already-loaded road train.
-let handStep=0;
+let handStep=0, handoverLoaded=true;
 const handLines=[
   'Incoming driver: Gday mate, ready for the swap?',
-  'Outgoing driver: Yep. Road train is loaded and parked up.',
+  'Outgoing driver: Yep. Road train is ready for changeover.',
   'Outgoing driver: Walk around the truck and check the trailers and load.',
   'Incoming driver: Copy that. Any defects or issues to hand over?',
   'Outgoing driver: All good. Paperwork is in the cab. Safe travels!',
-  'Incoming driver: Cheers. You take the ute back to Camp.'
+  'Incoming driver: Cheers. I will take over the C509.'
 ];
 function advanceHandover(){
   if(state!=='parkhandover')return;
   handStep++;
   if(handStep>=handLines.length){
     shiftStart=false;skipLoad();
-    // The truck is already loaded when the incoming driver takes over.
-    fills=Array(fills.length).fill(TRAILER_CAP);
-    flash('Handover complete. Check the load, then begin hauling.');
+    if(handoverLoaded){
+      fills=Array(NT).fill(TRAILER_CAP);
+      flash('Loaded truck received. Head to the Skyway and tip.');
+    }else{
+      fills=Array(NT).fill(0);ret=true;scroll=0;dist=0;speed=0;
+      qx=LANE_X[0];jts=straightChain(qx,qy,1);
+      flash('Empty truck received. Drive to the ROM and load with both loaders.');
+    }
   }
 }
 function drawParkHandover(){
@@ -1981,7 +1989,7 @@ function drawParkHandover(){
     rect(x-11,406,22,5,'#4b3529');
   }
   rect(16,18,W-32,105,'#15273ce9');text('HIGHWAY PARKING BAY - DRIVER CHANGEOVER',W/2,53,18,'#ffe568');
-  text('Truck and trailers are already loaded',W/2,85,15,'#fff');
+  text(handoverLoaded?'Truck is LOADED: drive to Skyway':'Truck is EMPTY: drive to ROM',W/2,85,15,'#fff');
   rect(20,615,W-40,94,'#102136ee');
   text(handLines[Math.min(handStep,handLines.length-1)],W/2,648,14,'#fff');
   text(isTouch?'Tap to continue':'Press SPACE or E to continue',W/2,686,15,'#ffe568');
@@ -2196,10 +2204,10 @@ function drawWalk() {
   for (const v of CAMP_VERANDAS) { const ex = v.nx * 18, ey = v.ny * 18; wPoly([[v.x1, v.y1, .3], [v.x2, v.y2, .3], [v.x2 + ex, v.y2 + ey, .3], [v.x1 + ex, v.y1 + ey, .3]], '#c58a5e'); }
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   const [kx, ky, kw, kh] = CAMP_BIG.kitchen, [mx, my, mw, mh] = CAMP_BIG.mess, [ox, oy, ow, oh] = CAMP_BIG.office;
-  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 24, '#d9d4c4', b.roof));
+  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof));
   for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.mess, 'WET MESS', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
     add(o[0] + o[2] / 2, o[1] + o[3] / 2, () => { wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, 30, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, 34, 11, '#fff'); });
-  const cols = ['#d8d8d8', '#c33', '#3a6fc4'];
+  const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 29, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
     const hz = d.ny !== 0, tx = -d.ny, ty = d.nx, px = d.x + d.nx * 3.2, py = d.y + d.ny * 3.2;
@@ -2850,6 +2858,19 @@ function drawYardLife() {
   for (let k = 0; k < 3; k++) tyreDisc(TY_RACK.x, TY_RACK.y - k * 3, 9);
   for (let k = 0; k < 3 + wk.fit.piled; k++) tyreDisc(TY_SCRAP.x + ((k * 7) % 13) - 6, TY_SCRAP.y + ((k * 5) % 11) - 5 - Math.floor(k / 4) * 3, 8);
 }
+function drawWashTop(){
+  const w=WASH;
+  rect(w.x-w.w/2,w.y-w.h/2,w.w,w.h,'#687c82');
+  for(let y=w.y-w.h/2;y<w.y+w.h/2;y+=18)rect(w.x-w.w/2,y,w.w,3,'#9dc7d7');
+  for(const x of [w.x-w.w/2,w.x+w.w/2])rect(x-3,w.y-w.h/2,6,w.h,'#e8b100');
+  text('TRUCK WASH',w.x,w.y-w.h/2-15,14,'#fff');
+  const cycle=(washClock%34)/34;
+  if(cycle<.72){
+    const y=w.y+w.h/2+130-cycle/.72*(w.h+320);
+    const j=chainLine(w.x,y,0,WK_SC*.75);
+    drawRig(j,w.x,y,0,WK_SC*.75,{fill:.2});
+  }
+}
 function drawStructures() {
   for (const c of CONT) {
     rect(c.x + 3, c.y + 3, c.w, c.h, '#0004'); rect(c.x, c.y, c.w, c.h, c.c);
@@ -2939,7 +2960,20 @@ function drawWorkshopChase() {
   for (let y = 8; y <= WORLD.h - 8; y += 40) { post(8, y); post(WORLD.w - 8, y); }
   wall(GATE.x - GATE.w / 2 - 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100'); wall(GATE.x + GATE.w / 2 + 3, WORLD.h - 20, 6, 40, 0, 40, '#e8b100');
   { const [vx, vy] = V(GATE.x, WORLD.h - 50); if (near(vy)) list.push({ y: vy, fn: () => { const [sx, sy] = P(vx, vy, 30); text(wk.done ? 'EXIT ▼' : 'ENTRY / EXIT', sx, sy, 14 * sc(vy), wk.done ? '#6f6' : '#ffd23a'); } }); }
-  // workshop side walls, sea containers and the arched shelter
+  // Automated drive-through wash near the crib buildings.
+    flat(WASH.x-WASH.w/2,WASH.y-WASH.h/2,WASH.x+WASH.w/2,WASH.y+WASH.h/2,'#687c82');
+    for(const side of [-1,1])wall(WASH.x+side*WASH.w/2,WASH.y,5,WASH.h,0,34,'#e8b100');
+    for(const y of [WASH.y-WASH.h/2+12,WASH.y+WASH.h/2-12])wall(WASH.x,y,WASH.w,5,34,40,'#9dc7d7');
+    const washPhase=(washClock%34)/34;
+    if(washPhase<.72){
+      const wy=WASH.y+WASH.h/2+130-washPhase/.72*(WASH.h+320);
+      const wj=chainLine(WASH.x,wy,0,WK_SC*.75);
+      const washRig={x:WASH.x,y:wy,h:0,j:wj};
+      const [wx,wyv]=V(washRig.x,washRig.y);
+      if(near(wyv))list.push({y:wyv,fn:()=>chaseCab(wx,wyv,-th)});
+      for(let i=0;i<NT;i++){const p=chainPose(wj,i),[vx,vy]=V(p.x,p.y);if(near(vy))list.push({y:vy,fn:()=>chaseTrailer(vx,vy,p.a-th,i,.2,32,45)});}
+    }
+    // workshop side walls, sea containers and the arched shelter
   // workshop shell: side walls, then a front and back wall with a doorway for every bay
   const WH = 70, DW = 48;
   wall(WK.x - 3, WK.y + WK.h / 2, 6, WK.h, 0, WH, '#aeb5bb'); wall(WK.x + WK.w + 3, WK.y + WK.h / 2, 6, WK.h, 0, WH, '#aeb5bb');
@@ -3042,7 +3076,8 @@ function drawWorkshop() {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
   drawStructures();
-  drawYardLife();
+    drawWashTop();
+    drawYardLife();
   const tb = wkBayX(TYRE_BAY);
   for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK_MOUTH - 14, 7); tyreDisc(x, WK_MOUTH - 17, 7); }
   drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC, wk.auto && wk.bay === TYRE_BAY ? { tyre: wk.fit.st } : null);
@@ -3086,7 +3121,7 @@ function render() {
     for (let i = 0; i < DIFFS.length; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
     text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
-    text(isTouch ? 'Tap to start' : 'Press SPACE to start', W / 2, 580, 22, '#ff6');
+    text('START AT CAMP for the full shift story', W / 2, 580, 18, '#ff6');
     drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
     drawBtn(CAMP_BTN, isTouch ? 'START AT CAMP' : CAMP_BTN[4], false);
     text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 676, 14, '#ccc');
@@ -3100,7 +3135,7 @@ function render() {
     text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
     text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore() / MAX_ORE, '#c86');
     if (state === 'drive' || state === 'over') {
-      text(`TRIP ${trip}/2`, W / 2, 22, 14, '#ccc');
+      text(`TRIP ${trip}`, W / 2, 22, 14, '#ccc');
       text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
       text(`${Math.min(100, Math.round(dist / TRIP * 100))}% ${ret ? 'back to the ROM' : 'to the Skyway'}`, W - 10, 48, 14, '#ff6', 'right');
     } else text(state === 'win' ? 'THE ROM' : 'THE SKYWAY', W - 10, 30, 18, '#ff6', 'right');
@@ -3120,7 +3155,7 @@ function render() {
       if (state === 'over') { text('WRECKED!', W / 2, 175, 38, '#e44'); text(tons > 0 ? `${tons} t hauled to the Skyway` : `${pctOut()}% of the way to the Skyway`, W / 2, 208, 17); }
       else {
         text('DELIVERED!', W / 2, 175, 38, '#4c4');
-        text(`${D().n}: ${tons} t hauled in 2 trips, ${Math.round(time)}s`, W / 2, 205, 15);
+        text(`${D().n}: ${tons} t hauled in ${trip} trips, ${Math.round(time)}s`, W / 2, 205, 15);
         text(`Score: ${score}`, W / 2, 238, 24, '#ff6');
       }
       drawBoard(285, 10, runId);
