@@ -132,12 +132,12 @@ cv.addEventListener('pointerdown', e => {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if(state==='workshop'&&inR(p,[340,570,132,52])&&workshopParked()){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -149,7 +149,7 @@ cv.addEventListener('pointerdown', e => {
     for (let i = 0; i < NT; i++) { if (inR(p, lidBtn(i))) toggleLid(i); else if (inR(p, tipBtn(i))) tipTrailer(i); }
     return;
   }
-  if (state === 'parkhandover') { advanceHandover(); return; }
+  if (state === 'parkhandover') { if(inR(p,[15,610,450,100])) advanceHandover(); else {cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,p);syncBtns();} return; }
   if (state === 'menu' && inR(p, SKIP_BTN)) { skipLoad(); return; }
 
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
@@ -245,7 +245,7 @@ function onKey(code) {
     if (code === 'KeyF') { startFitter(); return; }
     if (code === 'KeyC') { bayReady = 0; toUte(); return; }
   }
-  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { state='parkhandover'; handStep=0; handoverLoaded=Math.random()<.5; ptrs.clear(); syncBtns(); } else toWalk(); return; }
+  if (state === 'uteend' && (code === 'Space' || code === 'Enter')) { if (shiftStart) { state='parkhandover'; handStep=0; handoverLoaded=Math.random()<.5; handPos={x:-65,y:75,dir:0}; ptrs.clear(); syncBtns(); } else toWalk(); return; }
   if (state === 'parkhandover' && (code === 'Space' || code === 'Enter' || code === 'KeyE')) { advanceHandover(); return; }
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
@@ -259,7 +259,7 @@ function onKey(code) {
   }
     if (state==='workshopfoot' && code==='KeyE') {
       if(!cribReached){flash('Reach the Crib Room at the far end first.');return;}
-      if(workshopFoot.y<WK.h-38){flash('Return to the workshop entrance to re-enter the cab.');return;}
+      if(workshopFoot.x<0||workshopFoot.y<SHOP_DEPTH-45){flash('Return to the workshop doors to re-enter the cab.');return;}
       workshopOnFoot=false;state='workshop';wk.done=true;wk.auto=false;wk.v=0;
       ptrs.clear();syncBtns();flash('Crib Room mission complete. Drive out through the yard gate.');return;
     }
@@ -329,7 +329,35 @@ function action() {
   }
 }
 
+
+// ORE HAULER SKYWAY INCLINE TRAFFIC RULES
+function onSkywayIncline() {
+  return state === 'drive' &&
+    ((!ret && scroll >= R - CLIMB) ||
+     (ret && scroll <= CLIMB));
+}
+
+function spawnSkywayPinkTruck() {
+  // Opposite lane only. Rare, widely spaced encounters.
+  traffic.push({
+    x: LANE_X[1],
+    lx: LANE_X[1],
+    y: -190,
+    w: 34,
+    h: 90,
+    v: -110 * D().vel,
+    col: '#ed69aa',
+    truck: true,
+    oncoming: true,
+    pinkQuad: true
+  });
+}
+
 function spawn() {
+  if (onSkywayIncline()) {
+    spawnSkywayPinkTruck();
+    return;
+  }
   if (D().noWildlife || Math.random() < .6) {
     const lane = Math.floor(Math.random() * LANE_X.length), oncoming = lane === 1;
     const col = ['#c33', '#36c', '#ccc', '#e8b100', '#3a3'][Math.floor(Math.random() * 5)];
@@ -730,31 +758,41 @@ function wkHome() {
 let footTime=0, footFacing=0, cribReached=false, shopCrew=[];
 const workshopParked = () => state==='workshop' && wk && wk.v<8 &&
   (wk.auto || (wk.x>WK.x-40 && wk.x<WK.x+WK.w+40 && wk.y>WK.y-100 && wk.y<WK_MOUTH+115));
-const shopPit = i => ({x:wkBayX(i)-WK.x,y:22,w:34,h:WK.h-44});
+// Expanded walkable interior, while the exterior yard footprint stays unchanged.
+const SHOP_DEPTH = 375, SHOP_HEIGHT = 112;
+const SHOP_CRIB = {x:-105,y:310,w:78,h:64}; // external transportable beside tyre bay
+const shopPit = i => ({x:wkBayX(i)-WK.x,y:58,w:34,h:SHOP_DEPTH-116});
+const shopToolboxes = [1,2,3,4,5].map(i=>({x:i*BAY_W,y:180,w:12,h:24}));
 function shopBlocked(x,y){
-  if(x<9||x>WK.w-9||y<9||y>WK.h-9)return true;
-  // Inspection pits are impassable, with a safety margin.
-  for(const i of PIT_BAYS){const p=shopPit(i);if(x>p.x-p.w/2-8&&x<p.x+p.w/2+8&&y>p.y-7&&y<p.y+p.h+7)return true;}
-  // Parked equipment and workers block the route, but the left aisle stays open.
-  if(x>75&&x<110&&y>58&&y<100)return true;
-  return shopCrew.some(m=>Math.hypot(x-m.x,y-m.y)<9);
+  // Side exit from Bay 1 leads to the external transportable crib room.
+  const inCrib=x>SHOP_CRIB.x-SHOP_CRIB.w/2 && x<SHOP_CRIB.x+SHOP_CRIB.w/2 &&
+    y>SHOP_CRIB.y-SHOP_CRIB.h/2 && y<SHOP_CRIB.y+SHOP_CRIB.h/2;
+  const inYard=x>=-160 && x<0 && y>260 && y<SHOP_DEPTH+40;
+  if(inCrib || inYard) return false;
+  if(x<9||x>WK.w-9||y<9||y>SHOP_DEPTH-9)return true;
+  for(const i of PIT_BAYS){const p=shopPit(i);
+    if(x>p.x-p.w/2-5&&x<p.x+p.w/2+5&&y>p.y-4&&y<p.y+p.h+4)return true;
+  }
+  for(const t of shopToolboxes)if(Math.abs(x-t.x)<t.w/2+5&&Math.abs(y-t.y)<t.h/2+5)return true;
+  // Truck and first trailer occupy the selected service bay, with side access.
+  if(wk && Math.abs(x-(wkBayX(wk.bay)-WK.x))<18 && y>95&&y<290)return true;
+  return shopCrew.some(m=>Math.hypot(x-m.x,y-m.y)<7);
 }
 function shopCrewInit(){
-  const crew=(role,x,y,points,col,mullet=false)=>({role,x,y,points,col,mullet,i:0,wait:0,phase:0,walk:false,heading:-Math.PI/2});
-  shopCrew=[
-    crew('MECHANIC',127,45,[[127,45],[145,100],[125,111]],'#e6bb21'),
-    crew('MECHANIC',258,48,[[258,48],[277,100],[260,112]],'#d6a82b'),
-    crew('MULLET MECHANIC',190,72,[[190,72],[190,128],[190,141],[190,75]],'#ec9d27',true),
-    crew('TYRE FITTER',49,54,[[49,54],[59,82],[47,105]],'#e45c37'),
-    crew('AUTO SPARKY',342,50,[[342,50],[355,95],[337,117]],'#5ba8d5')
-  ];
+ const crew=(role,x,y,points,col,mullet=false)=>({role,x,y,points,col,mullet,i:0,wait:0,phase:0,walk:false,heading:-Math.PI/2});
+ shopCrew=[
+ crew('MECHANIC',125,42,[[125,42],[144,54],[125,45]],'#e6bb21'),
+ crew('MECHANIC',257,45,[[257,45],[275,54],[257,45]],'#d6a82b'),
+ crew('MULLET MECHANIC',191,325,[[191,325],[194,305],[191,325]],'#ec9d27',true),
+ crew('TYRE FITTER',45,65,[[45,65],[51,83],[45,65]],'#e45c37'),
+ crew('AUTO SPARKY',344,318,[[344,318],[351,303],[344,318]],'#5ba8d5')];
 }
 function enterWorkshopFoot(){
   if(!workshopParked()){flash('Stop near the workshop or in a bay, then press E to climb out.');return;}
   state='workshopfoot';workshopOnFoot=true;footTime=0;cribReached=false;
-  workshopFoot={x:19,y:WK.h-15};footFacing=-Math.PI/2;
+  workshopFoot={x:19,y:SHOP_DEPTH-20};footFacing=-Math.PI/2;
   shopCrewInit();wk.v=0;ptrs.clear();syncBtns();
-  flash('FIRST PERSON: follow the left aisle past the pits to the CRIB ROOM.');
+  flash('Walk through Bay 1, then exit left to the outside crib room.');
 }
 function updateWorkshopFoot(dt){
   time+=dt;msgT-=dt;footTime+=dt;
@@ -772,7 +810,7 @@ function updateWorkshopFoot(dt){
     const step=Math.min(d,(m.mullet?21:15)*dt);
     m.heading=Math.atan2(dy,dx);m.x+=dx/d*step;m.y+=dy/d*step;m.walk=true;
   }
-  if(!cribReached&&workshopFoot.y<23&&workshopFoot.x<47){
+  if(!cribReached&&workshopFoot.x<SHOP_CRIB.x+22&&Math.abs(workshopFoot.y-SHOP_CRIB.y)<22){
     cribReached=true;wk.done=true;wk.fixed=wk.fixed.map(()=>1);hp=100;
     flash('CRIB ROOM REACHED! Mission complete. Return to the entrance and press E.');
   }
@@ -798,43 +836,83 @@ function drawWorkshopFoot(){
     face(p.map(v=>[...v,z+h]),top);
   };
   const human=m=>{
-    const stride=m.walk?Math.sin(m.phase*9)*4:0,work=m.walk?0:Math.sin(m.phase*7)*4;
-    // Animated limbs, torso, head, PPE and a distinct trailing mullet hairstyle.
-    box(m.x-3,m.y+stride,5,5,14,'#23344a');box(m.x+3,m.y-stride,5,5,14,'#23344a');
-    box(m.x,m.y,13,8,16,m.col,'#f2d942',13);
-    box(m.x,m.y,14,9,2,'#dce6ea','#dce6ea',20);
-    box(m.x-9,m.y+stride*.5,4,5,13,'#253b55','#253b55',15);
-    box(m.x+9,m.y-stride*.5+work*.4,4,5,13,'#253b55','#253b55',15);
-    box(m.x,m.y,8,8,9,'#cb9a75','#cb9a75',29);
-    box(m.x,m.y-1,9,9,3,m.mullet?'#51301c':'#eee7dc',m.mullet?'#51301c':'#eee7dc',37);
-    if(m.mullet)box(m.x,m.y+5,10,4,11,'#51301c','#51301c',28);
+    const stride=m.walk?Math.sin(m.phase*8)*5:0;
+    const gesture=m.walk?0:Math.sin(m.phase*5)*2;
+    // Rounded joints, hands, boots, reflective shirt, neck and face.
+    const limb=(x1,y1,z1,x2,y2,z2,r,c)=>{
+      const a=camPt(x1,y1,z1),b=camPt(x2,y2,z2);
+      if(a[1]<near||b[1]<near)return;
+      ctx.strokeStyle=c;ctx.lineCap='round';ctx.lineWidth=Math.max(1,focus*r/Math.max(a[1],b[1]));
+      ctx.beginPath();ctx.moveTo(W/2+focus*a[0]/a[1],horizon-focus*a[2]/a[1]);
+      ctx.lineTo(W/2+focus*b[0]/b[1],horizon-focus*b[2]/b[1]);ctx.stroke();
+    };
+    for(const side of [-1,1]){
+      const sx=m.x+side*3,dy=side*stride;
+      limb(sx,m.y,17,sx,m.y+dy*.5,9,4,'#293b56');
+      limb(sx,m.y+dy*.5,9,sx,m.y+dy,3,3.5,'#293b56');
+      box(sx,m.y+dy+2,6,10,4,'#202329');
+      limb(m.x+side*7,m.y,31,m.x+side*9,m.y+dy*.4,23,3,m.col);
+      limb(m.x+side*9,m.y+dy*.4,23,m.x+side*9,m.y+dy+gesture,16,2.5,'#c99572');
+    }
+    box(m.x,m.y,14,9,20,m.col,m.col,15);
+    box(m.x,m.y,14.5,9.5,2,'#e7ecee','#e7ecee',25);
+    box(m.x,m.y,5,5,4,'#c99572','#c99572',35);
+    box(m.x,m.y,9,8,9,'#d7a07b','#d7a07b',38);
+    box(m.x,m.y-1,10,9,3,m.mullet?'#51301c':'#f3eddd',m.mullet?'#51301c':'#f3eddd',46);
+    if(m.mullet)box(m.x,m.y+5,9,4,12,'#51301c','#51301c',35);
   };
   rect(0,0,W,H,'#9daeb9');rect(0,horizon,W,H-horizon,'#6d747b');
-  // Fixed workshop footprint and bay centres correspond to the existing yard map.
-  face([[0,0,0],[WK.w,0,0],[WK.w,WK.h,0],[0,WK.h,0]],'#737b80');
-  face([[0,0,65],[WK.w,0,65],[WK.w,WK.h,65],[0,WK.h,65]],'#aeb9c1');
+  // Large interior is deliberately deeper than its exterior footprint.
+  face([[0,0,0],[WK.w,0,0],[WK.w,SHOP_DEPTH,0],[0,SHOP_DEPTH,0]],'#737b80');
+  face([[0,0,SHOP_HEIGHT],[WK.w,0,SHOP_HEIGHT],[WK.w,SHOP_DEPTH,SHOP_HEIGHT],[0,SHOP_DEPTH,SHOP_HEIGHT]],'#c2cbd1');
   const objects=[];
   const add=(x,y,fn)=>objects.push({d:(x-workshopFoot.x)*fx+(y-workshopFoot.y)*fy,fn});
   for(const i of PIT_BAYS){const p=shopPit(i);add(p.x,p.y+p.h/2,()=>{
     face([[p.x-p.w/2-3,p.y-3,.1],[p.x+p.w/2+3,p.y-3,.1],[p.x+p.w/2+3,p.y+p.h+3,.1],[p.x-p.w/2-3,p.y+p.h+3,.1]],'#e8b100');
     face([[p.x-p.w/2,p.y,.3],[p.x+p.w/2,p.y,.3],[p.x+p.w/2,p.y+p.h,.3],[p.x-p.w/2,p.y+p.h,.3]],'#101418');
   });}
-  for(let i=0;i<6;i++){const x=wkBayX(i)-WK.x;add(x,75,()=>box(x,75,1.4,WK.h-12,.3,'#e8b100'));}
-  for(const x of [4,WK.w-4])for(const y of [4,WK.h-4])add(x,y,()=>box(x,y,7,7,65,'#5e6c77'));
-  // Distinct tyre bay, truck, toolboxes, hoist, electrical bench and far-end crib room.
-  add(87,78,()=>{box(87,78,24,43,18,'#d6dce0','#f1f2f1');box(87,62,22,14,28,'#bd4080','#d9639d');});
-  add(64,52,()=>{for(let j=0;j<3;j++)box(64,52+j*12,12,8,12,'#202327');});
-  add(110,110,()=>box(110,110,22,10,18,'#a52d25','#d24a39'));
-  add(328,104,()=>box(328,104,24,14,17,'#34566d','#4d8aa8'));
-  add(190,18,()=>box(190,18,80,7,45,'#c8a02c','#e4b92e'));
-  add(23,9,()=>{box(23,9,43,4,49,'#325d4a','#3f8765');box(23,9,35,1,20,'#276d56','#276d56',27);});
+  for(let i=0;i<6;i++){const x=wkBayX(i)-WK.x;add(x,190,()=>box(x,190,1.5,SHOP_DEPTH-36,.5,'#e8b100'));}
+  for(const x of [4,WK.w-4])for(const y of [4,SHOP_DEPTH-4])add(x,y,()=>box(x,y,7,7,SHOP_HEIGHT,'#5e6c77'));
+  // Tool chests between pits, with unobstructed cross aisles at y<55 and y>320.
+  for(const t of shopToolboxes)add(t.x,t.y,()=>{
+    box(t.x,t.y,t.w,t.h,19,'#b52d2d','#d44739');
+    for(let z=7;z<18;z+=4)box(t.x,t.y+t.h/2+.2,t.w-2,1,1,'#c9d2d8','#c9d2d8',z);
+  });
+  // Parked C509 and first trailer in the currently selected bay.
+  const tx=wk?wkBayX(wk.bay)-WK.x:100;
+  add(tx,192,()=>{
+    box(tx,226,31,105,37,'#b8237a','#e26aa6',12);
+    box(tx,126,30,50,44,'#f062a4','#e579b4',12);
+    box(tx,88,25,45,28,'#f062a4','#f8a2ca',12);
+    for(const side of [-1,1])for(const yy of [110,145,185,210,245])box(tx+side*19,yy,7,10,14,'#17191b');
+  });
+  // Tyre bay 1: floor-to-ceiling wall of heavy truck tyres on a rack.
+  for(let row=0;row<5;row++)for(let col=0;col<4;col++){
+    const yy=64+row*45,zz=10+col*20;
+    add(15,yy,()=>{
+      box(15,yy,13,30,13,'#111315','#282a2c',zz);
+      box(15,yy,14,15,2,'#969da2','#c4c9cd',zz+5);
+    });
+  }
+  add(48,120,()=>box(48,120,17,23,18,'#d7dce0','#f4f5f6'));
+  // Open roller-door side, outdoor path and separate transportable crib room.
+  face([[-160,260,0],[0,260,0],[0,SHOP_DEPTH+40,0],[-160,SHOP_DEPTH+40,0]],'#a76a45');
+  add(SHOP_CRIB.x,SHOP_CRIB.y,()=>{
+    box(SHOP_CRIB.x,SHOP_CRIB.y,SHOP_CRIB.w,SHOP_CRIB.h,42,'#d0d5d8','#758a9a');
+    box(SHOP_CRIB.x+25,SHOP_CRIB.y+SHOP_CRIB.h/2+1,15,2,30,'#244d6c');
+  });
+  // High roof trusses and suspended lights.
+  for(const yy of [55,145,235,325])add(200,yy,()=>{
+    box(198,yy,WK.w-16,3,3,'#65737c','#aab5bc',SHOP_HEIGHT-10);
+    for(const xx of [60,190,325])box(xx,yy,28,8,2,'#dbe5ed','#fff4c8',SHOP_HEIGHT-15);
+  });
   for(const m of shopCrew)add(m.x,m.y,()=>human(m));
   objects.sort((a,b)=>b.d-a.d);for(const o of objects)if(o.d>-60)o.fn();
   rect(0,0,W,77,'#152633e8');text('WORKSHOP - FIRST PERSON',W/2,26,19,'#ffe568');
   text('W/S walk  A/D turn  |  Avoid pits and workers',W/2,52,13,'#fff');
-  text(cribReached?'MISSION COMPLETE - RETURN TO ENTRANCE':'OBJECTIVE: REACH CRIB ROOM AT FAR END',W/2,102,15,cribReached?'#83f5a3':'#ffe568');
+  text(cribReached?'MISSION COMPLETE - RETURN TO ENTRANCE':'OBJECTIVE: EXIT BAY 1 LEFT TO EXTERNAL CRIB ROOM',W/2,102,15,cribReached?'#83f5a3':'#ffe568');
   if(msgT>0)text(msg,W/2,133,13,'#ffe568');
-  if(isTouch){drawStick();drawBtns(DB);if(cribReached&&workshopFoot.y>WK.h-38)drawBtn([340,570,132,52],'ENTER CAB',false);}
+  if(isTouch){drawStick();drawBtns(DB);if(cribReached&&workshopFoot.x>0&&workshopFoot.y>SHOP_DEPTH-45)drawBtn([340,570,132,52],'ENTER CAB',false);}
   ctx.strokeStyle='#fff9';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(235,350);ctx.lineTo(245,350);ctx.moveTo(240,345);ctx.lineTo(240,355);ctx.stroke();
 }
 function updateWorkshop(dt) {
@@ -911,6 +989,7 @@ function update(dt) {
   if (state === 'menu') scroll += 70 * dt;
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway') return updateSkyway(dt);
+  if (state === 'parkhandover') return updateParkHandover(dt);
   if (state === 'workshopfoot') return updateWorkshopFoot(dt);
   if (state === 'workshop') return updateWorkshop(dt);
   if (state === 'ute') return updateUte(dt);
@@ -962,7 +1041,19 @@ function update(dt) {
   jts[0].x = qx - Math.sin(cabAngle) * HITCH; jts[0].y = qy + Math.cos(cabAngle) * HITCH;
   chainFollow(jts, TRAILER_LEN);
   spawnT -= dt;
-  if (spawnT <= 0) { const cy = crossY(); if (onHwy() && !(cy > -260 && cy < H + 80)) spawn(); spawnT = Math.max(.45, 1.3 - dist / TRIP * .7) * (0.7 + Math.random() * .6) * D().spawn; }
+  if (spawnT <= 0) {
+    const cy = crossY();
+    if (onHwy() && !(cy > -260 && cy < H + 80)) spawn();
+    spawnT = onSkywayIncline()
+      ? 14 + Math.random() * 16
+      : Math.max(.45, 1.3 - dist / TRIP * .7) *
+        (0.7 + Math.random() * .6) * D().spawn;
+  }
+
+  if (onSkywayIncline()) {
+    animals = [];
+    traffic = traffic.filter(t => t.pinkQuad);
+  }
 
   for (const t of traffic) {
     t.y += (speed - t.v) * dt; t.x = t.lx + roadAt(scroll + qy - t.y);
@@ -1233,7 +1324,55 @@ function train3D() {
   }
 }
 
+
+function pinkQuad3(t) {
+  const x = t.x;
+  const y = t.y;
+  const pink = '#ed69aa';
+
+  // Four articulated trailer sections behind the oncoming cab.
+  for (let i = 3; i >= 0; i--) {
+    const ty = y - 64 - i * 48;
+
+    shadow(x, ty, 34, 44);
+
+    box(x, ty, 32, 43, 5, 27, pink);
+
+    box(x, ty, 27, 37, 27, 31, '#bd477f');
+
+    for (const side of [-1, 1]) {
+      for (const offset of [-13, 0, 13]) {
+        box(
+          x + side * 17,
+          ty + offset,
+          5, 7, 0, 12,
+          '#171717'
+        );
+      }
+    }
+
+    if (i < 3) {
+      box(x, ty - 24, 5, 12, 0, 9, '#555555');
+    }
+  }
+
+  // Oncoming pink prime mover.
+  car3({
+    x,
+    y: y + 12,
+    w: 34,
+    h: 60,
+    col: pink,
+    truck: true,
+    oncoming: true
+  });
+}
+
 function car3(t) {
+  if (t.pinkQuad) {
+    pinkQuad3(t);
+    return;
+  }
   const { x, y, w, h } = t, near = y + h / 2;
   shadow(x, y, w, h);
   for (const sx of [-1, 1]) for (const oy of [-1, 1]) box(x + sx * (w / 2 - 1), y + oy * (h / 2 - 12), 5, 12, 0, 10, '#141414');
@@ -1722,11 +1861,13 @@ function toUte() {
     ucows.push({ s, rel: -dir * (UHW + 55 + Math.random() * 10), dir, go: false, done: false, ph: Math.random() * 6, col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', x: 0 });
   }
   uslots = []; ucars = [];
-  for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
+  if(shiftStart){
+    for(let k=0;k<6;k++)uslots.push({x:55+k*36,s0:CP0+120,free:true});
+  }else for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
   const cols = ['#f4f4f4', '#f4f4f4', '#eeeeee', '#ffffff'];
   const order = uslots.map((_, i) => i).sort(() => Math.random() - .5);
   for (const i of order.slice(0, 14)) { uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
-  flash('Dual-cab ute: follow the dirt road to Camp');
+  flash(shiftStart?'Follow the dirt road to the highway truck parking bay':'Dual-cab ute: follow the dirt road to Camp');
 }
 function updateUte(dt) {
   for (const d of udust) d.l += dt;
@@ -1778,7 +1919,17 @@ function drawUteWorld() {
   }
   const clampY = y => Math.max(-118, Math.min(H + 80, y));
   const gT = clampY(ys(CP0 + 300)), gB = clampY(ys(CP0 - 20));
-  if (gT < gB) topRect(-80, gT, W + 80, gB, 0, '#9a8368');
+  if (gT < gB) {
+      if(shiftStart){
+        const outer=[],inner=[];
+        for(let i=0;i<=32;i++){
+          const a=-Math.PI/2+Math.PI*i/32;
+          outer.push(P(ROAD_L-13-BAY_D*Math.cos(a),clampY(ys(CP0+140)+BAY_L/2*Math.sin(a))));
+          inner.push(P(ROAD_L-13-(BAY_D-5)*Math.cos(a),clampY(ys(CP0+140)+(BAY_L/2-5)*Math.sin(a))));
+        }
+        poly(outer,'#eee8d5');poly(inner,'#5e5a54');
+      }else topRect(-80, gT, W + 80, gB, 0, '#9a8368');
+    }
   for (const q of uslots) {
     const yT = ys(q.s0 + 64), yB = ys(q.s0);
     if (yB < -118 || yT > H + 80) continue;
@@ -1804,7 +1955,7 @@ function drawUteWorld() {
   for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => o.tank ? waterTruck3(o.x, y) : ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb }) }); }
   for (const c of ucars) { const y = ys(c.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => ute3(c.x, y, c.col, -1) }); }
   const sB = CP0 + 330, yB = ys(sB);
-  if (yB > -115 && yB < H + 120) for (const bx of [80, 240, 400]) list.push({ y: yB, fn: () => {
+  if (!shiftStart && yB > -115 && yB < H + 120) for (const bx of [80, 240, 400]) list.push({ y: yB, fn: () => {
     box(bx, yB, 120, 46, 0, 34, '#d9d4c4'); box(bx, yB, 126, 52, 34, 39, '#8c3b2a');
     for (const wx of [-36, 36]) rearRect(yB + 23, bx + wx - 9, bx + wx + 9, 12, 26, '#2a3b4d');
     rearRect(yB + 23, bx - 8, bx + 8, 0, 28, '#5a3a22');
@@ -1945,7 +2096,7 @@ function updateOffice(dt) {
   }
 }
 // Driver changeover is mandatory before entering the already-loaded road train.
-let handStep=0, handoverLoaded=true;
+let handStep=0, handoverLoaded=true, handPos={x:-65,y:75,dir:0};
 const handLines=[
   'Incoming driver: Gday mate, ready for the swap?',
   'Outgoing driver: Yep. Road train is ready for changeover.',
@@ -1956,9 +2107,10 @@ const handLines=[
 ];
 function advanceHandover(){
   if(state!=='parkhandover')return;
+  if(Math.hypot(handPos.x-(-15),handPos.y-35)>35){flash('Walk over to the outgoing driver first.');return;}
   handStep++;
   if(handStep>=handLines.length){
-    shiftStart=false;skipLoad();
+    skipLoad();
     if(handoverLoaded){
       fills=Array(NT).fill(TRAILER_CAP);
       flash('Loaded truck received. Head to the Skyway and tip.');
@@ -1969,30 +2121,59 @@ function advanceHandover(){
     }
   }
 }
+function updateParkHandover(dt){
+  wT+=dt;msgT-=dt;
+  handPos.dir+=steerAxis()*2.3*dt;
+  const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-(keys.KeyS||keys.ArrowDown||keys.TB?.65:0);
+  const nx=handPos.x+Math.cos(handPos.dir)*38*fwd*dt;
+  const ny=handPos.y+Math.sin(handPos.dir)*38*fwd*dt;
+  if(nx>-115&&nx<55&&!(nx>0&&ny>-150&&ny<15))handPos.x=nx;
+  if(ny>-190&&ny<135)handPos.y=ny;
+}
 function drawParkHandover(){
-  rect(0,0,W,H,'#a86b45');
-  rect(25,145,W-50,460,'#515354');
-  for(let i=0;i<3;i++){
-    const yy=310+i*85;
-    rect(140,yy,220,67,'#9b5d39');rect(152,yy+10,196,48,'#be8152');
-    for(let j=0;j<5;j++)rect(166+j*36,yy+19,27,25,'#6c4431');
-    for(const xx of [156,342]){rect(xx,yy+13,11,16,'#181a1c');rect(xx,yy+43,11,16,'#181a1c');}
+  const hx=Math.cos(handPos.dir),hy=Math.sin(handPos.dir);
+  wCam={x:handPos.x-hx*95,y:handPos.y-hy*95,hx,hy,rx:-hy,ry:hx};
+  rect(0,0,W,H,'#a7bdd0');
+  wFlat(-260,-350,520,750,'#a86b45');
+  // Same broad half-oval highway pull-in dimensions, in the 3D pedestrian world.
+  const edge=90, outline=[];
+  for(let i=0;i<=32;i++){
+    const a=-Math.PI/2+Math.PI*i/32;
+    outline.push([edge-BAY_D*Math.cos(a),BAY_L/2*Math.sin(a),.1]);
   }
-  rect(145,188,210,116,'#ece8df');rect(166,206,166,47,'#6d94aa');
-  rect(155,277,190,13,'#40464a');text('LOADED ROAD TRAIN',W/2,178,17,'#fff');
-  rect(25,500,120,76,'#e2e5e7');rect(37,514,95,34,'#6a8da0');
-  // Two rounded hi-vis figures alongside the parked truck.
-  for(const x of [180,320]){
-    rect(x-10,461,8,30,'#253b55');rect(x+2,461,8,30,'#253b55');
-    rect(x-14,431,28,34,'#e4e800');rect(x-14,444,28,5,'#d9e3e8');
-    ctx.fillStyle='#d5a07b';ctx.beginPath();ctx.ellipse(x,418,12,14,0,0,Math.PI*2);ctx.fill();
-    rect(x-11,406,22,5,'#4b3529');
+  wPoly(outline.concat([[edge,-BAY_L/2,.1],[edge,BAY_L/2,.1]]),'#d8c8b1');
+  const inner=[];
+  for(let i=0;i<=32;i++){
+    const a=-Math.PI/2+Math.PI*i/32;
+    inner.push([edge-(BAY_D-5)*Math.cos(a),(BAY_L/2-5)*Math.sin(a),.2]);
   }
-  rect(16,18,W-32,105,'#15273ce9');text('HIGHWAY PARKING BAY - DRIVER CHANGEOVER',W/2,53,18,'#ffe568');
-  text(handoverLoaded?'Truck is LOADED: drive to Skyway':'Truck is EMPTY: drive to ROM',W/2,85,15,'#fff');
-  rect(20,615,W-40,94,'#102136ee');
-  text(handLines[Math.min(handStep,handLines.length-1)],W/2,648,14,'#fff');
-  text(isTouch?'Tap to continue':'Press SPACE or E to continue',W/2,686,15,'#ffe568');
+  wPoly(inner.concat([[edge,-BAY_L/2+5,.2],[edge,BAY_L/2-5,.2]]),'#5e5a54');
+  wFlat(88,-350,140,700,'#45433f');
+  // Full four-trailer pink road train at rest in the bay.
+  wBox(28,-110,35,85,0,34,'#b8237a','#e778b1');
+  for(let i=0;i<4;i++){
+    const y=-40+i*70;
+    wBox(28,y,36,58,0,34,'#b8237a','#e778b1');
+    for(const side of [-1,1])for(const off of [-19,0,19])wBox(28+side*20,y+off,7,9,0,12,'#171717','#222');
+  }
+  // Outgoing driver and player use the same animated 3D human model.
+  campHuman(-15,35,false,false);
+  const oldWp=wp;
+  wp={x:handPos.x,y:handPos.y,dir:handPos.dir,ph:wT*10};
+  campHuman(handPos.x,handPos.y,false,true);
+  wp=oldWp;
+  wBox(-105,80,2,2,0,33,'#ddd','#ddd');
+  wBox(-105,80,32,2,33,45,'#1d5fb4','#1d5fb4');
+  wText('P',-105,80,39,9,'#fff');
+  rect(10,10,W-20,110,'#142536e8');
+  text('3D HIGHWAY BAY - DRIVER CHANGEOVER',W/2,42,17,'#ffe568');
+  text(handoverLoaded?'LOADED: SKYWAY RUN':'EMPTY: RETURN TO ROM',W/2,71,15,'#fff');
+  text('W/S walk   A/D turn   E talk',W/2,100,13,'#fff');
+  rect(12,605,W-24,105,'#102136ee');
+  const close=Math.hypot(handPos.x+15,handPos.y-35)<=35;
+  text(close?handLines[Math.min(handStep,handLines.length-1)]:'Walk to the other driver beside the truck',W/2,640,13,'#fff');
+  text(close?(isTouch?'Tap here to continue':'Press E / SPACE to continue'):'Approach the driver to begin',W/2,684,14,'#ffe568');
+  if(isTouch){drawStick();drawBtns(DB);}
 }
 // Seated scheduler: chair, bent legs, rounded torso and head behind the monitors.
 function seatedScheduler(x,y,moustache=false) {
@@ -2143,26 +2324,32 @@ function campOval(x,y,z,rx,ry,rz,base) {
 }
 // Camp models use the same projected world geometry and chase camera as the buildings.
 function campHuman(x,y,moustache=false,player=false) {
-  const a=player?wp.dir:Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
-  const moving=player?Math.sin(wp.ph)*2.1:Math.sin(wT*3+x)*1.1;
+  const a=player?(state==='officeinside'?officeHeading:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const walking=player && (state==='officeinside'
+    ? (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB)
+    : (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB));
+  const moving=player?(walking?Math.sin(wT*10)*2.1:0):Math.sin(wT*3+x)*1.1;
+  const originalOval=campOval;
+  const scale=player?.70:1;
+  const scaledOval=(xx,yy,zz,ww,ll,hh,col)=>originalOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col);
   const point=(side,front=0)=>[x+rx*side+fx*front,y+ry*side+fy*front];
   // Boots and separate moving legs, naturally rounded rather than block-shaped.
   for(const side of [-1,1]){
     let p=point(side*2.6,side*moving);
-    campOval(p[0],p[1],2,2.8,3.7,2.5,'#202329');
+    scaledOval(p[0],p[1],2,2.8,3.7,2.5,'#202329');
     p=point(side*2.7,side*moving*.45);
-    campOval(p[0],p[1],9,2.5,2.5,7,'#293b56');
+    scaledOval(p[0],p[1],9,2.5,2.5,7,'#293b56');
     p=point(side*6,side*moving*.3);
-    campOval(p[0],p[1],18,2.8,2.9,7,'#e8e900');
-    campOval(p[0],p[1],13,2.9,3,1.3,'#dce4e7');
+    scaledOval(p[0],p[1],18,2.8,2.9,7,'#e8e900');
+    scaledOval(p[0],p[1],13,2.9,3,1.3,'#dce4e7');
     p=point(side*6,side*moving);
-    campOval(p[0],p[1],9,2,2,4,'#c89570');
+    scaledOval(p[0],p[1],9,2,2,4,'#c89570');
   }
-  campOval(x,y,18.5,6.2,4.3,8,'#e7e900');
-  campOval(x,y,16.5,6.35,4.45,1,'#e4e8e9');
-  campOval(x,y,22,6.1,4.35,1,'#e4e8e9');
-  campOval(x,y,26,2.1,2.2,2.5,'#c78e6a');
-  campOval(x,y,31,4.7,4.2,5.8,'#d8a27b');
+  scaledOval(x,y,18.5,6.2,4.3,8,'#e7e900');
+  scaledOval(x,y,16.5,6.35,4.45,1,'#e4e8e9');
+  scaledOval(x,y,22,6.1,4.35,1,'#e4e8e9');
+  scaledOval(x,y,26,2.1,2.2,2.5,'#c78e6a');
+  scaledOval(x,y,31,4.7,4.2,5.8,'#d8a27b');
   let p=point(0,-1.5);campOval(p[0],p[1],35,4.7,3.9,2.5,'#49332b');
   p=point(0,4);campOval(p[0],p[1],30,2.4,1.1,1.1,'#bd8566');
   if(moustache){p=point(0,4.5);campOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
