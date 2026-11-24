@@ -2560,6 +2560,28 @@ function updateOffice(dt) {
     wp.dir=Math.atan2(OFFICE_DOOR.ny,0);wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
   }
 }
+// interior chase camera that never leaves the room (so walls never have to be cut away), and an inside door on the front wall
+function roomCam(p, B, far) {
+  const hx = Math.cos(p.dir), hy = Math.sin(p.dir); let d = far;
+  while (d > 10 && (p.x - hx * d < B.x0 + 6 || p.x - hx * d > B.x1 - 6 || p.y - hy * d < B.y0 + 6 || p.y - hy * d > B.y1 - 6)) d -= 2;
+  wCam = { x: p.x - hx * d, y: p.y - hy * d, hx, hy, rx: -hy, ry: hx };
+  return { hx, hy };
+}
+function insideDoor(y, wallCol) {   // glass double doors in the front wall at y, seen from inside, with an EXIT sign over them
+  const F = (x0, x1, z0, z1, c, dy = 0) => wPoly([[x0, y - dy, z0], [x1, y - dy, z0], [x1, y - dy, z1], [x0, y - dy, z1]], c);
+  F(-15, 15, 34, 50, wallCol);                                              // wall over the doorway
+  F(-16, 16, 0, 35, '#8a949b', .1);                                         // aluminium frame
+  for (const s of [-1, 1]) {
+    const lo = Math.min(s * .9, s * 14.2), hi = Math.max(s * .9, s * 14.2);
+    F(lo, hi, 1, 33, '#5d7e92', .2);                                        // glass leaf (the yard showing through)
+    F(lo + (hi - lo) * .2, lo + (hi - lo) * .45, 6, 32, 'rgba(210,230,240,.35)', .25);
+    F(lo, hi, 1, 5.5, '#b9c0c5', .3);                                       // kick plate
+    F(lo + 1, hi - 1, 15.5, 17, '#dfe3e6', .35);                            // push bar
+  }
+  F(-.9, .9, 0, 34, '#7e888e', .3); F(-16, 16, 33, 35, '#7e888e', .3);      // meeting stiles, head
+  F(-8, 8, 37.5, 42.5, '#1f8a4c', .3); wText('EXIT', 0, y - .5, 40, 4.5, '#fff');   // exit sign
+  wBox(0, y - 4, 26, 8, 0, .4, '#3a3f44', '#3a3f44');                       // entry mat
+}
 // ---------- camp shop & reception ----------
 // Local coordinates: x across (-90..90), y from the back wall (-65) to the glass doors (+65). Reception desk on the back
 // wall, three shelf units (lollies, chips, toiletries) on the left, four glass-door drink fridges along the right wall.
@@ -2576,7 +2598,7 @@ function shopBlockedI(x, y) {
   if (x < SHOPI.x0 + 5 || x > SHOPI.x1 - 5 || y < SHOPI.y0 + 5) return true;
   return storeSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
 }
-function enterShop() { state = 'shopinside'; kit = { x: 0, y: 50, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns(); flash('Shop & reception. Walk up to the desk, a shelf or a fridge and press E.'); }
+function enterShop() { state = 'shopinside'; kit = { x: 0, y: 4, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns(); flash('Shop & reception. Walk up to the desk, a shelf or a fridge and press E.'); }
 function leaveShop() { state = 'walk'; wp.x = SHOP_DOOR.x; wp.y = SHOP_DOOR.y - 24; wp.dir = -Math.PI / 2; wCamH = wp.dir; ptrs.clear(); syncBtns(); flash('Back outside.'); }
 const shopNear = () => SHOP_SPOTS.find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
 function shopInteract() { const sp = shopNear(); flash(sp ? sp.msg : 'Walk up to the reception desk, a shelf or a fridge.'); }
@@ -2589,8 +2611,7 @@ function updateShop(dt) {
   if (kit.y > SHOPI.y1 - 1) leaveShop();
 }
 function drawShop() {
-  const hx = Math.cos(kit.dir), hy = Math.sin(kit.dir);
-  wCam = { x: kit.x - hx * 62, y: kit.y - hy * 62, hx, hy, rx: -hy, ry: hx };
+  const { hx, hy } = roomCam(kit, SHOPI, 62);
   rect(0, 0, W, H, '#cfd6da');
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   wFlat(SHOPI.x0, SHOPI.y0, SHOPI.x1 - SHOPI.x0, SHOPI.y1 - SHOPI.y0, '#d8d2c4');
@@ -2602,8 +2623,7 @@ function drawShop() {
   wall(SHOPI.x0, SHOPI.y0, SHOPI.x0, SHOPI.y1, () => wCam.x < SHOPI.x0);
   wall(SHOPI.x1, SHOPI.y0, SHOPI.x1, SHOPI.y1, () => wCam.x > SHOPI.x1);
   for (const [a, b] of [[SHOPI.x0, -15], [15, SHOPI.x1]]) wall(a, SHOPI.y1, b, SHOPI.y1, () => wCam.y > SHOPI.y1);
-  add(0, SHOPI.y1, () => { if (wCam.y > SHOPI.y1) ctx.globalAlpha = .18; wPoly([[-15, SHOPI.y1, 33], [15, SHOPI.y1, 33], [15, SHOPI.y1, 44], [-15, SHOPI.y1, 44]], '#efe9df');
-    for (const k of [-1, 1]) wPoly([[k, SHOPI.y1 - .3, 0], [k * 14, SHOPI.y1 - .3, 0], [k * 14, SHOPI.y1 - .3, 32], [k, SHOPI.y1 - .3, 32]], 'rgba(59,88,105,.55)'); ctx.globalAlpha = 1; });
+  add(0, SHOPI.y1, () => insideDoor(SHOPI.y1, '#efe9df'));   // the glass doors, from inside
   // reception desk with a receptionist, computer, bell and brochure stand; key cabinet and sign behind
   add(0, -42, () => {
     wBox(0, -42, 70, 14, 0, 17, '#6b4a33', '#8a5a34'); wBox(0, -36, 70, 2, 4, 16, '#c62828', '#c62828');   // desk with a red front panel
@@ -2669,7 +2689,7 @@ function kitBlocked(x, y) {
   return kitSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
 }
 function enterKitchen() {
-  state = 'kitcheninside'; kit = { x: 0, y: 92, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
+  state = 'kitcheninside'; kit = { x: 0, y: 50, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
   flash('Dining room. Walk to a counter and press E.');
 }
 function leaveKitchen() {
@@ -2694,8 +2714,7 @@ function updateKitchen(dt) {
   if (kit.y > KIT.y1 - 2) leaveKitchen();
 }
 function drawKitchen() {
-  const hx = Math.cos(kit.dir), hy = Math.sin(kit.dir);
-  wCam = { x: kit.x - hx * 70, y: kit.y - hy * 70, hx, hy, rx: -hy, ry: hx };
+  const { hx, hy } = roomCam(kit, KIT, 70);
   rect(0, 0, W, H, '#cfd6da');
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   // floor: vinyl tiles
@@ -2709,8 +2728,7 @@ function drawKitchen() {
   wall(KIT.x0, KIT.y0, KIT.x0, KIT.y1, () => wCam.x < KIT.x0);
   wall(KIT.x1, KIT.y0, KIT.x1, KIT.y1, () => wCam.x > KIT.x1);
   for (const [a, b] of [[KIT.x0, -15], [15, KIT.x1]]) wall(a, KIT.y1, b, KIT.y1, () => wCam.y > KIT.y1);
-  add(0, KIT.y1, () => { if (wCam.y > KIT.y1) ctx.globalAlpha = .18; wPoly([[-15, KIT.y1, 34], [15, KIT.y1, 34], [15, KIT.y1, 50], [-15, KIT.y1, 50]], '#e6e1d6');
-    for (const k of [-1, 1]) wPoly([[k * 1, KIT.y1 - .3, 0], [k * 14, KIT.y1 - .3, 0], [k * 14, KIT.y1 - .3, 33], [k * 1, KIT.y1 - .3, 33]], 'rgba(59,88,105,.55)'); ctx.globalAlpha = 1; });   // glass double doors
+  add(0, KIT.y1, () => insideDoor(KIT.y1, '#e6e1d6'));   // the double doors, from inside
   // bain-marie: stainless counter, hot food trays, sneeze guard, heat lamps; cook behind it
   add(0, -88, () => {
     wBox(0, -88, 124, 18, 0, 14, '#a9b0b6', '#c9ced2');
