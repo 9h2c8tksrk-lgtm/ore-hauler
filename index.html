@@ -131,17 +131,18 @@ addEventListener('keyup', e => { if (e.code === 'MetaLeft' || e.code === 'MetaRi
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
   if (state === 'kitcheninside' && inR(p, [340, 558, 132, 52])) { kitchenInteract(); return; }
+  if (state === 'shopinside' && inR(p, [340, 558, 132, 52])) { shopInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && inR(p, [340, 558, 132, 52])) { if (officeStep === 1) officeTouchHeld = true; else officeInteract(); return; }
   if (state === 'drive' && bayReady) {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if(state==='workshop'&&inR(p,[340,570,132,52])&&workshopParked()){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -257,6 +258,7 @@ function onKey(code) {
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && code === 'KeyL') { homeRoom = -1; skipLoad(); return; }
   if (state === 'kitcheninside' && code === 'KeyE') { kitchenInteract(); return; }
+  if (state === 'shopinside' && code === 'KeyE') { shopInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
@@ -1312,6 +1314,7 @@ function update(dt) {
   if (state === 'ute') return updateUte(dt);
   if (state === 'officeinside') return updateOffice(dt);
   if (state === 'kitcheninside') return updateKitchen(dt);
+  if (state === 'shopinside') return updateShop(dt);
   if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
@@ -2400,7 +2403,8 @@ const CAMP_DECOR = [[405, 520, 35, 90], [405, 655, 35, 80], [405, 815, 35, 80], 
 campWing('D', 635, 748, 85, 38, 'S', 0); campWing('D', 635, 890, 85, 38, 'S', 0); campWing('D', 635, 748, 38, 180, 'S', 0);   // the U block
 campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 3, 0, -1); campDoors('D', 673, 786, 673, 890, 3, 1, 0);
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
-const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [755, 1100, 120, 190], office: [670, 1090, 80, 45] };
+// schedule office north of the tree at (715, 1035), doors facing the tree; the shop & reception sits where the office used to be
+const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [755, 1100, 120, 190], office: [662, 955, 68, 45], shop: [670, 1090, 80, 45] };
 // Wet mess: an open undercover area (posts and a roof, no walls) with one back wall carrying the bar, fridges and a TV.
 // Four small square picnic tables and one long one down the middle.
 const MESS = { x0: 755, x1: 875, y0: 1100, y1: 1290 }, MESS_SMALL = [[782, 1142], [848, 1142], [782, 1262], [848, 1262]], MESS_BIG = { x: 815, y: 1203, len: 64 };
@@ -2409,7 +2413,7 @@ const MY_BAY = { x: 935, y: 956 };   // your ute: first row of the big car park,
 const CAR_SPOTS = [{ x: MY_BAY.x - 32, y: MY_BAY.y - 13, w: 64, h: 26, mine: true }];
 const KITCHEN_DOOR = { x: 760, y: 980 };   // double doors into the dining room, on the kitchen's west face
 const nearKitchen = () => Math.hypot(wp.x - (KITCHEN_DOOR.x - 18), wp.y - KITCHEN_DOOR.y) < 34;
-const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
+const OFFICE_DOOR = { x: 696, y: 1000, nx: 0, ny: 1, hw: 12 }, SHOP_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
 const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
 // Big car park behind (east of) the kitchen and dining room: three rows of nose-in bays, driveways between them,
 // light poles. Most bays are taken by utes.
@@ -2485,7 +2489,7 @@ function hiaceModel(x, y, h, stripe) {
   }
   const q = wCamPt(...Wd(-4, g * 1.02, 6.4)); if (q[1] > 30 && q[1] < 420) { const [tx, ty] = wProj(q); text('CAMP SHUTTLE', tx, ty, Math.max(4, Math.min(11, 3.6 * WF / q[1])), '#2b3a48'); }
 }
-const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...[CAMP_BIG.kitchen, CAMP_BIG.office].map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS,
+const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...[CAMP_BIG.kitchen, CAMP_BIG.office, CAMP_BIG.shop].map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS,
   { x: 755, y: 1097, w: 120, h: 6 }, { x: 770, y: 1103, w: 90, h: 11 }, ...MESS_POSTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 })),
   ...MESS_SMALL.map(([x, y]) => ({ x: x - 16, y: y - 16, w: 32, h: 32 })), { x: MESS_BIG.x - 16, y: MESS_BIG.y - MESS_BIG.len / 2 - 2, w: 32, h: MESS_BIG.len + 4 },
   ...BP_UTES.map(u => ({ x: u.x - 32, y: u.y - 13, w: 64, h: 26 })), ...BP_LIGHTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 }))];
@@ -2493,7 +2497,8 @@ const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || 
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
 let officeStep = 0, officeBreath = 0, officeLine = 0, officeTouchHeld = false, officePos = {x:0,y:0}, officeHeading = -Math.PI/2;
-const nearOffice = () => Math.hypot(wp.x - OFFICE_DOOR.x, wp.y - (OFFICE_DOOR.y - 20)) < 75;
+const nearOffice = () => { const d = Math.hypot(wp.x - OFFICE_DOOR.x, wp.y - (OFFICE_DOOR.y + OFFICE_DOOR.ny * 20)); return d < 32 && d <= Math.hypot(wp.x - SHOP_DOOR.x, wp.y - (SHOP_DOOR.y + SHOP_DOOR.ny * 18)); };
+const nearShop = () => { const ds = Math.hypot(wp.x - SHOP_DOOR.x, wp.y - (SHOP_DOOR.y + SHOP_DOOR.ny * 18)); return ds < 30 && ds < Math.hypot(wp.x - OFFICE_DOOR.x, wp.y - (OFFICE_DOOR.y + OFFICE_DOOR.ny * 20)); };   // the nearer door wins
 const officeLines = [
   'Moustached scheduler: Morning mate. Ready for the run?',
   'Driver: Morning! What truck am I on today?',
@@ -2502,6 +2507,7 @@ const officeLines = [
   'Scheduler: Check your load and paperwork. Stay safe!'
 ];
 function officeInteract() {
+  if (state === 'walk' && nearShop()) { enterShop(); return; }
   if (state === 'walk' && nearKitchen() && !(shiftStart && wStage === 0 && nearOffice())) { enterKitchen(); return; }
   if (state === 'walk' && shiftStart && wStage === 0 && nearOffice()) {
     state='officeinside'; officePos={x:0,y:23}; officeHeading=-Math.PI/2;
@@ -2550,9 +2556,96 @@ function updateOffice(dt) {
     if(officeBreath>=2.5){officeStep=2;officeTouchHeld=false;flash('SIMULATED RESULT: 0.000 BAC. Talk to the Fleet Schedulers.');}
   }
   if(officeStep===4&&officePos.y>38){
-    state='walk';wStage=1;wp.x=OFFICE_DOOR.x;wp.y=OFFICE_DOOR.y-23;
-    wp.dir=-Math.PI/2;wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
+    state='walk';wStage=1;wp.x=OFFICE_DOOR.x;wp.y=OFFICE_DOOR.y+OFFICE_DOOR.ny*23;
+    wp.dir=Math.atan2(OFFICE_DOOR.ny,0);wCamH=wp.dir;ptrs.clear();syncBtns();flash('Head to your ute for the highway changeover.');
   }
+}
+// ---------- camp shop & reception ----------
+// Local coordinates: x across (-90..90), y from the back wall (-65) to the glass doors (+65). Reception desk on the back
+// wall, three shelf units (lollies, chips, toiletries) on the left, four glass-door drink fridges along the right wall.
+const SHOPI = { x0: -90, x1: 90, y0: -65, y1: 65 };
+const SHOP_SPOTS = [
+  { name: 'desk', x: 0, y: -26, r: 20, msg: 'Checked in at reception: room key, meal card and the camp WiFi code.' },
+  { name: 'lollies', x: -48, y: -6, r: 16, msg: 'Grabbed a bag of snakes and a chocolate bar.' },
+  { name: 'chips', x: -48, y: 18, r: 16, msg: 'Grabbed a packet of salt and vinegar chips.' },
+  { name: 'toiletries', x: -48, y: 42, r: 16, msg: 'Toothpaste, deodorant and sunscreen for the swing.' },
+  { name: 'fridge', x: 64, y: -2, r: 32, msg: 'Cold bottle of water and a soft drink from the fridge.' }];
+const storeSolids = () => [[0, -42, 70, 14], [0, -58, 60, 10], [-72, -6, 18, 12], [-72, 18, 18, 12], [-72, 42, 18, 12], [80, -2, 20, 92]];
+function shopBlockedI(x, y) {
+  if (y > SHOPI.y1 - 5) return Math.abs(x) > 14;
+  if (x < SHOPI.x0 + 5 || x > SHOPI.x1 - 5 || y < SHOPI.y0 + 5) return true;
+  return storeSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
+}
+function enterShop() { state = 'shopinside'; kit = { x: 0, y: 50, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns(); flash('Shop & reception. Walk up to the desk, a shelf or a fridge and press E.'); }
+function leaveShop() { state = 'walk'; wp.x = SHOP_DOOR.x; wp.y = SHOP_DOOR.y - 24; wp.dir = -Math.PI / 2; wCamH = wp.dir; ptrs.clear(); syncBtns(); flash('Back outside.'); }
+const shopNear = () => SHOP_SPOTS.find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
+function shopInteract() { const sp = shopNear(); flash(sp ? sp.msg : 'Walk up to the reception desk, a shelf or a fridge.'); }
+function updateShop(dt) {
+  wT += dt; msgT -= dt;
+  const fwd = (keys.ArrowUp || keys.KeyW || keys.TG ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB ? .65 : 0);
+  kit.dir += steerAxis() * 2.3 * dt;
+  if (fwd) { const nx = kit.x + Math.cos(kit.dir) * 44 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 44 * fwd * dt;
+    if (!shopBlockedI(nx, kit.y)) kit.x = nx; if (!shopBlockedI(kit.x, ny)) kit.y = ny; }
+  if (kit.y > SHOPI.y1 - 1) leaveShop();
+}
+function drawShop() {
+  const hx = Math.cos(kit.dir), hy = Math.sin(kit.dir);
+  wCam = { x: kit.x - hx * 62, y: kit.y - hy * 62, hx, hy, rx: -hy, ry: hx };
+  rect(0, 0, W, H, '#cfd6da');
+  const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
+  wFlat(SHOPI.x0, SHOPI.y0, SHOPI.x1 - SHOPI.x0, SHOPI.y1 - SHOPI.y0, '#d8d2c4');
+  for (let x = SHOPI.x0; x < SHOPI.x1; x += 20) wFlat(x, SHOPI.y0, .7, SHOPI.y1 - SHOPI.y0, '#c4bdae', .05);
+  for (let y = SHOPI.y0; y < SHOPI.y1; y += 20) wFlat(SHOPI.x0, y, SHOPI.x1 - SHOPI.x0, .7, '#c4bdae', .05);
+  const wall = (x0, y0, x1, y1, cut) => add((x0 + x1) / 2, (y0 + y1) / 2, () => { if (cut()) ctx.globalAlpha = .18;
+    wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 44], [x0, y0, 44]], '#efe9df'); wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 5], [x0, y0, 5]], '#8a8478'); ctx.globalAlpha = 1; });
+  wall(SHOPI.x0, SHOPI.y0, SHOPI.x1, SHOPI.y0, () => wCam.y < SHOPI.y0);
+  wall(SHOPI.x0, SHOPI.y0, SHOPI.x0, SHOPI.y1, () => wCam.x < SHOPI.x0);
+  wall(SHOPI.x1, SHOPI.y0, SHOPI.x1, SHOPI.y1, () => wCam.x > SHOPI.x1);
+  for (const [a, b] of [[SHOPI.x0, -15], [15, SHOPI.x1]]) wall(a, SHOPI.y1, b, SHOPI.y1, () => wCam.y > SHOPI.y1);
+  add(0, SHOPI.y1, () => { if (wCam.y > SHOPI.y1) ctx.globalAlpha = .18; wPoly([[-15, SHOPI.y1, 33], [15, SHOPI.y1, 33], [15, SHOPI.y1, 44], [-15, SHOPI.y1, 44]], '#efe9df');
+    for (const k of [-1, 1]) wPoly([[k, SHOPI.y1 - .3, 0], [k * 14, SHOPI.y1 - .3, 0], [k * 14, SHOPI.y1 - .3, 32], [k, SHOPI.y1 - .3, 32]], 'rgba(59,88,105,.55)'); ctx.globalAlpha = 1; });
+  // reception desk with a receptionist, computer, bell and brochure stand; key cabinet and sign behind
+  add(0, -42, () => {
+    wBox(0, -42, 70, 14, 0, 17, '#6b4a33', '#8a5a34'); wBox(0, -36, 70, 2, 4, 16, '#c62828', '#c62828');   // desk with a red front panel
+    wBox(14, -44, 12, 3, 17, 27, '#24282c', '#3a3f44'); wBox(14, -42, 9, 6, 17, 18, '#30343b', '#30343b');   // monitor, keyboard
+    wBox(-20, -40, 3, 3, 17, 19, '#d6b400', '#f2d02a');                                                       // bell
+    wBox(-28, -38, 8, 4, 17, 24, '#f4f4f4', '#e8e8e8');                                                       // brochures
+    wText('RECEPTION', 0, -35, 13, 5, '#fff');
+  });
+  add(0, -60, () => { wBox(-20, -61, 22, 4, 16, 36, '#7a5a3c', '#8a6a4a'); for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) wBox(-28 + c * 4, -58.8, 1, .4, 20 + r * 4, 22 + r * 4, '#d6b400', '#d6b400');   // key cabinet
+    wPoly([[8, -64.6, 22], [40, -64.6, 22], [40, -64.6, 36], [8, -64.6, 36]], '#c62828'); wText('GOLDEN EAGLE CAMP', 24, -64, 30, 4.5, '#fff'); });
+  // shelf units: lollies, chips, toiletries, each three shelves deep with coloured packets
+  const SHELF = [[-6, 'LOLLIES', ['#e63946', '#f4a261', '#ffd166', '#06d6a0', '#8338ec', '#ff006e']], [18, 'CHIPS', ['#f2c200', '#2a9d8f', '#e76f51', '#264653', '#e9c46a', '#d62828']], [42, 'TOILETRIES', ['#4ea8de', '#f4f4f4', '#90be6d', '#bdb2ff', '#48cae4', '#ffafcc']]];
+  for (const [sy, name, cols] of SHELF) add(-72, sy, () => {
+    wBox(-80, sy, 2, 12, 0, 32, '#9aa3aa', '#b8bec4');                                                        // back panel
+    for (const z of [2, 11, 20, 29]) wBox(-72, sy, 16, 12, z, z + 1.2, '#c9ced2', '#dde1e4');                // shelves
+    for (const [k, z] of [[0, 3.2], [1, 12.2], [2, 21.2]]) for (let i = 0; i < 4; i++) wBox(-75 + (i % 2) * 6, sy - 4 + i * 2.6, 4, 2.2, z, z + 5.5 + (i % 2), cols[(i + k * 2) % 6], shade(cols[(i + k * 2) % 6], 1.15));
+    wText(name, -72, sy, 35, 5, '#1d2b38');
+  });
+  // four glass-door drinks fridges along the right wall: water on top, soft drinks below, lit inside
+  for (let f = 0; f < 4; f++) { const fy = -40 + f * 25; add(80, fy, () => {
+    wBox(81, fy, 18, 23, 0, 38, '#d9dde0', '#eef0f2');
+    wPoly([[71.9, fy - 10.5, 3], [71.9, fy + 10.5, 3], [71.9, fy + 10.5, 35], [71.9, fy - 10.5, 35]], '#e9f4fb');   // lit interior
+    for (const z of [7, 14, 21, 28]) {
+      wPoly([[71.8, fy - 10.5, z - .4], [71.8, fy + 10.5, z - .4], [71.8, fy + 10.5, z], [71.8, fy - 10.5, z]], '#b8c2c8');
+      for (let b = 0; b < 6; b++) { const c = z > 20 ? ['#cfe8f7', '#5aa9e6'][b % 2] : ['#d62828', '#1d3557', '#2a9d8f', '#f77f00', '#c1121f', '#6a4c93'][(b + f) % 6];
+        wPoly([[71.7, fy - 9 + b * 3.4, z + .3], [71.7, fy - 7.2 + b * 3.4, z + .3], [71.7, fy - 7.2 + b * 3.4, z + 5.6], [71.7, fy - 9 + b * 3.4, z + 5.6]], c); }
+    }
+    wPoly([[71.6, fy - 11, 2], [71.6, fy + 11, 2], [71.6, fy + 11, 36], [71.6, fy - 11, 36]], 'rgba(170,210,230,.28)');   // glass door
+    wPoly([[71.5, fy + 9, 12], [71.5, fy + 10, 12], [71.5, fy + 10, 26], [71.5, fy + 9, 26]], '#c9ced2');                // handle
+    wPoly([[71.6, fy - 11, 36], [71.6, fy + 11, 36], [71.6, fy + 11, 40], [71.6, fy - 11, 40]], f % 2 ? '#c62828' : '#1d5fb4');   // header
+  }); }
+  // the receptionist, and a couple of workers shopping
+  const L = FOLK_LOOKS, t = wT, folk = [[0, -55, Math.PI / 2, { shirt: '#c62828', stripe: null, pants: '#2b2b2b', hair: 'ponytail', hairCol: '#3a2a20', skin: '#e8b892' }],
+    [-52, 30, Math.PI, { ...L[6], pose: 'bag' }], [56, -28 + 6 * Math.sin(t * .4), 0, { ...L[2], pose: 'drink', can: '#5aa9e6', t }]];
+  for (const [x, y, dir, o] of folk) { const d = (x - wCam.x) * hx + (y - wCam.y) * hy; add(x, y, () => campHuman(x, y, false, false, { ...o, dir, scale: .7, lod: d > 140 ? 'low' : d > 55 ? 'mid' : 'hi' })); }
+  add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
+  ents.sort((p, q) => q.f - p.f); for (const e of ents) if (e.f > -30) e.fn();
+  rect(0, 0, W, 80, '#142536dd'); text('CAMP SHOP & RECEPTION', W / 2, 27, 22, '#ffea69');
+  text('W / S walk    A / D turn    E use    exit by the glass doors', W / 2, 55, 13, '#fff');
+  const sp = shopNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { desk: 'check in at reception', lollies: 'grab some lollies', chips: 'grab some chips', toiletries: 'grab toiletries', fridge: 'grab a cold drink' }[sp.name], W / 2, 560, 14, '#fff'); }
+  if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
+  if (msgT > 0) text(msg, W / 2, 110, 15, '#ffef79');
 }
 // ---------- camp dining room (inside the kitchen building) ----------
 // Local coordinates: x across (-150..150), y from the back wall (-110) to the double doors (+110). Bain-marie along the back,
@@ -2949,7 +3042,7 @@ let ovalSink=null;   // when set, campOval queues its faces so a whole figure ca
 // shirt, stripe (reflective tape, null for none), pants, shorts, skin, shoes, hair ('short' | 'buzz' | 'mullet' | 'long' |
 // 'ponytail' | 'bald' | 'cap' | 'hardhat'), hairCol, cap, beard, sunnies, pose ('drink' | 'dribble' | 'shoot' | 'bag' | 'pack'), can, bag
 function campHuman(x,y,moustache=false,player=false,o={}) {
-  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
   const keysWalk=keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB;
   const walking=player?keysWalk:!!o.walk, ph=player?wT*10:(o.ph||0), t=o.t!==undefined?o.t:wT;
   const moving=walking?Math.sin(ph)*2.1:(player?0:Math.sin(wT*3+x)*.25);
@@ -3183,8 +3276,8 @@ function drawWalk() {
   const blocksView = (x, y, w, h) => { for (let t = .05; t < .97; t += .04) { const px = wCam.x + (wp.x - wCam.x) * t, py = wCam.y + (wp.y - wCam.y) * t; if (px > x - 4 && px < x + w + 4 && py > y - 4 && py < y + h + 4) return true; } return false; };
   const ghost = (x, y, w, h, fn) => () => { const g = blocksView(x, y, w, h); if (g) ctx.globalAlpha = .28; fn(); ctx.globalAlpha = 1; };
   for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, ghost(b.x, b.y, b.w, b.h, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof)));
-  for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'DINING ROOM', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
-    add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { const bh = o === CAMP_BIG.office || o === CAMP_BIG.kitchen ? 48 : 30; wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, bh, '#d9d4c4', roof); if (o !== CAMP_BIG.kitchen) wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, bh + 4, 11, '#fff'); }));   // the dining room's sign is over its doors
+  for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'DINING ROOM', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4'], [CAMP_BIG.shop, 'SHOP', '#c62828']])
+    add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { const bh = o === CAMP_BIG.office || o === CAMP_BIG.kitchen ? 48 : o === CAMP_BIG.shop ? 40 : 30; wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, bh, '#d9d4c4', roof); if (o !== CAMP_BIG.kitchen && o !== CAMP_BIG.shop) wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, bh + 4, 11, '#fff'); }));   // the dining room's sign is over its doors
   const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 48, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
@@ -3204,27 +3297,25 @@ function drawWalk() {
     // Schedulers and the breathalyser are inside the office.
   }
   CAMP_DOORS.forEach((d, i) => doorEnt(d, i === wRoom && wStage === 1 && !shiftStart, d.name));
-  // Fleet Schedulers entrance: aluminium-framed glass double doors with push bars and kick plates, under a blue canopy
-  add(OFFICE_DOOR.x, OFFICE_DOOR.y - 3, () => {
-    const on = wStage === 0, x = OFFICE_DOOR.x, y = OFFICE_DOOR.y - .4, F = (x0, x1, z0, z1, c, dy = 0) => wPoly([[x0, y - dy, z0], [x1, y - dy, z0], [x1, y - dy, z1], [x0, y - dy, z1]], c);
-    wBox(x, y - 6, 46, 12, 0, 2.2, '#bdb7a8', '#cfc9ba');                     // concrete landing
-    wBox(x, y - 3, 34, 5, 0, 1.2, '#2f3437', '#3d4347');                      // entry mat
-    F(x - 15, x + 15, 0, 36, on ? '#ffe040' : '#9aa3a8');                     // frame / surround (glows when it's your objective)
+  // glass double-door entrance on a north/south face: o = outward direction (-1 north, +1 south)
+  const glassEntrance = (door, label, col, on) => add(door.x, door.y + door.ny * 3, () => {
+    const o = door.ny, x = door.x, y = door.y + o * .4, F = (x0, x1, z0, z1, c, dy = 0) => wPoly([[x0, y + o * dy, z0], [x1, y + o * dy, z0], [x1, y + o * dy, z1], [x0, y + o * dy, z1]], c);
+    wBox(x, y + o * 6, 46, 12, 0, 2.2, '#bdb7a8', '#cfc9ba');                 // concrete landing
+    wBox(x, y + o * 3, 34, 5, 0, 1.2, '#2f3437', '#3d4347');                  // entry mat
+    F(x - 15, x + 15, 0, 36, on ? '#ffe040' : '#9aa3a8');                     // frame (glows when it's your objective)
     for (const s of [-1, 1]) {
       const a = x + s * .8, b = x + s * 13.6, lo = Math.min(a, b), hi = Math.max(a, b);
-      F(lo, hi, 1, 33, '#3b5869', .2);                                        // glass leaf
-      F(lo + (hi - lo) * .15, lo + (hi - lo) * .45, 6, 33, 'rgba(160,200,225,.35)', .3);   // reflection streak
-      F(lo, hi, 1, 5, '#b9c0c5', .35);                                        // kick plate
-      F(lo + 1, hi - 1, 16, 17.4, '#d6dbde', .4);                             // push bar
-      F(x + s * 2.2 - .5, x + s * 2.2 + .5, 12, 24, '#e6eaec', .5);           // pull handle by the meeting stiles
+      F(lo, hi, 1, 33, '#3b5869', .2); F(lo + (hi - lo) * .15, lo + (hi - lo) * .45, 6, 33, 'rgba(160,200,225,.35)', .3);
+      F(lo, hi, 1, 5, '#b9c0c5', .35); F(lo + 1, hi - 1, 16, 17.4, '#d6dbde', .4); F(x + s * 2.2 - .5, x + s * 2.2 + .5, 12, 24, '#e6eaec', .5);
     }
-    F(x - .8, x + .8, 0, 34, '#7e888e', .25);                                 // centre mullion
-    F(x - 15, x + 15, 33, 36, '#7e888e', .25);                                // head
-    wBox(x, y - 8, 46, 16, 37, 39.5, '#1d5fb4', '#2a6fd0');                   // canopy
-    F(x - 23, x + 23, 39.5, 46, '#1d5fb4', .2);                               // sign band
-    wText('FLEET SCHEDULERS', x, y - 1, 42.8, 5, '#fff');
-    wBox(x + 19, y - 1.5, 3, 3, 26, 30, '#e8e8e8', '#fff9d8');                // wall light
+    F(x - .8, x + .8, 0, 34, '#7e888e', .25); F(x - 15, x + 15, 33, 36, '#7e888e', .25);
+    wBox(x, y + o * 8, 46, 16, 37, 39.5, col, shade(col, 1.15));             // canopy
+    F(x - 23, x + 23, 39.5, 46, col, .2);                                     // sign band
+    wText(label, x, y + o * 1, 42.8, 5, '#fff');
+    wBox(x + 19, y + o * 1.5, 3, 3, 26, 30, '#e8e8e8', '#fff9d8');            // wall light
   });
+  glassEntrance(OFFICE_DOOR, 'FLEET SCHEDULERS', '#1d5fb4', wStage === 0);
+  glassEntrance(SHOP_DOOR, 'SHOP & RECEPTION', '#c62828', nearShop());
   // Dining room entrance: glass double doors on the kitchen's west face, under an awning
   add(KITCHEN_DOOR.x - 3, KITCHEN_DOOR.y, () => {
     const x = KITCHEN_DOOR.x - .4, y = KITCHEN_DOOR.y, F = (y0, y1, z0, z1, c, dx = 0) => wPoly([[x - dx, y0, z0], [x - dx, y1, z0], [x - dx, y1, z1], [x - dx, y0, z1]], c);
@@ -3365,7 +3456,7 @@ function drawWalk() {
   rect(0, 0, W, 64, '#000a');
   text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
   text(wStage === 0 ? (shiftStart ? 'Enter the Fleet Schedulers Office' : 'Go to the Schedule Office') : shiftStart ? 'Walk to your ute' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
-  text(wStage === 0 ? (shiftStart ? `From Room ${rn}` : 'Behind the kitchen') : shiftStart ? 'In the car park - follow the glow' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
+  text(wStage === 0 ? (shiftStart ? `From Room ${rn}` : 'By the tree, beside the dining room') : shiftStart ? 'In the car park - follow the glow' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
   text(isTouch ? 'Stick: turn  GAS: walk' : 'A/D turn, W/S walk', 10, 48, 12, '#ccc', 'left');
   if (shiftStart && wStage === 0 && nearOffice()) {
     rect(18, 455, W - 36, 155, '#102337ee');
@@ -3378,7 +3469,10 @@ function drawWalk() {
     text('E: interact / continue', W/2, 570, 15, '#ffe95e');
     if (isTouch) drawBtn([340, 558, 132, 52], 'INTERACT', false);
   }
-  if (state === 'walk' && nearKitchen() && !(shiftStart && wStage === 0 && nearOffice())) {
+  if (state === 'walk' && nearShop()) {
+    rect(18, 520, W - 36, 90, '#102337ee'); text('Shop & reception: press E to walk in', W / 2, 560, 15, '#fff'); text('E: go inside', W / 2, 592, 14, '#ffe95e');
+    if (isTouch) drawBtn([340, 558, 132, 52], 'GO INSIDE', false);
+  } else if (state === 'walk' && nearKitchen() && !(shiftStart && wStage === 0 && nearOffice())) {
     rect(18, 520, W - 36, 90, '#102337ee'); text('Dining room: press E to walk in', W / 2, 560, 15, '#fff'); text('E: go inside', W / 2, 592, 14, '#ffe95e');
     if (isTouch) drawBtn([340, 558, 132, 52], 'GO INSIDE', false);
   }
@@ -4319,6 +4413,7 @@ function render() {
   else if (state === 'parkhandover') drawParkHandover();
   else if (state === 'officeinside') drawOffice();
   else if (state === 'kitcheninside') drawKitchen();
+  else if (state === 'shopinside') drawShop();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
