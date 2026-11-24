@@ -2758,9 +2758,12 @@ function updateOffice(dt) {
   }
 }
 // interior chase camera that never leaves the room (so walls never have to be cut away), and an inside door on the front wall
+let roomCamD = 0, roomCamB = null;
 function roomCam(p, B, far) {
   const hx = Math.cos(p.dir), hy = Math.sin(p.dir); let d = far;
   while (d > 10 && (p.x - hx * d < B.x0 + 6 || p.x - hx * d > B.x1 - 6 || p.y - hy * d < B.y0 + 6 || p.y - hy * d > B.y1 - 6)) d -= 2;
+  // pulled in at once near a wall, eased back out as you turn away, so the view never pumps in and out
+  if (roomCamB !== B) { roomCamB = B; roomCamD = d; } else { roomCamD = Math.min(d, roomCamD + 1.2); d = roomCamD; }
   wCam = { x: p.x - hx * d, y: p.y - hy * d, hx, hy, rx: -hy, ry: hx };
   return { hx, hy };
 }
@@ -2810,17 +2813,17 @@ function updateShop(dt) {
 function drawShop() {
   const { hx, hy } = roomCam(kit, SHOPI, 62);
   rect(0, 0, W, H, '#cfd6da');
-  const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
+  const ents = [], pre = [], add = (x, y, fn, list = ents) => list.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });   // pre: walls and doors, always behind the furniture
   wFlat(SHOPI.x0, SHOPI.y0, SHOPI.x1 - SHOPI.x0, SHOPI.y1 - SHOPI.y0, '#d8d2c4');
   for (let x = SHOPI.x0; x < SHOPI.x1; x += 20) wFlat(x, SHOPI.y0, .7, SHOPI.y1 - SHOPI.y0, '#c4bdae', .05);
   for (let y = SHOPI.y0; y < SHOPI.y1; y += 20) wFlat(SHOPI.x0, y, SHOPI.x1 - SHOPI.x0, .7, '#c4bdae', .05);
   const wall = (x0, y0, x1, y1, cut) => add((x0 + x1) / 2, (y0 + y1) / 2, () => { if (cut()) ctx.globalAlpha = .18;
-    wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 44], [x0, y0, 44]], '#efe9df'); wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 5], [x0, y0, 5]], '#8a8478'); ctx.globalAlpha = 1; });
+    wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 44], [x0, y0, 44]], '#efe9df'); wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 5], [x0, y0, 5]], '#8a8478'); ctx.globalAlpha = 1; }, pre);
   wall(SHOPI.x0, SHOPI.y0, SHOPI.x1, SHOPI.y0, () => wCam.y < SHOPI.y0);
   wall(SHOPI.x0, SHOPI.y0, SHOPI.x0, SHOPI.y1, () => wCam.x < SHOPI.x0);
   wall(SHOPI.x1, SHOPI.y0, SHOPI.x1, SHOPI.y1, () => wCam.x > SHOPI.x1);
   for (const [a, b] of [[SHOPI.x0, -15], [15, SHOPI.x1]]) wall(a, SHOPI.y1, b, SHOPI.y1, () => wCam.y > SHOPI.y1);
-  add(0, SHOPI.y1, () => insideDoor(SHOPI.y1, '#efe9df'));   // the glass doors, from inside
+  add(0, SHOPI.y1, () => insideDoor(SHOPI.y1, '#efe9df'), pre);   // the glass doors, from inside
   // reception desk with a receptionist, computer, bell and brochure stand; key cabinet and sign behind
   add(0, -42, () => {
     wBox(0, -42, 70, 14, 0, 17, '#6b4a33', '#8a5a34'); wBox(0, -36, 70, 2, 4, 16, '#c62828', '#c62828');   // desk with a red front panel
@@ -2857,7 +2860,7 @@ function drawShop() {
     [-52, 30, Math.PI, { ...L[6], pose: 'bag' }], [56, -28 + 6 * Math.sin(t * .4), 0, { ...L[2], pose: 'drink', can: '#5aa9e6', t }]];
   for (const [x, y, dir, o] of folk) { const d = (x - wCam.x) * hx + (y - wCam.y) * hy; add(x, y, () => campHuman(x, y, false, false, { ...o, dir, scale: .7, lod: d > 140 ? 'low' : d > 55 ? 'mid' : 'hi' })); }
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
-  ents.sort((p, q) => q.f - p.f); for (const e of ents) if (e.f > -30) e.fn();
+  for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
   rect(0, 0, W, 80, '#142536dd'); text('CAMP SHOP & RECEPTION', W / 2, 27, 22, '#ffea69');
   text('W / S walk    A / D turn    E use    exit by the glass doors', W / 2, 55, 13, '#fff');
   const sp = shopNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { desk: 'check in at reception', lollies: 'grab some lollies', chips: 'grab some chips', toiletries: 'grab toiletries', fridge: 'grab a cold drink' }[sp.name], W / 2, 560, 14, '#fff'); }
@@ -3024,19 +3027,19 @@ function updateKitchen(dt) {
 function drawKitchen() {
   const { hx, hy } = roomCam(kit, KIT, 70);
   rect(0, 0, W, H, '#cfd6da');
-  const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
+  const ents = [], pre = [], add = (x, y, fn, list = ents) => list.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });   // pre: walls and doors, always behind the furniture
   // floor: vinyl tiles
   wFlat(KIT.x0, KIT.y0, KIT.x1 - KIT.x0, KIT.y1 - KIT.y0, '#cbc3b1');
   for (let x = KIT.x0; x < KIT.x1; x += 30) wFlat(x, KIT.y0, .8, KIT.y1 - KIT.y0, '#b8b09e', .05);
   for (let y = KIT.y0; y < KIT.y1; y += 30) wFlat(KIT.x0, y, KIT.x1 - KIT.x0, .8, '#b8b09e', .05);
   // walls: the ones between the camera and you are cut away (drawn faint) so you can always see in
   const wall = (x0, y0, x1, y1, outside) => add((x0 + x1) / 2, (y0 + y1) / 2, () => { const cut = outside(); if (cut) ctx.globalAlpha = .18;
-    wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 50], [x0, y0, 50]], '#e6e1d6'); wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 6], [x0, y0, 6]], '#8a8478'); ctx.globalAlpha = 1; });
+    wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 50], [x0, y0, 50]], '#e6e1d6'); wPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, 6], [x0, y0, 6]], '#8a8478'); ctx.globalAlpha = 1; }, pre);
   wall(KIT.x0, KIT.y0, KIT.x1, KIT.y0, () => wCam.y < KIT.y0);
   wall(KIT.x0, KIT.y0, KIT.x0, KIT.y1, () => wCam.x < KIT.x0);
   wall(KIT.x1, KIT.y0, KIT.x1, KIT.y1, () => wCam.x > KIT.x1);
   for (const [a, b] of [[KIT.x0, -15], [15, KIT.x1]]) wall(a, KIT.y1, b, KIT.y1, () => wCam.y > KIT.y1);
-  add(0, KIT.y1, () => insideDoor(KIT.y1, '#e6e1d6'));   // the double doors, from inside
+  add(0, KIT.y1, () => insideDoor(KIT.y1, '#e6e1d6'), pre);   // the double doors, from inside
   // bain-marie: stainless counter, hot food trays, sneeze guard, heat lamps; cook behind it
   add(0, -88, () => {
     wBox(0, -88, 124, 18, 0, 14, '#a9b0b6', '#c9ced2');
@@ -3093,8 +3096,7 @@ function drawKitchen() {
     [10 * Math.sin(t * .5), -100, Math.PI / 2, { shirt: '#f4f4f4', stripe: null, pants: '#2b2b2b', hair: 'cap', cap: '#f4f4f4', hairCol: '#3a2a20', skin: '#c58a62' }]];
   for (const [x, y, dir, o] of folk) { const d = (x - wCam.x) * hx + (y - wCam.y) * hy; add(x, y, () => campHuman(x, y, false, false, { ...o, dir, scale: .7, lod: d > 160 ? 'low' : d > 55 ? 'mid' : 'hi' })); }
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
-  ents.sort((p, q) => q.f - p.f);
-  for (const e of ents) if (e.f > -30) e.fn();
+  for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
   // HUD
   rect(0, 0, W, 80, '#142536dd'); text('CAMP DINING ROOM', W / 2, 27, 22, '#ffea69');
   text('W / S walk    A / D turn    E grab / use    exit by the double doors', W / 2, 55, 13, '#fff');
