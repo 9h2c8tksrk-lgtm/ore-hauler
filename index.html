@@ -46,7 +46,7 @@ const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyw
 const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
 const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
 const GATE = { x: 960, w: 140 };
-const HARDSTAND = { x: 870, y: 780, w: 92, h: 64 }, LV = { x: 870, y: 784, h: 0 };   // concrete hard stand with a parked service ute
+const LV = { x: 330 + 33 + 5 * 66, y: 520 + 75, h: Math.PI };   // service LV parked in workshop bay 6 (no pit), nose to the bay mouth
 const LIGHT_TOWERS = [[44, 44], [1056, 44], [44, 1456], [1058, 1452]];             // pink lighting towers in each corner of the yard
 const BUND = 24, BUND_H = 26, BUND_GAP = GATE.w / 2 + 8;   // earth bund round the yard edge: width, height, half-width of the opening at the gate   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
@@ -556,7 +556,9 @@ function startReturn() {
 }
 // ---------- workshop yard ----------
 const PIT_BAYS = [1, 3, 4];
-const PIT_TRUCK_BAYS = [1, 3];   // pink prime movers parked over the pits in bays 2 and 4 (from 1)   // bays 2, 4 and 5 (labelled from 1) have inspection pits
+const PIT_TRUCK_BAYS = [1, 3];   // pink prime movers parked over the pits in bays 2 and 4 (from 1)
+const LV_BAY = 5;                 // the service LV is parked in bay 6, which has no pit
+const TAKEN_BAYS = [...PIT_TRUCK_BAYS, LV_BAY];   // bays 2, 4 and 5 (labelled from 1) have inspection pits
 const pitRect = i => ({ x0: wkBayX(i) - 17, x1: wkBayX(i) + 17, y0: WK.y + 22, y1: WK_MOUTH - 22 });
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
 // drive-through truck wash on the west side of the yard, left of the crib buildings: trucks turn in off the top road,
@@ -584,7 +586,7 @@ function makeYard() {
   };
   const ute = pts => { const s0 = start(pts, 1, .3); return { ...s0, ute: 1, i: 1, v: 0, hold: 0, blk: 0, free: 0, pts }; };
   const mech = (col, pts, mv, u, side) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6, mv, u, side });
-  const pa = lap(2, false), pb = lap(5, true);
+  const pa = lap(2, false), pb = lap(2, true);   // bays 2/4 have trucks on the pits and bay 6 the LV, so yard traffic shares bay 3 (and bay 5)
   // the wash truck: north through the wash, round the yard road and into bay 5, then back down the west side of the wash to come in again
   // the wash truck: down through the wash, round the yard road and into bay 5, then back along the top road to turn in again
   const bw = wkBayX(4), pw = [P(WASH.x, 470, { lk: 1 }), P(WASH.x, WASH.y, { lk: 1, stop: 5 }), P(WASH.x, 770, { lk: 1 }), P(150, 870), P(150, 1000), P(960, 1000), P(960, TY),
@@ -802,18 +804,17 @@ const shopPit = i => ({ x: sbx(i), y0: 180, y1: SH_D - 70, w: 30 });
 let shopL = null;   // vehicle layout for this visit
 function shopLayout() {
   const bay = wk.auto ? wk.bay : Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W)));
-  const free = [2, 5, 3, 4, 1, 0].filter(b => b !== bay);
   const F = SH_D - 60, K = F - 255;                // front bumper and kingpin of your rig
   return { bay, F, T0: K + 25, loaded: ore() > 0,
-    pm: { bay: free[0], F: SH_D - 95, col: '#f4f4f4', fleet: 'C514' },   // a second prime mover in for service
-    tr: { bay: free[1], T0: SH_D - 110 } };                              // a trailer up on column hoists
+    pms: PIT_TRUCK_BAYS.filter(b => b !== bay).map((b, i) => ({ bay: b, F: SH_D - 95, col: '#f062a4', fleet: ['C511', 'C517'][i] })),   // pink prime movers over the pits
+    lv: LV_BAY !== bay ? { bay: LV_BAY, F: SH_D - 110 } : null };      // the service LV in the bay with no pit
 }
 // solid footprints on the shed floor: [cx, cy, w, l]
 function shopSolids() {
   const L = shopL, o = [];
   o.push([sbx(L.bay), (L.F + 4 + L.T0 - 302) / 2, 74, L.F + 4 - (L.T0 - 302)]);
-  o.push([sbx(L.pm.bay), L.pm.F - 155, 74, 320]);
-  o.push([sbx(L.tr.bay), L.tr.T0 - 150, 108, 310]);
+  for (const pm of L.pms) o.push([sbx(pm.bay), pm.F - 155, 74, 320]);
+  if (L.lv) o.push([sbx(L.lv.bay), L.lv.F - 69, 60, 146]);
   o.push([40, 120, 46, 38]);                                       // tyre inflation cage
   o.push([22, 435, 30, 200]);                                      // tyre rack along the Bay 1 wall (ends short of a Bay 1 cab door)
   for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
@@ -836,15 +837,15 @@ function shopBlocked(x, y) {
 const shopCabDoor = () => ({ x: sbx(shopL.bay) - 46, y: shopL.F - 104 });   // driver's door: right-hand drive, on the -x side
 const shopAtCab = () => workshopFoot.x > 0 && Math.hypot(workshopFoot.x - shopCabDoor().x, workshopFoot.y - shopCabDoor().y) < 40;
 function shopCrewInit() {
-  const L = shopL, bx = sbx(L.bay), px = sbx(L.pm.bay), tx = sbx(L.tr.bay);
+  const L = shopL, bx = sbx(L.bay), pm0 = L.pms[0] || { bay: L.bay, F: L.F }, px = sbx(pm0.bay), lvx = L.lv ? sbx(L.lv.bay) : bx, lvF = L.lv ? L.lv.F : L.F;
   const crew = (role, points, col, mullet = false) => ({ role, x: points[0][0], y: points[0][1], points, col, mullet, i: 0, wait: 0, phase: Math.random() * 6, walk: false, heading: -Math.PI / 2 });
   shopCrew = [
     crew('MECHANIC', [[bx + 50, L.F - 60], [bx + 50, L.F - 190]], '#e6bb21'),
     crew('MECHANIC', [[bx - 50, L.T0 - 228], [bx - 50, L.T0 - 120]], '#d6a82b'),
     crew('TYRE FITTER', L.bay === 0 ? [[bx + 52, L.T0 - 255], [bx + 52, L.F - 48]] : [[78, 150], [78, 220]], '#e45c37'),
     crew('MULLET MECHANIC', [[SH_W - 56, 300], [SH_W - 56, 440]], '#ec9d27', true),
-    crew('AUTO SPARKY', [[px + 50, L.pm.F - 70], [px + 50, L.pm.F - 140]], '#5ba8d5'),
-    crew('LEADING HAND', [[tx - 62, L.tr.T0 - 230], [tx - 62, L.tr.T0 - 40]], '#f0f0f0'),
+    crew('AUTO SPARKY', [[px + 50, pm0.F - 70], [px + 50, pm0.F - 140]], '#5ba8d5'),
+    crew('LEADING HAND', [[lvx - 48, lvF - 20], [lvx - 48, lvF - 130]], '#f0f0f0'),
     crew('STORE PERSON', [[360, 120], [720, 120]], '#3f9d5a')];
 }
 function enterWorkshopFoot() {
@@ -1097,11 +1098,25 @@ function drawWorkshopFoot() {
   const L = shopL;
   primeMover(sbx(L.bay), L.F, '#f062a4', 'C509');
   trailer(sbx(L.bay), L.T0, 0, L.loaded);
-  primeMover(sbx(L.pm.bay), L.pm.F, L.pm.col, L.pm.fleet);
-  trailer(sbx(L.tr.bay), L.tr.T0, 16, false);
-  for (const s of [-1, 1]) for (const y of [L.tr.T0 - 40, L.tr.T0 - 243]) hoist(sbx(L.tr.bay) + s * 46, y, 16);
+  const pm0bay = L.pms.length ? L.pms[0].bay : 3;
+  for (const pm of L.pms) primeMover(sbx(pm.bay), pm.F, pm.col, pm.fleet);
+  // service LV (dual-cab ute with a big side-opening toolbox body) parked in the bay with no pit; front at F, facing the doors
+  if (L.lv) { const cx = sbx(L.lv.bay), F = L.lv.F, Pq = (y, f) => add(cx, F - y, f), wh = '#f4f4f4';
+    Pq(69, () => box(cx, F - 69, 40, 124, 8, black, '#2b2f33', 10));
+    for (const s of [-1, 1]) for (const y of [28, 110]) Pq(y, () => tyre(cx + s * 23, F - y, 11, 9, '#e9ebec'));
+    Pq(2, () => { box(cx, F - 1.5, 54, 4, 22, '#2f3337', '#3a3f44', 6); for (const x of [-20, -7, 7, 20]) box(cx + x, F - 1.5, 3, 3, 26, '#3a3f44', '#3a3f44', 6); });
+    Pq(18, () => { box(cx, F - 18, 48, 32, 16, wh, '#ffffff', 18); box(cx, F - 3, 30, 1.5, 10, '#2c3034', '#2c3034', 20); for (const s of [-1, 1]) box(cx + s * 19, F - 2.8, 8, 1.2, 4, '#fff8d8', '#fff8d8', 28); });
+    Pq(58, () => { box(cx, F - 58, 50, 48, 18, wh, '#ffffff', 18); box(cx, F - 58, 48, 44, 14, '#2e4a5b', '#2e4a5b', 36); box(cx, F - 58, 50, 46, 2.5, wh, '#ffffff', 50);
+      box(cx, F - 40, 40, 3, 2, '#1f2326', '#fff6c0', 52.5); box(cx, F - 70, 6, 6, 5, '#ff7a12', '#ffb04a', 52.5); for (const s of [-1, 1]) box(cx + s * 25.6, F - 58, 1, 46, 2, '#d42020', '#d42020', 24); });
+    Pq(36, () => vcyl(cx + 26, F - 36, 1.8, 24, 56, '#1c1f22'));
+    Pq(108, () => { box(cx, F - 108, 52, 62, 30, '#c8ccd0', '#e9ecee', 18);   // big side toolboxes
+      for (const s of [-1, 1]) for (let k = 0; k < 3; k++) { box(cx + s * 26.2, F - 86 - k * 21, 1, 18, 26, '#b3b9be', '#b3b9be', 20); box(cx + s * 26.6, F - 86 - k * 21, 1, 4, 1.5, '#f2c200', '#f2c200', 34); }
+      box(cx, F - 140, 50, 2, 10, '#2f3337', '#2f3337', 16); for (const s of [-1, 1]) box(cx + s * 20, F - 141, 6, 1, 4, '#d01818', '#d01818', 22); });
+    Pq(136, () => { box(cx - 24, F - 136, 1.2, 1.2, 70, '#e8e8e8', '#e8e8e8', 48); box(cx - 24, F - 132, 1, 8, 10, '#ff6a00', '#ff8a2a', 106); });   // buggy-whip flag
+    label(cx + 26.6, F - 60, 30, 'LV 07', 6, '#1d5fb4');
+  }
   // pit guard rails where no vehicle is over the pit
-  for (const i of PIT_BAYS) if (i !== L.bay && i !== L.pm.bay && i !== L.tr.bay) {
+  for (const i of PIT_BAYS) if (i !== L.bay && !L.pms.some(pm => pm.bay === i)) {
     const p = shopPit(i);
     for (const s of [-1, 1]) for (let y = p.y0 + 20; y < p.y1 - 10; y += 80) {
       const x = p.x + s * (p.w / 2 + 6);
@@ -1132,7 +1147,7 @@ function drawWorkshopFoot() {
   for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#6b7881', '#8a97a0'); });
   for (const x of [9, SH_W - 9]) for (let y = 65; y < SH_D; y += 130) add(x, y, () => box(x, y, 8, 130, 8, safety, '#f6d64a', SH_H - 48));
   // two overhead gantry cranes spanning the shed, in per-bay sections so they sort cleanly
-  for (const [gy, hoistBay] of [[300, L.pm.bay], [600, 3]]) for (let i = 0; i < 6; i++) add(sbx(i), gy, () => {
+  for (const [gy, hoistBay] of [[300, pm0bay], [600, 3]]) for (let i = 0; i < 6; i++) add(sbx(i), gy, () => {
     box(sbx(i), gy, SB, 10, 12, '#d7a90e', '#f3c62a', SH_H - 52);
     if (i === hoistBay) { box(sbx(i), gy, 22, 18, 10, '#4d545a', '#62696f', SH_H - 64); box(sbx(i), gy, 1.2, 1.2, 60, '#222', '#222', SH_H - 124); box(sbx(i), gy, 6, 4, 6, safety, safety, SH_H - 128); }
   });
@@ -1218,7 +1233,7 @@ function updateWorkshop(dt) {
     if (p.y < WK.y - 6 || p.y > WK_MOUTH + 6 || p.x < WK.x - 6 || p.x > WK.x + WK.w + 6) return false;
     if (p.x < WK.x + 4 || p.x > WK.x + WK.w - 4) return true;                              // side walls
     const atEnd = p.y < WK.y + 8 || p.y > WK_MOUTH - 8, bx = wkBayX(Math.max(0, Math.min(5, Math.round((p.x - wkBayX(0)) / BAY_W))));
-    if (PIT_TRUCK_BAYS.some(b => Math.abs(p.x - wkBayX(b)) < BAY_W / 2 - 4)) return true;        // a bay with a truck on the pit
+    if (TAKEN_BAYS.some(b => Math.abs(p.x - wkBayX(b)) < BAY_W / 2 - 4)) return true;            // a bay with a truck on the pit or the LV in it
     return atEnd && Math.abs(p.x - bx) > 48 / 2 - 6;                                          // a pillar between doorways
   };
   if (wk.done) {
@@ -1230,7 +1245,7 @@ function updateWorkshop(dt) {
     if (fy > WK.y + 14) return wkBump('Crashed into the workshop!');
     // No mandatory yard lap: approach any bay directly, but align safely.
     const a = wkAlign();
-    if (PIT_TRUCK_BAYS.includes(a.i)) return wkBump(`Bay ${a.i + 1} has a truck on the pit - pick another bay`);
+    if (TAKEN_BAYS.includes(a.i)) return wkBump(a.i === LV_BAY ? `Bay ${a.i + 1} has the LV parked in it - pick another bay` : `Bay ${a.i + 1} has a truck on the pit - pick another bay`);
     if (!a.ok) return wkBump('Not straight! Line up with a bay and try again');
     wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Mechanics coming over'); return;
   }
@@ -3952,7 +3967,6 @@ function drawWorkshopChase() {
     const [vx, vy] = V(x, y); if (near(vy)) flatEllipse(vx, vy, 18 * Z, 18 * Z * .8, wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.22)');
   }
   // fence posts round the yard, with the gate gap in the bottom side
-  flat(HARDSTAND.x - HARDSTAND.w / 2, HARDSTAND.y - HARDSTAND.h / 2, HARDSTAND.x + HARDSTAND.w / 2, HARDSTAND.y + HARDSTAND.h / 2, '#a9a49a');
   { const [vx, vy] = V(LV.x, LV.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, LV.h - th, () => { ute3(vx, vy, '#f4f4f4', -1, { toolbox: true });
       prism(vx - 9, vy + 10, 5, 24, 7, 21, '#c8ccd0', 0); prism(vx + 9, vy + 10, 5, 24, 7, 21, '#c8ccd0', 0); prism(vx, vy + 10, 22, 24, 21, 23, '#e9ecee', 0); }) }); }   // big side toolboxes on the service body
   for (const [x, y] of LIGHT_TOWERS) { const [vx, vy] = V(x, y); if (near(vy)) list.push({ y: vy, fn: () => lightTower3(vx, vy, ang, 1 / WK_SC) }); }
@@ -4101,9 +4115,7 @@ function drawWorkshop() {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
   drawStructures();
-    rect(HARDSTAND.x - HARDSTAND.w / 2, HARDSTAND.y - HARDSTAND.h / 2, HARDSTAND.w, HARDSTAND.h, '#a9a49a'); for (let k = 1; k < 4; k++) rect(HARDSTAND.x - HARDSTAND.w / 2 + k * HARDSTAND.w / 4, HARDSTAND.y - HARDSTAND.h / 2, 1, HARDSTAND.h, '#8f8a80');
-    text('HARD STAND', HARDSTAND.x, HARDSTAND.y - HARDSTAND.h / 2 - 6, 11, '#fff');
-    drawUte({ ...LV, box: 1 });
+    drawUte({ ...LV, box: 1 });   // the LV in bay 6
     drawWashTop();
     drawYardLife();
   const tb = wkBayX(TYRE_BAY);
