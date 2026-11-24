@@ -2295,7 +2295,7 @@ function drawUteScreen() {
 // Layout traced from the aerial of Golden Eagle Village (world units = aerial pixels). Room blocks: A = west strips, C = second column,
 // B = middle column, D = the U block (open end to the car park), E = north-east wings. Car park sits beside the U block; the kitchen, wet mess
 // and courts run down the east side and the schedule office is tucked behind the kitchen.
-const CAMP_W = 922, CAMP_H = 1800;
+const CAMP_W = 1230, CAMP_H = 1800;   // widened east for the big car park behind the kitchen / dining room
 const CAMP_WINGS = [], CAMP_DOORS = [], CAMP_VERANDAS = [], campCount = {};
 function campDoors(L, x1, y1, x2, y2, n, nx, ny) {   // n doors evenly spaced along a wall segment; (nx, ny) points out into the walkway
   const len = Math.hypot(x2 - x1, y2 - y1);
@@ -2319,11 +2319,23 @@ const CAMP_DECOR = [[405, 520, 35, 90], [405, 655, 35, 80], [405, 815, 35, 80], 
 campWing('D', 635, 748, 85, 38, 'S', 0); campWing('D', 635, 890, 85, 38, 'S', 0); campWing('D', 635, 748, 38, 180, 'S', 0);   // the U block
 campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 3, 0, -1); campDoors('D', 673, 786, 673, 890, 3, 1, 0);
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
-const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [760, 1100, 85, 160], office: [670, 1090, 80, 45] };
+const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [755, 1100, 120, 190], office: [670, 1090, 80, 45] };
+// Wet mess: an open undercover area (posts and a roof, no walls) with one back wall carrying the bar, fridges and a TV.
+// Four small square picnic tables and one long one down the middle.
+const MESS = { x0: 755, x1: 875, y0: 1100, y1: 1290 }, MESS_SMALL = [[782, 1142], [848, 1142], [782, 1262], [848, 1262]], MESS_BIG = { x: 815, y: 1203, len: 64 };
+const MESS_POSTS = [[757, 1102], [873, 1102], [757, 1196], [873, 1196], [757, 1288], [873, 1288]];
 const CAR_SPOTS = [805, 835, 865].map(y => ({ x: 730, y: y - 13, w: 64, h: 26, mine: y === 835 }));   // utes nose-out towards the aisle
 const OFFICE_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: 762, y: 835, nx: 0, ny: 0 };
 const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
-const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...Object.values(CAMP_BIG).map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS];
+// Big car park behind (east of) the kitchen and dining room: three rows of nose-in bays, driveways between them,
+// light poles. Most bays are taken by utes.
+const BIG_PARK = { x0: 895, x1: 1215, y0: 815, y1: 1135 }, BP_ROWS = [935, 1055, 1170], BP_BAYS = Array.from({ length: 10 }, (_, k) => 836 + k * 30);
+const BP_UTES = []; BP_ROWS.forEach((rx, r) => BP_BAYS.forEach((by, k) => { if (hash(r * 13 + k * 7.1) < .72) BP_UTES.push({ x: rx, y: by, col: ['#f4f4f4', '#f4f4f4', '#e9e9e9', '#c62828', '#1d5fb4', '#2f2f33', '#9aa3a8'][Math.floor(hash(r * 5 + k * 3.3) * 7)] }); }));
+const BP_LIGHTS = [[995, 830], [995, 1120], [1112, 830], [1112, 1120]];
+const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...[CAMP_BIG.kitchen, CAMP_BIG.office].map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS,
+  { x: 755, y: 1097, w: 120, h: 6 }, { x: 770, y: 1103, w: 90, h: 11 }, ...MESS_POSTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 })),
+  ...MESS_SMALL.map(([x, y]) => ({ x: x - 16, y: y - 16, w: 32, h: 32 })), { x: MESS_BIG.x - 16, y: MESS_BIG.y - MESS_BIG.len / 2 - 2, w: 32, h: MESS_BIG.len + 4 },
+  ...BP_UTES.map(u => ({ x: u.x - 32, y: u.y - 13, w: 64, h: 26 })), ...BP_LIGHTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 }))];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
@@ -2604,37 +2616,49 @@ function wText(str, x, y, z, size, col) {
 let ovalLOD = 1;   // 1 = full detail; lower for people far from the camera
 // rot (optional): rx runs across the body and ry along its heading, so the shape turns with the person
 function campOval(x,y,z,rx,ry,rz,base,rot) {
+  if(ovalSink&&ovalLOD>=1&&Math.max(rx,ry,rz)<1.7){   // tiny parts up close (eyes, brows, mouth, ears, cans): one screen ellipse, same look, far cheaper
+    const c=wCamPt(x,y,z); if(c[1]<WNEAR) return;
+    const [sx,sy]=wProj(c), k=WF/c[1], w=Math.max(rx,ry)*k, h=(rz*.92+Math.max(rx,ry)*.3)*k;
+    ovalSink.push({d:c[1],draw:()=>{ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(sx,sy,w,h,0,0,7);ctx.fill();}});
+    return;
+  }
   if(ovalLOD<1&&ovalSink){   // people further off: each part is one shaded screen ellipse (2 fills instead of ~14 facets)
     const c=wCamPt(x,y,z); if(c[1]<WNEAR) return;
     const [sx,sy]=wProj(c), k=WF/c[1], r=Math.max(rx,ry), w=r*k, h=(rz*.92+r*.38)*k;
-    ovalSink.push({d:c[1],draw:()=>{ctx.fillStyle=shade(base,.8);ctx.beginPath();ctx.ellipse(sx,sy,w,h,0,0,7);ctx.fill();
-      if(w>1.2){ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(sx-w*.12,sy-h*.12,w*.78,h*.74,0,0,7);ctx.fill();}}});
+    ovalSink.push({d:c[1],draw:()=>{ctx.fillStyle=w>3.5?ovalShade(base,.8):base;ctx.beginPath();ctx.ellipse(sx,sy,w,h,0,0,7);ctx.fill();
+      if(w>3.5){ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(sx-w*.12,sy-h*.12,w*.78,h*.74,0,0,7);ctx.fill();}}});
     return;
   }
-  const sz=Math.max(rx,ry,rz), lo=sz<1.6||ovalLOD===0, mid=sz<3.2||ovalLOD<1, rings=lo?3:mid?4:6, sides=lo?6:mid?8:11;   // small parts and distant people get fewer facets
-  const ca=rot===undefined?1:Math.cos(rot), sa=rot===undefined?0:Math.sin(rot);
-  // local (side, front) -> world; with no rot, local axes are the world axes
-  const W2=(u,v)=>rot===undefined?[u,v]:[-u*sa+v*ca, u*ca+v*sa];
-  const P=[], Nn=[];
-  for(let j=0;j<=rings;j++) {
-    const theta=Math.PI*j/rings, row=[], nrow=[];
-    for(let i=0;i<sides;i++) {
-      const phi=2*Math.PI*i/sides, lu=Math.sin(theta)*Math.cos(phi), lv=Math.sin(theta)*Math.sin(phi), lz=Math.cos(theta);
-      const [wx,wy]=W2(rx*lu,ry*lv), [nx,ny]=W2(lu/rx,lv/ry);
-      row.push([x+wx, y+wy, z+rz*lz]); nrow.push([nx,ny,lz/rz]);
-    }
-    P.push(row); Nn.push(nrow);
+  const sz=Math.max(rx,ry,rz), lo=sz<1.6||ovalLOD===0, mid=sz<3.2||ovalLOD<1, rings=lo?3:mid?4:5, sides=lo?5:mid?7:9;   // small parts and distant people get fewer facets
+  const hasRot=rot!==undefined, ca=hasRot?Math.cos(rot):1, sa=hasRot?Math.sin(rot):0;
+  // local (side u, front v) -> world: with no rot the local axes are the world axes
+  const T=ovalTrig(rings,sides), V=[];
+  for(let j=0;j<=rings;j++)for(let i=0;i<sides;i++){
+    const u=rx*T.st[j]*T.cp[i], v=ry*T.st[j]*T.sp[i];
+    V.push(hasRot?[x-u*sa+v*ca, y+u*ca+v*sa, z+rz*T.ct[j]]:[x+u, y+v, z+rz*T.ct[j]]);
   }
+  const cx=wCam.x, cy=wCam.y;
   for(let j=0;j<rings;j++)for(let i=0;i<sides;i++){
-    const ni=(i+1)%sides, q=[P[j][i],P[j][ni],P[j+1][ni],P[j+1][i]];
-    const mx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4, my=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4, mz=(q[0][2]+q[1][2]+q[2][2]+q[3][2])/4;
-    const n=[0,1,2].map(k=>(Nn[j][i][k]+Nn[j][ni][k]+Nn[j+1][ni][k]+Nn[j+1][i][k])/4);
-    // skip faces turned away from the camera so the back of the shape never paints over the front
-    if(n[0]*(wCam.x-mx)+n[1]*(wCam.y-my)+n[2]*(WCH-mz)<=0)continue;
-    const f=.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings), col=shade(base,Math.max(.52,Math.min(1.18,f)));
-    if(ovalSink)ovalSink.push({d:wCamPt(mx,my,mz)[1],q,col});else wPoly(q,col);
+    // outward normal at the middle of the facet, from the ellipsoid's gradient; skip facets facing away
+    const lu=T.mst[j]*T.mcp[i], lv=T.mst[j]*T.msp[i], lz=T.mct[j];
+    const nu=lu/rx, nv=lv/ry, nx=hasRot?-nu*sa+nv*ca:nu, ny=hasRot?nu*ca+nv*sa:nv;
+    const pu=rx*lu, pv=ry*lv, px=hasRot?x-pu*sa+pv*ca:x+pu, py=hasRot?y+pu*ca+pv*sa:y+pv, pz=z+rz*lz;
+    if(nx*(cx-px)+ny*(cy-py)+(lz/rz)*(WCH-pz)<=0)continue;
+    const ni=(i+1)%sides, q=[V[j*sides+i],V[j*sides+ni],V[(j+1)*sides+ni],V[(j+1)*sides+i]];
+    const col=ovalShade(base,T.f[j*sides+i]);
+    if(ovalSink)ovalSink.push({d:wCamPt(px,py,pz)[1],q,col});else wPoly(q,col);
   }
 }
+const OVAL_TRIG={}, OVAL_SHADE={};
+function ovalTrig(rings,sides){   // cached sines/cosines for each facet grid, plus the facet shading factors
+  const k=rings*100+sides; if(OVAL_TRIG[k])return OVAL_TRIG[k];
+  const T={st:[],ct:[],cp:[],sp:[],mst:[],mct:[],mcp:[],msp:[],f:[]};
+  for(let j=0;j<=rings;j++){const th=Math.PI*j/rings;T.st.push(Math.sin(th));T.ct.push(Math.cos(th));const tm=Math.PI*(j+.5)/rings;T.mst.push(Math.sin(tm));T.mct.push(Math.cos(tm));}
+  for(let i=0;i<sides;i++){const p=2*Math.PI*i/sides;T.cp.push(Math.cos(p));T.sp.push(Math.sin(p));const pm=2*Math.PI*(i+.5)/sides;T.mcp.push(Math.cos(pm));T.msp.push(Math.sin(pm));}
+  for(let j=0;j<rings;j++)for(let i=0;i<sides;i++)T.f.push(Math.round(Math.max(.52,Math.min(1.18,.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings)))*50)/50);
+  return OVAL_TRIG[k]=T;
+}
+const ovalShade=(c,f)=>{const k=c+f;return OVAL_SHADE[k]||(OVAL_SHADE[k]=shade(c,f));};
 let ovalSink=null;   // when set, campOval queues its faces so a whole figure can be depth-sorted
 // Camp models use the same projected world geometry and chase camera as the buildings.
 // o (optional, for camp folk): dir, walk, ph (stride phase), t (own clock), scale, lod ('low' far away),
@@ -2649,12 +2673,16 @@ function campHuman(x,y,moustache=false,player=false,o={}) {
   ovalSink=[]; ovalLOD=o.lod==='low'?0:o.lod==='mid'?.5:1;   // collect every face of this person, then paint far to near
   const detail=o.lod!=='low';
   const scale=o.scale!==undefined?o.scale:player?.70:1;
-  const O=(xx,yy,zz,ww,ll,hh,col)=>campOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col,a);   // turns with the person
+  const sit=!!o.sit, zo=sit?-3.5:0;   // seated: upper body drops onto the bench, thighs forward, shins down
+  const O0=(xx,yy,zz,ww,ll,hh,col)=>campOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col,a);   // turns with the person
+  const O=(xx,yy,zz,ww,ll,hh,col)=>O0(xx,yy,zz+zo,ww,ll,hh,col);
   const point=(side,front=0)=>[x+rx*side+fx*front,y+ry*side+fy*front];
   const shirt=o.shirt||'#e7e900', stripe=o.stripe===undefined?'#e4e8e9':o.stripe, pants=o.pants||'#293b56', skin=o.skin||'#d8a27b';
   const hairCol=o.hairCol||'#49332b', hair=o.hair||'short', shoes=o.shoes||'#202329', pose=o.pose;
   // legs: boots, shins and thighs (bare shins in shorts)
   for(const side of [-1,1]){
+    if(sit){let p=point(side*2.7,6.6);O0(p[0],p[1],2,2.3,3.4,2.3,shoes);p=point(side*2.7,6);O0(p[0],p[1],7.4,2.1,2.2,4.3,o.shorts?skin:pants);
+      p=point(side*2.7,3);O0(p[0],p[1],13.4,2.6,4.4,2.3,o.shorts?o.shorts:pants);continue;}
     let p=point(side*2.6,side*moving);O(p[0],p[1],2,2.3,3.4,2.3,shoes);
     p=point(side*2.7,side*moving*.6);O(p[0],p[1],7,2.1,2.2,4.2,o.shorts?skin:pants);
     p=point(side*2.7,side*moving*.3);O(p[0],p[1],13,2.6,2.6,4.2,o.shorts?o.shorts:pants);
@@ -2663,8 +2691,9 @@ function campHuman(x,y,moustache=false,player=false,o={}) {
   const arm=(side,sx,sf,sz,hx,hf,hz)=>{let p=point(side*sx,sf);O(p[0],p[1],sz,2.5,2.6,6,shirt);if(stripe&&sz<22)O(p[0],p[1],sz-4.5,2.6,2.7,1.1,stripe);p=point(side*hx,hf);O(p[0],p[1],hz,1.9,1.9,3.6,skin);return p;};
   for(const side of [-1,1]){
     if(pose==='shoot'){arm(side,5.4,1.5,26,2.6,2.4,40);continue;}
-    if(pose==='drink'&&side===1){const k=Math.max(0,Math.sin(t*.9))**2;const p=arm(1,6,1,19,5-k*2.2,2+k*2.4,10+k*16);
-      if(detail){const c=point(5-k*2.2,2.8+k*2.4);O(c[0],c[1],12+k*16,1.15,1.15,1.9,o.can||'#c9302c');}continue;}
+    if(pose==='drink'&&side===1){const k=Math.max(0,Math.sin(t*.9))**2, h0=sit?23.5:10, hr=sit?4.5:16;const p=arm(1,6,1,19,5-k*2.2,(sit?4.5:2)+k*(sit?.6:2.4),h0+k*hr);
+      if(detail){const c=point(5-k*2.2,(sit?5.3:2.8)+k*(sit?.6:2.4));O(c[0],c[1],h0+2+k*hr,1.15,1.15,1.9,o.can||'#c9302c');}continue;}
+    if(sit){arm(side,6,1.5,19,4.6,5.2,23.5);continue;}   // hands resting on the table
     if(pose==='dribble'&&side===1){arm(1,6.4,1.5,18,7,3.4,10);continue;}
     if((pose==='bag')&&side===1){const p=arm(1,6.2,0,18,6.6,0,9);O(p[0],p[1],6,3.1,3.1,2.8,o.bag||'#2c4a7a');continue;}
     arm(side,6,side*moving*.3,18,6,side*moving,9);
@@ -2715,7 +2744,12 @@ function wWheel(x, y, r, w, rim = '#e9ebec') {
   disc(1, '#161718', 0); disc(.6, rim, o * .15); disc(.22, shade(rim, .62), o * .3);
 }
 // white mine-spec dual-cab ute, nose towards +x (out to the car park aisle): about as tall as the walker
-function campUteModel(x, y, col) {
+function campUteModel(x, y, col, low) {
+  if (low) {   // far away: body, glasshouse, tray and four wheels
+    wBox(x, y, 58, 22, 5, 21, col, shade(col, 1.04)); wBox(x + 2.5, y, 24, 23, 21, 31, '#2e4a5b', col); wBox(x - 21, y, 22, 25, 12, 19, '#b7bec4', '#c7cdd2');
+    for (const u of [19, -18]) for (const s of [-1, 1]) wBox(x + u, y + s * 11.5, 12, 4, 0, 12, '#1c1d1f', '#1c1d1f');
+    return;
+  }
   const outer = polySink; polySink = [];
   const B = (u, v, l, w, z0, z1, c, roof = c) => wBox(x + u, y + v, l, w, z0, z1, c, roof);
   B(0, 0, 58, 20, 5, 9, '#25282b');                                   // chassis
@@ -2743,6 +2777,31 @@ function campUteModel(x, y, col) {
   const faces = polySink; polySink = outer;
   faces.sort((a, b) => b.d - a.d); for (const f of faces) wPoly(f.pts, f.col);
 }
+// live footy on the wet mess TV: the screen quad is projected and the match drawn into it (green oval, two teams, ball, score bar)
+function footyTV(x0, x1, y, z0, z1) {
+  if (wCam.y < y) return;
+  const C = [[x0, z1], [x1, z1], [x1, z0], [x0, z0]].map(([x, z]) => wCamPt(x, y, z));
+  if (C.some(q => q[1] < WNEAR)) return;
+  const [tl, tr, br, bl] = C.map(wProj), M = (u, v) => [tl[0] + (tr[0] - tl[0]) * u + (bl[0] - tl[0]) * v + (tl[0] - tr[0] + br[0] - bl[0]) * u * v, tl[1] + (tr[1] - tl[1]) * u + (bl[1] - tl[1]) * v + (tl[1] - tr[1] + br[1] - bl[1]) * u * v];
+  const quad = (u0, v0, u1, v1, col) => { ctx.fillStyle = col; ctx.beginPath(); [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].forEach(([u, v], i) => { const [px, py] = M(u, v); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.fill(); };
+  const wpx = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]), t = wT;
+  quad(0, 0, 1, 1, '#2f8a3a'); for (let k = 0; k < 6; k++) quad(k / 6, .2, (k + .5) / 6, 1, '#34973f');   // mown stripes
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = Math.max(.6, wpx / 90); ctx.beginPath();
+  for (let i = 0; i <= 28; i++) { const a = i / 28 * 2 * Math.PI, [px, py] = M(.5 + .45 * Math.cos(a), .57 + .38 * Math.sin(a)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }   // boundary
+  for (const [u0, v0, u1, v1] of [[.46, .5, .54, .5], [.54, .5, .54, .64], [.54, .64, .46, .64], [.46, .64, .46, .5]]) { const [ax, ay] = M(u0, v0), [bx, by] = M(u1, v1); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }   // centre square
+  for (const gu of [.05, .95]) for (const dv of [-.05, -.015, .015, .05]) { const [ax, ay] = M(gu, .57 + dv), [bx, by] = M(gu + (gu < .5 ? -.02 : .02), .57 + dv - .08); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }   // goal posts
+  ctx.stroke();
+  const pl = [];
+  for (let team = 0; team < 2; team++) for (let i = 0; i < 7; i++) pl.push([.5 + .36 * Math.sin(t * .55 + i * 1.3 + team * 2.2), .57 + .27 * Math.cos(t * .7 + i * 2.1 + team), team]);
+  const who = Math.floor(t / 1.6) % pl.length, nxt = (who + 5) % pl.length, f = (t % 1.6) / 1.6, kick = f > .7 ? (f - .7) / .3 : 0;
+  const bu = pl[who][0] + (pl[nxt][0] - pl[who][0]) * kick, bv = pl[who][1] + (pl[nxt][1] - pl[who][1]) * kick - Math.sin(kick * Math.PI) * .12;
+  const r = Math.max(.8, wpx / 70);
+  for (const [u, v, team] of pl) { const [px, py] = M(u, v); ctx.fillStyle = team ? '#4b2a7a' : '#0e2a5c'; ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill(); ctx.fillStyle = team ? '#f2f2f2' : '#f2c200'; ctx.beginPath(); ctx.arc(px, py - r * .35, r * .55, 0, 7); ctx.fill(); }
+  { const [px, py] = M(bu, bv); ctx.fillStyle = '#d43a1f'; ctx.beginPath(); ctx.ellipse(px, py, r * .7, r * .5, .4, 0, 7); ctx.fill(); }
+  quad(0, 0, 1, .2, 'rgba(10,14,22,.9)'); quad(0, .2, 1, .215, '#f2c200');
+  if (wpx > 40) { const [sx, sy] = M(.5, .15), q = 1 + Math.floor((t / 60) % 4), mm = 19 - Math.floor((t / 3) % 20); text(`EAGLES 54 v DOCKERS 48  Q${q} ${mm}:${String(Math.floor(t * 7) % 60).padStart(2, '0')}`, sx, sy, Math.max(5, wpx / 11), '#fff'); }
+  if (wpx > 42) { const [lx, ly] = M(.9, .92); text('LIVE', lx, ly, Math.max(4, wpx / 16), '#ff4a3a'); }
+}
 // ---------- camp life: FIFO workers knocking off, drinking at the wet mess, shooting hoops, coming and going ----------
 const FOLK_LOOKS = [
   { shirt: '#1f3a5f', stripe: null, pants: '#2b2b2b', hair: 'short', hairCol: '#2e2018', beard: 1 },
@@ -2763,7 +2822,9 @@ const FOLK_WALKS = [
   [[[650, 1085], [300, 1085], [163, 1085], [163, 1230]], 19, 3, null, 25],
   [[[712, 1078], [744, 960], [805, 900]], 21, 5, null, 5],
   [[[810, 735], [810, 950], [744, 960], [744, 1085]], 20, 2, null, 60],
-  [[[575, 1735], [548, 1600], [548, 1240]], 17, 9, 'bag', 90]];
+  [[[575, 1735], [548, 1600], [548, 1240]], 17, 9, 'bag', 90],
+  [[[1112, 1100], [1112, 1150], [900, 1150], [880, 1180]], 21, 7, null, 15],
+  [[[995, 850], [995, 960], [890, 990], [882, 1090]], 19, 6, 'pack', 70]];
 function routeAt(pts, s, pause) {   // ping-pong along a polyline with a pause at each end: position and heading
   const seg = [], L = pts.slice(1).reduce((t, p, i) => { const l = Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]); seg.push(l); return t + l; }, 0);
   const cyc = 2 * L + 2 * pause; let u = ((s % cyc) + cyc) % cyc, back = false;
@@ -2775,19 +2836,17 @@ function routeAt(pts, s, pause) {   // ping-pong along a polyline with a pause a
     u -= seg[i];
   }
 }
-const MESS_TABLES = [[684, 1186], [724, 1208], [690, 1242]];
 const HOOPS = [{ x: 825, y: 1325, by: 1320, pole: 1312 }, { x: 825, y: 1483, by: 1488, pole: 1496 }];
 function campCrowd(t) {
   const out = [];
   FOLK_WALKS.forEach(([pts, sp, look, pose, off], i) => { const r = routeAt(pts, t * sp + off * sp, 4 + i % 3); out.push({ x: r.x, y: r.y, o: { ...FOLK_LOOKS[look], dir: r.dir, walk: r.walk, ph: t * 9 + i, pose: r.walk || pose === 'pack' ? pose : (pose === 'bag' ? 'bag' : null) } }); });
-  // drinkers round the bar leaners at the wet mess, turning to each other as they talk
-  MESS_TABLES.forEach(([tx, ty], k) => {
-    const n = k === 1 ? 3 : 2;
-    for (let j = 0; j < n; j++) {
-      const ang = j / n * 2 * Math.PI + k, px = tx + Math.cos(ang) * 9.5, py = ty + Math.sin(ang) * 9.5;
-      out.push({ x: px, y: py, o: { ...FOLK_LOOKS[(k * 3 + j + 3) % FOLK_LOOKS.length], dir: ang + Math.PI + Math.sin(t * .4 + j * 2) * .5, pose: 'drink', t: t + j * 2.3 + k, can: ['#c9302c', '#2a6d2a', '#d8b24a'][(j + k) % 3] } });
-    }
-  });
+  // wet mess: everyone sits at the picnic tables, drinking, chatting, and now and then turning to the footy on the TV
+  let n = 0;
+  const seat = (x, y, face, k) => { const watch = Math.sin(t * .23 + k * 1.9) > .55, tv = Math.atan2(1103 - y, 815 - x);
+    out.push({ x, y, o: { ...FOLK_LOOKS[(k + 3) % FOLK_LOOKS.length], sit: 1, dir: watch ? face + Math.max(-1.2, Math.min(1.2, Math.atan2(Math.sin(tv - face), Math.cos(tv - face)))) : face + Math.sin(t * .4 + k * 2) * .35,
+      pose: k % 4 === 3 ? null : 'drink', t: t + k * 2.3, can: ['#c9302c', '#2a6d2a', '#d8b24a'][k % 3] } }); };
+  MESS_SMALL.forEach(([tx, ty], i) => [[0, 2], [1, 3, 0], [2, 0], [3, 1]][i].forEach(side => { const a = side * Math.PI / 2; seat(tx + Math.cos(a) * 15, ty + Math.sin(a) * 15, a + Math.PI, n++); }));
+  for (const dy of [-21, 0, 21]) for (const sx of [-1, 1]) seat(MESS_BIG.x + sx * 15, MESS_BIG.y + dy, sx > 0 ? Math.PI : 0, n++);
   // basketball on the north half: one dribbles then shoots, the ball goes through the net and the next player takes it
   const hoop = HOOPS[0], T = 7, s = Math.floor(t / T) % 2, u = t % T;
   const spot = (k, tt) => [825 + 22 * Math.sin(tt * 1.1 + k * 2.4), 1372 + 11 * Math.cos(tt * .8 + k * 1.7)];
@@ -2819,9 +2878,13 @@ function drawWalk() {
   for (let x = 0; x <= W; x += 8) { const a = x - wCamH * 260; ctx.lineTo(x, hor - 22 - 16 * Math.sin(a / 70) - 12 * Math.sin(a / 29 + 1.3) - 6 * Math.sin(a / 13)); }
   ctx.lineTo(W, hor + 1); ctx.fill(); rect(0, hor, W, H - hor, '#c8b18f');
   wFlat(-3000, -3000, 6922, 4700, '#b99a6e'); wFlat(-3000, 1690, 6922, 110, '#a9855f'); wFlat(-3000, 1800, 6922, 3000, '#b49a74');
-  for (const [x, y, w, h, c] of [[445, 545, 75, 40, '#a08565'], [445, 660, 75, 70, '#a08565'], [445, 1000, 75, 70, '#5f7240'], [670, 620, 50, 70, '#5f7240'], [680, 1000, 70, 70, '#5f7240'], [660, 1160, 85, 100, '#3d4f5c'], [225, 700, 70, 60, '#a08565'], [225, 880, 70, 60, '#a08565'], [735, 790, 145, 90, '#a99a80'], [770, 1310, 110, 190, '#6f8a4a']]) wFlat(x, y, w, h, c, .1);
+  for (const [x, y, w, h, c] of [[445, 545, 75, 40, '#a08565'], [445, 660, 75, 70, '#a08565'], [445, 1000, 75, 70, '#5f7240'], [670, 620, 50, 70, '#5f7240'], [680, 1000, 70, 70, '#5f7240'], [660, 1160, 85, 100, '#a08565'], [225, 700, 70, 60, '#a08565'], [225, 880, 70, 60, '#a08565'], [735, 790, 145, 90, '#a99a80'], [770, 1310, 110, 190, '#6f8a4a']]) wFlat(x, y, w, h, c, .1);
   for (const [x, y, w, h] of [[778, 1318, 94, 2], [778, 1490, 94, 2], [778, 1318, 2, 174], [870, 1318, 2, 174], [778, 1404, 94, 2]]) wFlat(x, y, w, h, '#fff', .2);
   for (const [x, y, w, h] of [[150, 700, 12, 590], [300, 1080, 350, 10], [315, 742, 90, 8], [540, 700, 10, 820], [738, 960, 12, 130]]) wFlat(x, y, w, h, '#b9b3a3', .15);   // concrete footpaths
+  wFlat(BIG_PARK.x0, BIG_PARK.y0, BIG_PARK.x1 - BIG_PARK.x0, BIG_PARK.y1 - BIG_PARK.y0, '#4b4e52', .08);   // sealed car park
+  wFlat(BIG_PARK.x1, 950, CAMP_W - BIG_PARK.x1 + 400, 60, '#8f7a5e', .07);                                        // access road off the east
+  for (const rx of BP_ROWS) { for (let k = 0; k <= 10; k++) wFlat(rx - 34, 821 + k * 30, 68, 1.4, '#e8e8e8', .1); wFlat(rx + 34, 821, 1.4, 300, '#e8e8e8', .1); }   // bay lines
+  for (const ax of [995, 1112]) for (let y = 830; y < 1130; y += 24) wFlat(ax - .8, y, 1.6, 12, '#f2c200', .1);   // driveway centre dashes
   for (const v of CAMP_VERANDAS) { const ex = v.nx * 18, ey = v.ny * 18; wPoly([[v.x1, v.y1, .3], [v.x2, v.y2, .3], [v.x2 + ex, v.y2 + ey, .3], [v.x1 + ex, v.y1 + ey, .3]], '#c58a5e'); }
   const ents = [], add = (x, y, fn) => ents.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
   const [kx, ky, kw, kh] = CAMP_BIG.kitchen, [mx, my, mw, mh] = CAMP_BIG.mess, [ox, oy, ow, oh] = CAMP_BIG.office;
@@ -2829,7 +2892,7 @@ function drawWalk() {
   const blocksView = (x, y, w, h) => { for (let t = .05; t < .97; t += .04) { const px = wCam.x + (wp.x - wCam.x) * t, py = wCam.y + (wp.y - wCam.y) * t; if (px > x - 4 && px < x + w + 4 && py > y - 4 && py < y + h + 4) return true; } return false; };
   const ghost = (x, y, w, h, fn) => () => { const g = blocksView(x, y, w, h); if (g) ctx.globalAlpha = .28; fn(); ctx.globalAlpha = 1; };
   for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, ghost(b.x, b.y, b.w, b.h, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof)));
-  for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.mess, 'WET MESS', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
+  for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'KITCHEN', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4']])
     add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { const bh = o === CAMP_BIG.office ? 48 : 30; wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, bh, '#d9d4c4', roof); wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, bh + 4, 11, '#fff'); }));
   const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 48, 9, '#fff'); }));
@@ -2894,10 +2957,38 @@ function drawWalk() {
     wBox(tx, ty, 2.6, 2.6, 0, 13, '#8a5a34', '#8a5a34');
     for (const [ox, oy, z, r] of [[0, 0, 12, 11], [-5, 3, 15, 8], [5, -3, 17, 8], [0, 0, 22, 7]]) wBox(tx + ox, ty + oy, r * 1.6, r * 1.6, z, z + 7, '#6f7d5c', '#7f8d6a');
   });
-  // wet mess beer garden: bar leaners, an esky and a bin
-  for (const [tx, ty] of MESS_TABLES) add(tx, ty, () => { wBox(tx, ty, 6, 6, 0, 1, '#3a3f44', '#4a5056'); wBox(tx, ty, 1.6, 1.6, 1, 21, '#3a3f44', '#55606a'); campOval(tx, ty, 21.5, 6, 6, .8, '#6b4a33'); });
-  add(737, 1172, () => { wBox(737, 1172, 10, 6, 0, 6, '#1d5fb4', '#f4f4f4'); });
-  add(666, 1254, () => { wBox(666, 1254, 5, 5, 0, 9, '#2f6f3f', '#3f7f4f'); });
+  // wet mess: slab, back wall with bar, fridges and TV, posts, picnic tables, and a see-through roof over everyone
+  wFlat(MESS.x0, MESS.y0, MESS.x1 - MESS.x0, MESS.y1 - MESS.y0, '#bdb6a6', .12);
+  add(815, 1100, () => {
+    wBox(815, 1100.5, 120, 3, 0, 46, '#cfc8b8', '#bdb6a6');                                         // back wall
+    for (const fx of [772, 858]) { wBox(fx, 1104.5, 16, 5, 0, 30, '#d9dde0', '#eef0f2'); wPoly([[fx - 6, 1107.1, 3], [fx + 6, 1107.1, 3], [fx + 6, 1107.1, 28], [fx - 6, 1107.1, 28]], '#4f7f99');
+      for (const z of [8, 14, 20, 26]) wPoly([[fx - 6, 1107.2, z], [fx + 6, 1107.2, z], [fx + 6, 1107.2, z + 1], [fx - 6, 1107.2, z + 1]], '#c9302c'); }   // drinks fridges
+    wBox(815, 1109, 64, 8, 0, 16, '#6b4a33', '#3d3f42'); wBox(815, 1109, 66, 10, 16, 17.5, '#3d3f42', '#55595e');   // bar
+    for (const tx of [806, 815, 824]) wBox(tx, 1107, 1.2, 1.2, 17.5, 20.5, '#d6dbde', '#e6eaec');                 // beer taps
+    wPoly([[797, 1102.2, 21.5], [833, 1102.2, 21.5], [833, 1102.2, 40.5], [797, 1102.2, 40.5]], '#16181b');       // TV, mounted below the roof edge
+    footyTV(799, 831, 1102.5, 23, 39);
+  });
+  for (const [px, py] of MESS_POSTS) add(px, py, () => wBox(px, py, 2.6, 2.6, 0, 44, '#7a848b', '#8a949b'));
+  const wood = '#8a5a34', woodTop = '#a06a3e';
+  for (const [tx, ty] of MESS_SMALL) add(tx, ty, () => {   // square picnic table: four legs, top, a bench each side
+    for (const [ox, oy] of [[-7, -7], [7, -7], [-7, 7], [7, 7]]) wBox(tx + ox, ty + oy, 1.5, 1.5, 0, 13, '#5a3b22', '#5a3b22');
+    for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2, bx = tx + Math.cos(a) * 14, by = ty + Math.sin(a) * 14; wBox(bx, by, k % 2 ? 18 : 5, k % 2 ? 5 : 18, 7.5, 9, wood, woodTop); }
+    wBox(tx, ty, 19, 19, 13, 14.5, wood, woodTop);
+  });
+  add(MESS_BIG.x, MESS_BIG.y, () => {   // the long table down the middle
+    for (const oy of [-26, 0, 26]) for (const ox of [-6, 6]) wBox(MESS_BIG.x + ox, MESS_BIG.y + oy, 1.5, 1.5, 0, 13, '#5a3b22', '#5a3b22');
+    for (const sx of [-1, 1]) wBox(MESS_BIG.x + sx * 14, MESS_BIG.y, 5, MESS_BIG.len, 7.5, 9, wood, woodTop);
+    wBox(MESS_BIG.x, MESS_BIG.y, 16, MESS_BIG.len, 13, 14.5, wood, woodTop);
+  });
+  { const cs = [[MESS.x0, MESS.y0], [MESS.x1, MESS.y0], [MESS.x1, MESS.y1], [MESS.x0, MESS.y1]], fmin = Math.min(...cs.map(([x, y]) => (x - wCam.x) * hx + (y - wCam.y) * hy));
+    ents.push({ f: fmin - 1, fn: () => {   // roof last, so everyone underneath shows through it
+      wPoly(cs.map(([x, y]) => [x, y, 44]), 'rgba(200,206,210,.38)');
+      for (const y of [MESS.y0, MESS.y1]) wBox(815, y, 122, 2, 42, 46, '#2f6f3f', '#3f7f4f');
+      for (const x of [MESS.x0, MESS.x1]) wBox(x, 1195, 2, 192, 42, 46, '#2f6f3f', '#3f7f4f');
+      wText('WET MESS', 815, MESS.y1 + 1, 49, 9, '#fff');
+    } }); }
+  add(735, 1196, () => wBox(735, 1196, 10, 6, 0, 6, '#1d5fb4', '#f4f4f4'));   // esky
+  add(752, 1270, () => wBox(752, 1270, 5, 5, 0, 9, '#2f6f3f', '#3f7f4f'));    // bin
   // basketball hoops: pole, backboard with its square, rim and net
   for (const h of HOOPS) add(h.x, h.pole, ghost(h.x - 15, Math.min(h.pole, h.by) - 4, 30, Math.abs(h.by - h.pole) + 8, () => {
     const s2 = Math.sign(h.y - h.pole);
@@ -2918,8 +3009,11 @@ function drawWalk() {
   // crew bus parked on the camp road: people with bags head between it and the room blocks
   add(600, 1745, () => { wBox(600, 1745, 120, 26, 4, 36, '#f2f2f2', '#dfe3e6'); wBox(600, 1745, 116, 26.4, 20, 30, '#2a4554', '#2a4554'); wBox(600, 1745, 120, 26.6, 12, 15, '#1d5fb4', '#1d5fb4');
     for (const bx of [560, 640]) for (const s2 of [-1, 1]) wWheel(bx, 1745 + s2 * 12, 5, 3); wText('CREW BUS', 600, 1732, 38, 7, '#1d5fb4'); });
+  for (const u of BP_UTES) { const d = (u.x - wCam.x) * hx + (u.y - wCam.y) * hy, lat = (u.x - wCam.x) * -hy + (u.y - wCam.y) * hx; if (d < 900 && Math.abs(lat) < d * .62 + 50) add(u.x, u.y, () => campUteModel(u.x, u.y, u.col, d > 170)); }
+  for (const [lx, ly] of BP_LIGHTS) add(lx, ly, () => { wBox(lx, ly, 2.2, 2.2, 0, 70, '#7a848b', '#8a949b'); wBox(lx, ly, 10, 4, 70, 72, '#3a3f44', '#fff8d0'); });
+  add(BIG_PARK.x0 + 6, 970, () => { wBox(BIG_PARK.x0 + 6, 970, 2, 2, 0, 40, '#7a848b', '#7a848b'); wBox(BIG_PARK.x0 + 6, 970, 2.5, 34, 40, 52, '#1d5fb4', '#1d5fb4'); wText('CAR PARK', BIG_PARK.x0 + 5, 970, 46, 7, '#fff'); });
   const crowd = campCrowd(wT);
-  for (const f of crowd.folk) { const d = (f.x - wCam.x) * hx + (f.y - wCam.y) * hy, lat = (f.x - wCam.x) * -hy + (f.y - wCam.y) * hx; if (d < 700 && Math.abs(lat) < d * .62 + 40) add(f.x, f.y, () => campHuman(f.x, f.y, false, false, { ...f.o, scale: .7, lod: d > 230 ? 'low' : d > 120 ? 'mid' : 'hi' })); }
+  for (const f of crowd.folk) { const d = (f.x - wCam.x) * hx + (f.y - wCam.y) * hy, lat = (f.x - wCam.x) * -hy + (f.y - wCam.y) * hx; if (d < 700 && Math.abs(lat) < d * .62 + 40) add(f.x, f.y, () => campHuman(f.x, f.y, false, false, { ...f.o, scale: .7, lod: d > 230 ? 'low' : d > 55 ? 'mid' : 'hi' })); }
   add(crowd.ball[0], crowd.ball[1], () => campOval(crowd.ball[0], crowd.ball[1], crowd.ball[2], 1.7, 1.7, 1.7, '#e2701c'));
   add(wp.x, wp.y, () => campHuman(wp.x, wp.y, false, true));
   ents.sort((p, q) => q.f - p.f);
