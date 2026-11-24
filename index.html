@@ -46,12 +46,14 @@ const CLIMB = 1500;   // scroll distance of the steep climb just before the Skyw
 const WORLD = { w: 1100, h: 1500 };   // workshop yard is larger than the screen; the camera follows the truck
 const WK = { x: 330, y: 520, w: 396, h: 150 }, BAY_W = 66, WK_SC = .62;   // workshop building, six bays across; trucks drive in at the top and out at the bottom
 const GATE = { x: 960, w: 140 };
+const HARDSTAND = { x: 870, y: 780, w: 92, h: 64 }, LV = { x: 870, y: 784, h: 0 };   // concrete hard stand with a parked service ute
+const LIGHT_TOWERS = [[44, 44], [1056, 44], [44, 1456], [1058, 1452]];             // pink lighting towers in each corner of the yard
 const BUND = 24, BUND_H = 26, BUND_GAP = GATE.w / 2 + 8;   // earth bund round the yard edge: width, height, half-width of the opening at the gate   // yard entry/exit gap in the bottom fence
 const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520, w: 46, h: 140, c: '#b5482f' }];   // sea containers beside the workshop's right end
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const LADDER = { x: 88, y: 1102 }, BEACON_AT = { x: 95, y: 1104, z: 48 };   // beside the second parked truck's cab; its left roof beacon is being swapped
 // four long transportable buildings round a square courtyard (a pinwheel, long sides facing across it); n is the face's outward normal, pointing into the yard
-const BLDG = [[210, 530, 80, 30, 0, 1], [260, 570, 30, 80, -1, 0], [170, 620, 80, 30, 0, -1], [170, 530, 30, 80, 1, 0]].map(([x, y, w, h, nx, ny]) => ({ x, y, w, h, nx, ny, c: '#cfd3d6' }));
+const BLDG = [[235, 530, 80, 30, 0, 1], [285, 570, 30, 80, -1, 0], [195, 620, 80, 30, 0, -1], [195, 530, 30, 80, 1, 0]].map(([x, y, w, h, nx, ny]) => ({ x, y, w, h, nx, ny, c: '#cfd3d6' }));
 // a point/size along a building's yard-facing wall: t = offset along the wall, returns the face centre
 const bldgFace = b => ({ px: b.nx > 0 ? b.x + b.w : b.nx < 0 ? b.x : b.x + b.w / 2, py: b.ny > 0 ? b.y + b.h : b.ny < 0 ? b.y : b.y + b.h / 2 });
 // rectangle hugging the yard-facing wall: along = offset on the wall, len along it, depth from the wall (positive goes into the yard, negative into the building)
@@ -553,13 +555,14 @@ function startReturn() {
   flash('All tipped! Return run: steep descent, then back to the ROM');
 }
 // ---------- workshop yard ----------
-const PIT_BAYS = [1, 3, 4];   // bays 2, 4 and 5 (labelled from 1) have inspection pits
+const PIT_BAYS = [1, 3, 4];
+const PIT_TRUCK_BAYS = [1, 3];   // pink prime movers parked over the pits in bays 2 and 4 (from 1)   // bays 2, 4 and 5 (labelled from 1) have inspection pits
 const pitRect = i => ({ x0: wkBayX(i) - 17, x1: wkBayX(i) + 17, y0: WK.y + 22, y1: WK_MOUTH - 22 });
 const wkBayX = i => WK.x + BAY_W / 2 + i * BAY_W, WK_MOUTH = WK.y + WK.h;
 // drive-through truck wash on the west side of the yard, left of the crib buildings: trucks turn in off the top road,
 // enter at the north end and leave from the south end onto the west lane. WASH_IN / WASH_OUT are the approach points.
-const WASH={x:79,y:600,w:66,h:150}; let washClock=0;
-const WASH_IN={x:79,y:WASH.y-WASH.h/2-50}, WASH_OUT={x:79,y:WASH.y+WASH.h/2+45};
+const WASH={x:63,y:600,w:66,h:150}; let washClock=0;   // hard against the west bund, leaving a wide lane to the crib buildings
+const WASH_IN={x:WASH.x,y:WASH.y-WASH.h/2-50}, WASH_OUT={x:WASH.x,y:WASH.y+WASH.h/2+45};
 const TYRE_BAY = 0, TY_RACK = { x: WK.x - 28, y: WK.y - 20 }, TY_SCRAP = { x: WK.x - 28, y: WK.y - 95 };
 const chainLine = (x, y, h, sc) => Array.from({ length: NT + 1 }, (_, k) => ({ x: x - Math.sin(h) * (HITCH + TRAILER_LEN * k) * sc, y: y + Math.cos(h) * (HITCH + TRAILER_LEN * k) * sc }));
 const idleSpot = () => ({ x: wkBayX(TYRE_BAY) - 10, y: WK_MOUTH - 60 });
@@ -581,13 +584,14 @@ function makeYard() {
   };
   const ute = pts => { const s0 = start(pts, 1, .3); return { ...s0, ute: 1, i: 1, v: 0, hold: 0, blk: 0, free: 0, pts }; };
   const mech = (col, pts, mv, u, side) => ({ x: pts[0].x, y: pts[0].y, a: 0, col, pts, i: 1, wait: pts[0].w, walk: false, work: false, ph: Math.random() * 6, mv, u, side });
-  const pa = lap(1, false), pb = lap(3, true);
+  const pa = lap(2, false), pb = lap(5, true);
   // the wash truck: north through the wash, round the yard road and into bay 5, then back down the west side of the wash to come in again
   // the wash truck: down through the wash, round the yard road and into bay 5, then back along the top road to turn in again
-  const bw = wkBayX(4), pw = [P(79, 470, { lk: 1 }), P(79, WASH.y, { lk: 1, stop: 5 }), P(79, 770, { lk: 1 }), P(150, 870), P(150, 1000), P(960, 1000), P(960, TY),
+  const bw = wkBayX(4), pw = [P(WASH.x, 470, { lk: 1 }), P(WASH.x, WASH.y, { lk: 1, stop: 5 }), P(WASH.x, 770, { lk: 1 }), P(150, 870), P(150, 1000), P(960, 1000), P(960, TY),
     P(bw + 100, TY), P(bw, 390, { lk: 1 }), P(bw, WK_MOUTH - 42, { lk: 1, stop: 10 }), P(bw, 860, { lk: 1 }), P(bw + 80, 1000), P(960, 1000), P(960, TY), P(150, TY), P(150, 390)];
   return {
-    parked: [park(55, 1100, 0, .8), park(100, 1100, 0, 0), park(45, 120, 0, .6), park(90, 120, 0, 0)],
+    parked: [park(55, 1100, 0, .8), park(100, 1100, 0, 0), park(45, 120, 0, .6), park(90, 120, 0, 0),
+      ...PIT_TRUCK_BAYS.map(b => ({ x: wkBayX(b), y: WK.y + WK.h / 2 + 4, h: Math.PI, f: 0, j: null, cab: 1 }))],   // prime movers in for service, over the pits
     movers: [
       truck(.7, pa, 1, .5), truck(0, pb, 5, .5), truck(.15, pw, 1, .5),
       ute([P(380, 1150), P(620, 1150), P(620, 1400), P(380, 1400)])],
@@ -619,6 +623,7 @@ function yardHit() {
   const washHit = b => (b.y > wy0 - 2 && b.y < wy1 + 2 && (Math.abs(b.x - wx0) < 8 || Math.abs(b.x - wx1) < 8)) ||
     Math.hypot(b.x - WASH_TANK.x, b.y - WASH_TANK.y) < 22 || (Math.abs(b.x - WASH_PUMP.x) < 19 && Math.abs(b.y - WASH_PUMP.y) < 17);
   if (me.some(washHit)) return true;
+  if (me.some(b => Math.abs(b.x - LV.x) < 14 && Math.abs(b.y - LV.y) < 24) || me.some(b => LIGHT_TOWERS.some(([x, y]) => Math.abs(b.x - x) < 14 && Math.abs(b.y - y) < 16))) return true;
   return yard.parked.some(r => rigPoints(r).some(a => me.some(b => Math.hypot(a.x - b.x, a.y - b.y) < 15))) ||
     me.some(b => CONT.some(c => b.x > c.x - m && b.x < c.x + c.w + m && b.y > c.y - m && b.y < c.y + c.h + m) || BLDG.some(c => b.x > c.x - m && b.x < c.x + c.w + m && b.y > c.y - m && b.y < c.y + c.h + m) || (b.x > SHELTER.x && b.x < SHELTER.x + SHELTER.w && b.y > SHELTER.y - m && b.y < SHELTER.y + SHELTER.h + m));
 }
@@ -1213,6 +1218,7 @@ function updateWorkshop(dt) {
     if (p.y < WK.y - 6 || p.y > WK_MOUTH + 6 || p.x < WK.x - 6 || p.x > WK.x + WK.w + 6) return false;
     if (p.x < WK.x + 4 || p.x > WK.x + WK.w - 4) return true;                              // side walls
     const atEnd = p.y < WK.y + 8 || p.y > WK_MOUTH - 8, bx = wkBayX(Math.max(0, Math.min(5, Math.round((p.x - wkBayX(0)) / BAY_W))));
+    if (PIT_TRUCK_BAYS.some(b => Math.abs(p.x - wkBayX(b)) < BAY_W / 2 - 4)) return true;        // a bay with a truck on the pit
     return atEnd && Math.abs(p.x - bx) > 48 / 2 - 6;                                          // a pillar between doorways
   };
   if (wk.done) {
@@ -1224,6 +1230,7 @@ function updateWorkshop(dt) {
     if (fy > WK.y + 14) return wkBump('Crashed into the workshop!');
     // No mandatory yard lap: approach any bay directly, but align safely.
     const a = wkAlign();
+    if (PIT_TRUCK_BAYS.includes(a.i)) return wkBump(`Bay ${a.i + 1} has a truck on the pit - pick another bay`);
     if (!a.ok) return wkBump('Not straight! Line up with a bay and try again');
     wk.auto = true; wk.bay = a.i; flash(a.i === TYRE_BAY ? 'Lined up! Tyre fitter at work' : 'Lined up! Mechanics coming over'); return;
   }
@@ -1472,6 +1479,15 @@ function drawRoad3D() {
   strip(ROAD_L + 2, ROAD_L + 6, '#eee8d5'); strip(ROAD_R - 6, ROAD_R - 2, '#eee8d5');
   for (let y = -140 + (scroll % 70); y < Y1; y += 70) if (y + 34 > Y0) strip(W / 2 - 2, W / 2 + 2, '#eee8d5', Math.max(Y0, y), y + 34);
 }
+// pink mobile lighting tower in the 3D views: trailer with outriggers, tall mast, four-lamp head and a glow
+function lightTower3(x, y, ang = 0, k = 1) {
+  prism(x, y, 12 * k, 22 * k, 3, 14, '#e0479a', ang); prism(x, y, 13 * k, 23 * k, 14, 16, '#f27bb8', ang);
+  for (const [dx, dy] of [[-10, -12], [10, -12], [-10, 12], [10, 12]]) prism(x + dx * k, y + dy * k, 2 * k, 2 * k, 0, 6, '#7a3b5c', ang);
+  prism(x, y, 3 * k, 3 * k, 16, 110, '#8a8f94', ang);
+  prism(x, y, 22 * k, 5 * k, 110, 118, '#2b2f33', ang);
+  for (let i = 0; i < 4; i++) { const [px, py] = P(x + (-7.5 + i * 5) * k, y + 3 * k, 114); const r = 4 * sc(y); ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(px, py, Math.max(1, r), 0, 7); ctx.fill(); }
+  glow(x, y, 114, 70 * k, 'rgba(255,240,200,.35)');
+}
 function drawBays(list) {
   for (const b of bayStarts) {
     if (!bayAtS(b + 1)) continue;
@@ -1483,6 +1499,8 @@ function drawBays(list) {
       poly(oval(BAY_D, BAY_L / 2), '#eee8d5'); poly(oval(BAY_D - 3, BAY_L / 2 - 3), '#5e5a54');
     }
     if (b === bayStarts[2]) { const side = baySide(b), tx = (side < 0 ? ROAD_L - 13 : ROAD_R + 13) + side * 70, ty = yc - 190; list.push({ y: ty, fn: () => { car3({ x: tx, y: ty, w: 34, h: 90, col: '#2a7ab8', truck: true, oncoming: false }); beaconAt(tx, ty - 30, 36); } }); }
+    { const side = baySide(b), tx = (side < 0 ? ROAD_L - 13 : ROAD_R + 13) + side * (BAY_D - 40), ty = yc;
+      if (ty > -115 && ty < H + 80) list.push({ y: ty, fn: () => lightTower3(tx, ty) }); }   // pink lighting tower at the back of each parking bay
     const sy = yc + BAY_L / 2 - 24;
     if (sy > -115 && sy < H + 80) list.push({ y: sy, fn: () => {
       for (const sx of [baySide(b) < 0 ? ROAD_L - 22 : ROAD_R + 22]) {
@@ -3754,8 +3772,18 @@ function drawUte(u) {
   rect(-6, -11, 12, 7, '#9cf'); rect(-6, -3, 12, 7, '#e6e6e6');
   rect(-7, 6, 14, 10, '#cfcfcf'); rect(-6, 7, 12, 8, '#a9a9a9');
   rect(-7, -17, 3, 2, '#ffe9a0'); rect(4, -17, 3, 2, '#ffe9a0'); rect(-7, 15, 3, 2, '#d33'); rect(4, 15, 3, 2, '#d33');
+  if (u.box) { rect(-9.5, 3, 19, 14, '#c8ccd0'); rect(-9.5, 3, 19, 2, '#e9ecee'); for (const sx of [-9.5, 7.5]) for (let k = 0; k < 3; k++) rect(sx, 5 + k * 4, 2, 3, '#8f969c'); rect(-3, 6, 6, 9, '#f2c200'); }   // big side-opening service body
   if (Math.sin(beaconClock() * 10) > 0) rect(-2, -2, 4, 3, '#ffa020');
   ctx.restore();
+}
+// pink mobile lighting tower, top-down: trailer, outriggers, mast and a four-lamp head throwing a pool of light
+function lightTowerTop(x, y) {
+  const g = ctx.createRadialGradient(x, y + 30, 4, x, y + 30, 90); g.addColorStop(0, 'rgba(255,245,210,.22)'); g.addColorStop(1, 'rgba(255,245,210,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - 90, y - 60, 180, 180);
+  ctx.strokeStyle = '#7a3b5c'; ctx.lineWidth = 2; ctx.beginPath(); for (const [dx, dy] of [[-12, -10], [12, -10], [-12, 10], [12, 10]]) { ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); } ctx.stroke();
+  rect(x - 6, y - 10, 12, 20, '#e0479a'); rect(x - 6, y - 10, 12, 3, '#f27bb8'); rect(x - 1, y + 10, 2, 7, '#7a3b5c');
+  ctx.fillStyle = '#6b6f73'; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
+  rect(x - 9, y - 2, 18, 4, '#2b2f33'); for (let k = 0; k < 4; k++) { ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(x - 6.8 + k * 4.5, y, 1.6, 0, 7); ctx.fill(); }
 }
 function drawCart(c) {
   ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a);
@@ -3766,7 +3794,7 @@ function drawCart(c) {
   ctx.restore();
 }
 function drawYardLife() {
-  for (const r of yard.parked) drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f });
+  for (const r of yard.parked) { if (r.cab) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.h); ctx.scale(WK_SC, WK_SC); drawCab(0, 0, -1); ctx.restore(); } else drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f }); }
   for (const r of yard.movers) { if (r.ute) drawUte(r); else drawRig(r.j, r.x, r.y, r.h, WK_SC, { fill: r.f }); }
   for (const c of yard.carts) drawCart(c);
   for (const m of yard.mechs) drawMech(m);
@@ -3833,7 +3861,7 @@ function drawWashRoof(){   // over the trucks, so you see them through it
   ctx.fillStyle='rgba(205,214,220,.32)';ctx.fillRect(x0-6,y0+4,w.w+12,w.h-8);
   for(const y of [y0+4,w.y,y0+w.h-8])for(const x of [x0-6,x0+w.w+2])rect(x,y,4,4,'#6c777f');
 }
-const WASH_TANK={x:44,y:WASH.y+WASH.h/2+77}, WASH_PUMP={x:44,y:WASH.y+WASH.h/2+36};   // tucked against the bund beside the exit
+const WASH_TANK={x:110,y:WASH.y+WASH.h/2+77}, WASH_PUMP={x:108,y:WASH.y+WASH.h/2+36};   // between the wash exit lane and the west road
 function drawStructures() {
   for (const c of CONT) {
     rect(c.x + 3, c.y + 3, c.w, c.h, '#0004'); rect(c.x, c.y, c.w, c.h, c.c);
@@ -3924,6 +3952,10 @@ function drawWorkshopChase() {
     const [vx, vy] = V(x, y); if (near(vy)) flatEllipse(vx, vy, 18 * Z, 18 * Z * .8, wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.22)');
   }
   // fence posts round the yard, with the gate gap in the bottom side
+  flat(HARDSTAND.x - HARDSTAND.w / 2, HARDSTAND.y - HARDSTAND.h / 2, HARDSTAND.x + HARDSTAND.w / 2, HARDSTAND.y + HARDSTAND.h / 2, '#a9a49a');
+  { const [vx, vy] = V(LV.x, LV.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, LV.h - th, () => { ute3(vx, vy, '#f4f4f4', -1, { toolbox: true });
+      prism(vx - 9, vy + 10, 5, 24, 7, 21, '#c8ccd0', 0); prism(vx + 9, vy + 10, 5, 24, 7, 21, '#c8ccd0', 0); prism(vx, vy + 10, 22, 24, 21, 23, '#e9ecee', 0); }) }); }   // big side toolboxes on the service body
+  for (const [x, y] of LIGHT_TOWERS) { const [vx, vy] = V(x, y); if (near(vy)) list.push({ y: vy, fn: () => lightTower3(vx, vy, ang, 1 / WK_SC) }); }
   // earth bund: each run cut into short sections (outer slope, crest, inner slope) so it sorts against the trucks
   for (const [x0, y0, x1, y1, nx, ny] of bundSegs()) {
     const len = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(len / 30);
@@ -3989,7 +4021,7 @@ function drawWorkshopChase() {
   for (const [dx, dy] of [[2, 2], [SHELTER.w - 2, 2], [2, SHELTER.h - 2], [SHELTER.w - 2, SHELTER.h - 2]]) wall(SHELTER.x + dx, SHELTER.y + dy, 4, 4, 0, 40, '#8d959c');
   wall(SHELTER.x + SHELTER.w / 2, SHELTER.y + SHELTER.h / 2, SHELTER.w, SHELTER.h, 40, 44, '#cfd5da');
   const inside = wkParts().some(p => p.x > WK.x - 30 && p.x < WK.x + WK.w + 30 && p.y > WK.y - 30 && p.y < WK_MOUTH + 30);
-  const roofA = inside ? .3 : .96;   // see-through while the rig is in or at the building
+  const roofA = inside ? .3 : .55;   // part see-through from outside (you can see the trucks on the pits), clearer while the rig is in or at the building
   for (let i = 0; i < 6; i++) for (let r = 0; r < 3; r++) {   // corrugated roof, a ridge down the middle of each bay
     const x0 = WK.x + i * BAY_W, y0 = WK.y + r * WK.h / 3, y1 = y0 + WK.h / 3, xm = x0 + BAY_W / 2, vq = (xa, xb) => [V(xa, y0), V(xb, y0), V(xb, y1), V(xa, y1)];
     const l = vq(x0, xm), rr = vq(xm, x0 + BAY_W), vy = (l[0][1] + l[2][1]) / 2;
@@ -4025,7 +4057,7 @@ function drawWorkshopChase() {
       if (near(vy)) list.push({ y: vy - 1, fn: () => chaseTrailer(vx, vy, p.a - th, i, fl(i), 40, 56) });
     }
   };
-  yard.parked.forEach((r, k) => rig(r.j, r.x, r.y, r.h, () => r.f, k === 1));
+  yard.parked.forEach((r, k) => { if (r.cab) { const [cx, cy] = V(r.x, r.y); if (near(cy)) list.push({ y: cy, fn: () => chaseCab(cx, cy, r.h - th) }); } else rig(r.j, r.x, r.y, r.h, () => r.f, k === 1); });
   for (const r of yard.movers) {
     if (!r.ute) { rig(r.j, r.x, r.y, r.h, () => r.f); continue; }
     const [vx, vy] = V(r.x, r.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, r.h - th, () => ute3(vx, vy, '#f4f4f4', -1, { toolbox: true })) });
@@ -4069,12 +4101,16 @@ function drawWorkshop() {
     ctx.fillStyle = wk.lap & k ? 'rgba(80,220,80,.5)' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
   }
   drawStructures();
+    rect(HARDSTAND.x - HARDSTAND.w / 2, HARDSTAND.y - HARDSTAND.h / 2, HARDSTAND.w, HARDSTAND.h, '#a9a49a'); for (let k = 1; k < 4; k++) rect(HARDSTAND.x - HARDSTAND.w / 2 + k * HARDSTAND.w / 4, HARDSTAND.y - HARDSTAND.h / 2, 1, HARDSTAND.h, '#8f8a80');
+    text('HARD STAND', HARDSTAND.x, HARDSTAND.y - HARDSTAND.h / 2 - 6, 11, '#fff');
+    drawUte({ ...LV, box: 1 });
     drawWashTop();
     drawYardLife();
   const tb = wkBayX(TYRE_BAY);
   for (const x of [tb - 11, tb + 11]) { tyreDisc(x, WK_MOUTH - 14, 7); tyreDisc(x, WK_MOUTH - 17, 7); }
   drawRig(wk.j, wk.x, wk.y, wk.h, WK_SC, wk.auto && wk.bay === TYRE_BAY ? { tyre: wk.fit.st } : null);
   drawWashRoof();
+  for (const [x, y] of LIGHT_TOWERS) lightTowerTop(x, y);
   drawFitter();
   for (const m of wk.crew) drawMech(m);
   for (let i = 0; i <= 6; i++) for (const wy of [WK.y - 6, WK_MOUTH]) rect(WK.x + i * BAY_W - 4.5, wy, 9, 6, '#3b3f44');   // pillars only: bays open both ends
