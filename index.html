@@ -2475,7 +2475,7 @@ function campDoors(L, x1, y1, x2, y2, n, nx, ny) {   // n doors evenly spaced al
   if (n) CAMP_VERANDAS.push({ x1, y1, x2, y2, nx, ny, n });
   for (let i = 0; i < n; i++) {
     const f = (i + .5) / n; campCount[L] = (campCount[L] || 0) + 1;
-    CAMP_DOORS.push({ x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, nx, ny, hw: Math.min(6, len / n / 2 - 1), name: L + campCount[L], dx: (x2 - x1) / len, dy: (y2 - y1) / len, sp: len / n, last: i === n - 1 });
+    CAMP_DOORS.push({ x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, nx, ny, hw: Math.min(6, len / n / 2 - 1), name: L + String(campCount[L]).padStart(2, '0'), dx: (x2 - x1) / len, dy: (y2 - y1) / len, sp: len / n, last: i === n - 1 });
   }
 }
 function campWing(L, x, y, w, h, face, n, roof = 'AB'.includes(L) ? '#dccfa8' : '#85726a') {
@@ -2485,19 +2485,22 @@ function campWing(L, x, y, w, h, face, n, roof = 'AB'.includes(L) ? '#dccfa8' : 
   else if (face === 'N') campDoors(L, x, y, x + w, y, n, 0, -1);
   else campDoors(L, x, y + h, x + w, y + h, n, 0, 1);
 }
-// Room blocks laid out like the camp's aerial photo: rows of pods, each a pair of long transportables facing each other
-// across a courtyard (some lawn, some gravel, a few with a shade tree), open at both ends, with walkways between pods.
-// Rows are lettered A, B, C... from the north; rooms are numbered along each row.
-const POD_W = 125, POD_BLK = 22, POD_CY = 56, POD_H = POD_BLK * 2 + POD_CY, POD_COLS = [25, 180, 335, 490], POD_ROWS = [480, 610, 740, 870, 1000, 1130, 1260, 1390];
-const CAMP_PODS = [];
+// Room blocks laid out like the camp map: U-shaped pods of three 4-room transportables (a wing down each side and one across
+// the bottom) round an open courtyard of dry grass and red dirt with a tree. Rooms are numbered like the real signs (B01, B09...).
+// A few bottom wings are a LAUNDRY, MEDIC or NPI instead of rooms.
+const POD_W = 135, POD_H = 110, POD_SIDE = 24, POD_BOT = 26, POD_COLS = [25, 185, 345, 495], POD_ROWS = [480, 620, 760, 900, 1040, 1180, 1320];
+const POD_SPECIAL = { '1,0': 'LAUNDRY', '1,2': 'MEDIC', '1,3': 'NPI', '3,1': 'LAUNDRY', '3,3': 'LAUNDRY', '4,2': 'LAUNDRY', '6,1': 'LAUNDRY' };
+const CAMP_PODS = [], CAMP_LABELS = [];
 POD_ROWS.forEach((py, r) => {
-  const L = 'ABCDEFGH'[r], cols = r < 3 ? [...POD_COLS, 650] : POD_COLS;   // the top three rows carry on east of the hub
+  const L = 'GFABCDE'[r], cols = r < 3 ? [...POD_COLS, 650] : POD_COLS;   // the top three rows carry on east of the hub (the M block)
   cols.forEach((px, c) => {
-    const k = r * 5 + c, lawn = hash(k * 2.3) < .45, tree = hash(k * 5.1) < .35;
-    CAMP_PODS.push({ x: px, y: py, lawn, tree });
-    const roof = hash(k * 1.7) < .8 ? '#dccfa8' : '#85726a';
-    campWing(L, px, py, POD_W, POD_BLK, 'S', 4, roof);                                   // north block, doors into the courtyard
-    campWing(L, px, py + POD_BLK + POD_CY, POD_W, POD_BLK, 'N', 4, roof);                // south block, doors facing it
+    const k = r * 5 + c, LL = c === 4 ? 'M' : L, sp = POD_SPECIAL[r + ',' + c];
+    CAMP_PODS.push({ x: px, y: py, tree: hash(k * 5.1) < .7, dirt: hash(k * 2.3), cone: hash(k * 7.7) < .25, smoker: hash(k * 3.9) < .5 });
+    const dY = POD_H - POD_BOT - 4;   // side-wing doors only along the open part of the courtyard
+    campWing(LL, px, py, POD_SIDE, POD_H, 'E', 0, '#e4d9bb'); campDoors(LL, px + POD_SIDE, py, px + POD_SIDE, py + dY, 4, 1, 0);                        // west wing, doors facing in
+    campWing(LL, px + POD_W - POD_SIDE, py, POD_SIDE, POD_H, 'W', 0, '#e4d9bb'); campDoors(LL, px + POD_W - POD_SIDE, py, px + POD_W - POD_SIDE, py + dY, 4, -1, 0);   // east wing
+    if (sp) { CAMP_WINGS.push({ x: px + POD_SIDE + 4, y: py + POD_H - POD_BOT, w: POD_W - 2 * POD_SIDE - 8, h: POD_BOT, roof: '#e4d9bb', special: sp }); CAMP_LABELS.push({ x: px + POD_W / 2, y: py + POD_H - POD_BOT / 2, t: sp }); }
+    else campWing(LL, px + POD_SIDE + 4, py + POD_H - POD_BOT, POD_W - 2 * POD_SIDE - 8, POD_BOT, 'N', 4, '#e4d9bb');   // bottom wing
   });
 });
 const CAMP_DECOR = [];
@@ -2512,7 +2515,7 @@ const CAR_SPOTS = [{ x: MY_BAY.x - 32, y: MY_BAY.y - 13, w: 64, h: 26, mine: tru
 const KITCHEN_DOOR = { x: 785, y: 980 };   // double doors into the dining room, on the kitchen's west face
 const nearKitchen = () => Math.hypot(wp.x - (KITCHEN_DOOR.x - 18), wp.y - KITCHEN_DOOR.y) < 34;
 const OFFICE_DOOR = { x: 670, y: 995, nx: 0, ny: 1, hw: 12 }, SHOP_DOOR = { x: 690, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
-const CAMP_TREES = [[670, 1040], ...CAMP_PODS.filter(p => p.tree).map(p => [p.x + POD_W / 2, p.y + POD_BLK + POD_CY / 2])];   // the office tree, and shade trees in some pod courtyards
+const CAMP_TREES = [[670, 1040], ...CAMP_PODS.filter(p => p.tree).map(p => [p.x + POD_W / 2 + (p.dirt - .5) * 30, p.y + 38])];   // the office tree, and shade trees in some pod courtyards
 const GYM_DOOR = { x: 696, y: 914, nx: 0, ny: 1, hw: 12 };
 // Big car park behind (east of) the kitchen and dining room: three rows of nose-in bays, driveways between them,
 // light poles. Most bays are taken by utes.
@@ -3394,13 +3397,16 @@ function drawWalk() {
   for (let x = 0; x <= W; x += 8) { const a = x - wCamH * 260; ctx.lineTo(x, hor - 22 - 16 * Math.sin(a / 70) - 12 * Math.sin(a / 29 + 1.3) - 6 * Math.sin(a / 13)); }
   ctx.lineTo(W, hor + 1); ctx.fill(); rect(0, hor, W, H - hor, '#c8b18f');
   wFlat(-3000, -3000, 6922, 4700, '#b99a6e'); wFlat(-3000, 1690, 6922, 110, '#a9855f'); wFlat(-3000, 1800, 6922, 3000, '#b49a74');
-  for (const p of CAMP_PODS) wFlat(p.x + 2, p.y + POD_BLK, POD_W - 4, POD_CY, p.lawn ? '#6f9a45' : '#b5a58a', .1);   // pod courtyards: lawn or gravel
-  for (const p of CAMP_PODS) if (p.lawn) for (let k = 0; k < 6; k++) wFlat(p.x + 6 + k * 20, p.y + POD_BLK, 10, POD_CY, '#79a64c', .11);
+  for (const p of CAMP_PODS) {   // courtyards: dry grass, a worn red-dirt patch, a green tinge where the sprinkler reaches
+    wFlat(p.x + POD_SIDE, p.y, POD_W - 2 * POD_SIDE, POD_H - POD_BOT, '#b39a6a', .1);
+    wFlat(p.x + POD_SIDE + 10 + p.dirt * 20, p.y + 18 + p.dirt * 14, 44, 30, '#a8673f', .11);
+    wFlat(p.x + POD_SIDE + 4, p.y + POD_H - POD_BOT - 14, 30 + p.dirt * 30, 10, '#8c9a5a', .11);
+  }
   wFlat(640, 998, 140, 90, '#6f9a45', .1);   // hub lawn
   for (const [x, y, w, h] of [[778, 1318, 94, 2], [778, 1490, 94, 2], [778, 1318, 2, 174], [870, 1318, 2, 174], [778, 1404, 94, 2]]) wFlat(x, y, w, h, '#fff', .2);
-  for (const x of [167, 322, 477, 627]) wFlat(x - 5, 470, 10, x === 627 ? 400 : 1030, '#b9b3a3', .15);   // concrete walkways between the pod columns
-  for (const y of POD_ROWS.slice(1)) wFlat(20, y - 20, 610, 10, '#b9b3a3', .15);   // and between the rows
-  wFlat(20, 1500, 610, 10, '#b9b3a3', .15); wFlat(540, 1500, 10, 230, '#b9b3a3', .15);   // down to the crew bus
+  for (const x of [172, 332, 482, 637]) wFlat(x - 5, 470, 10, x === 637 ? 380 : 990, '#c4b8a3', .15);   // concrete walkways between the pod columns
+  for (const y of POD_ROWS.slice(1)) wFlat(20, y - 20, 610, 10, '#c4b8a3', .15);   // and between the rows
+  wFlat(20, 1450, 610, 10, '#c4b8a3', .15); wFlat(540, 1450, 10, 280, '#c4b8a3', .15);   // down to the crew bus
   wFlat(BIG_PARK.x0, BIG_PARK.y0, BIG_PARK.x1 - BIG_PARK.x0, BIG_PARK.y1 - BIG_PARK.y0, '#4b4e52', .08);   // sealed car park
   wFlat(BIG_PARK.x1, 950, CAMP_W - BIG_PARK.x1 + 400, 60, '#8f7a5e', .07);                                        // access road off the east
   for (const rx of BP_ROWS) { for (let k = 0; k <= 10; k++) wFlat(rx - 34, 821 + k * 30, 68, 1.4, '#e8e8e8', .1); wFlat(rx + 34, 821, 1.4, 300, '#e8e8e8', .1); }   // bay lines
@@ -3422,21 +3428,35 @@ function drawWalk() {
   // a building between the chase camera and the walker is drawn see-through so you never lose sight of yourself
   const blocksView = (x, y, w, h) => { for (let t = .05; t < .97; t += .04) { const px = wCam.x + (wp.x - wCam.x) * t, py = wCam.y + (wp.y - wCam.y) * t; if (px > x - 4 && px < x + w + 4 && py > y - 4 && py < y + h + 4) return true; } return false; };
   const ghost = (x, y, w, h, fn) => () => { const g = blocksView(x, y, w, h); if (g) ctx.globalAlpha = .28; fn(); ctx.globalAlpha = 1; };
-  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, ghost(b.x, b.y, b.w, b.h, () => wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 42, '#d9d4c4', b.roof)));
+  const near2 = (x, y, r = 240) => Math.hypot(x - wCam.x, y - wCam.y) < r;
+  for (const b of [...CAMP_WINGS, ...CAMP_DECOR]) add(b.x + b.w / 2, b.y + b.h / 2, ghost(b.x, b.y, b.w, b.h, () => {
+    wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 30, '#cbbf9f', b.roof);                               // beige transportable, cream roof
+    wBox(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, 0, 2.2, '#c0392b', '#c0392b');                            // red skirting along the base
+    if (near2(b.x + b.w / 2, b.y + b.h / 2, 170)) {   // horizontal cladding lines on the faces you can see
+      const F = [[b.x, b.y, b.x + b.w, b.y, 0, -1], [b.x + b.w, b.y + b.h, b.x, b.y + b.h, 0, 1], [b.x, b.y + b.h, b.x, b.y, -1, 0], [b.x + b.w, b.y, b.x + b.w, b.y + b.h, 1, 0]];
+      for (const [x1, y1, x2, y2, nx, ny] of F) { if ((wCam.x - x1) * nx + (wCam.y - y1) * ny <= 0) continue;
+        for (let z = 6; z < 29; z += 4.5) wPoly([[x1 + nx * .15, y1 + ny * .15, z], [x2 + nx * .15, y2 + ny * .15, z], [x2 + nx * .15, y2 + ny * .15, z + .55], [x1 + nx * .15, y1 + ny * .15, z + .55]], '#b3a789'); }
+    }
+    if (b.special) wText(b.special, b.x + b.w / 2, b.y + b.h / 2, 33, 7, b.special === 'MEDIC' ? '#2f7a46' : '#33424f');
+  }));
   for (const [o, n, roof] of [[CAMP_BIG.kitchen, 'DINING ROOM', '#6f7d3c'], [CAMP_BIG.office, 'SCHEDULE OFFICE', '#1d5fb4'], [CAMP_BIG.shop, 'SHOP', '#c62828'], [CAMP_BIG.gym, 'GYM', '#3a3f44']])
     add(o[0] + o[2] / 2, o[1] + o[3] / 2, ghost(o[0], o[1], o[2], o[3], () => { const bh = o === CAMP_BIG.office || o === CAMP_BIG.kitchen ? 48 : o === CAMP_BIG.shop || o === CAMP_BIG.gym ? 40 : 30; wBox(o[0] + o[2] / 2, o[1] + o[3] / 2, o[2], o[3], 0, bh, '#d9d4c4', roof); if (o !== CAMP_BIG.kitchen && o !== CAMP_BIG.shop && o !== CAMP_BIG.gym) wText(n, o[0] + o[2] / 2, o[1] + o[3] / 2, bh + 4, 11, '#fff'); }));   // the dining room's sign is over its doors
   const cols = ['#f4f4f4', '#eeeeee', '#ffffff'];
   CAR_SPOTS.forEach((c, i) => add(c.x + c.w / 2, c.y + c.h / 2, () => { campUteModel(c.x + c.w / 2, c.y + c.h / 2, c.mine ? '#f4f4f4' : cols[i]); if (c.mine) wText('YOUR UTE', c.x + c.w / 2, c.y + c.h / 2, 48, 9, '#fff'); }));
   const doorEnt = (d, on, label) => add(d.x + d.nx * 2, d.y + d.ny * 2, () => {
     const hz = d.ny !== 0, tx = -d.ny, ty = d.nx, px = d.x + d.nx * 3.2, py = d.y + d.ny * 3.2;
-    wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, hz ? d.hw * 2 : 3, hz ? 3 : d.hw * 2, 0, 16, on ? '#ffe040' : '#7d8688', on ? '#ffe040' : '#7d8688');
-    if (label) {   // white room sign on the door, like the real ones
-      wPoly([[px - tx * 2.6, py - ty * 2.6, 10.5], [px + tx * 2.6, py + ty * 2.6, 10.5], [px + tx * 2.6, py + ty * 2.6, 14.5], [px - tx * 2.6, py - ty * 2.6, 14.5]], '#f4f4ee');
-      wText(label, px, py, 11.2, 3.4, '#14243a');
+    wBox(d.x + d.nx * .9, d.y + d.ny * .9, hz ? 11 : 1.8, hz ? 1.8 : 11, 0, 19.5, on ? '#ffe040' : '#8d9497', on ? '#ffe040' : '#8d9497');   // grey steel door in its frame
+    if (label && near2(d.x, d.y, 260)) {   // white room sign on the door, like the real ones
+      wPoly([[px - tx * 2.8, py - ty * 2.8, 13.5], [px + tx * 2.8, py + ty * 2.8, 13.5], [px + tx * 2.8, py + ty * 2.8, 17], [px - tx * 2.8, py - ty * 2.8, 17]], '#f4f4ee');
+      wText(label, px, py, 14.6, 3.4, '#14243a');
+      if (hash(d.x * .37 + d.y * .11) < .12) wPoly([[px - tx * 3.6, py - ty * 3.6, 8.5], [px - tx * 1.2, py - ty * 1.2, 8.5], [px - tx * 1.2, py - ty * 1.2, 10.3], [px - tx * 3.6, py - ty * 3.6, 10.3]], '#d42020');   // NIGHT SHIFT sticker
+      wPoly([[px + tx * 3.2, py + ty * 3.2, 9], [px + tx * 4, py + ty * 4, 9], [px + tx * 4, py + ty * 4, 10.2], [px + tx * 3.2, py + ty * 3.2, 10.2]], '#c9ced2');   // door knob
+      wBox(d.x + d.nx * 1.5, d.y + d.ny * 1.5, 2.2, 2.2, 21, 22.5, '#e8e2c8', '#fff6c8');   // light above the door
     }
     if (!d.last) {   // window to the next room along the wall
       const wx = d.x + d.dx * d.sp / 2 + d.nx * 1.2, wy = d.y + d.dy * d.sp / 2 + d.ny * 1.2;
-      wPoly([[wx - d.dx * 2.4, wy - d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 7], [wx + d.dx * 2.4, wy + d.dy * 2.4, 13], [wx - d.dx * 2.4, wy - d.dy * 2.4, 13]], '#32404d');
+      wPoly([[wx - d.dx * 4, wy - d.dy * 4, 9], [wx + d.dx * 4, wy + d.dy * 4, 9], [wx + d.dx * 4, wy + d.dy * 4, 19], [wx - d.dx * 4, wy - d.dy * 4, 19]], '#5b6166');   // window frame
+      wPoly([[wx - d.dx * 3.4 + d.nx * .1, wy - d.dy * 3.4 + d.ny * .1, 9.6], [wx + d.dx * 3.4 + d.nx * .1, wy + d.dy * 3.4 + d.ny * .1, 9.6], [wx + d.dx * 3.4 + d.nx * .1, wy + d.dy * 3.4 + d.ny * .1, 18.4], [wx - d.dx * 3.4 + d.nx * .1, wy - d.dy * 3.4 + d.ny * .1, 18.4]], '#2c3a44');
     }
   });
   // Fleet schedulers by the office entrance, one with a thick moustache.
@@ -3488,17 +3508,24 @@ function drawWalk() {
   CAMP_VERANDAS.forEach(v => {   // covered concrete verandah with posts and a see-through roof so the doors stay visible
     const L = Math.hypot(v.x2 - v.x1, v.y2 - v.y1), mx = (v.x1 + v.x2) / 2 + v.nx * 9, my = (v.y1 + v.y2) / 2 + v.ny * 9, ex = v.nx * 18, ey = v.ny * 18;
     add(mx, my, () => {
-      for (let i = 0; i <= v.n; i++) { const f = i / v.n; wBox(v.x1 + (v.x2 - v.x1) * f + v.nx * 16, v.y1 + (v.y2 - v.y1) * f + v.ny * 16, 1.6, 1.6, 0, 19, '#e8dcae', '#e8dcae'); }
-      wPoly([[v.x1, v.y1, 19], [v.x2, v.y2, 19], [v.x2 + ex, v.y2 + ey, 19], [v.x1 + ex, v.y1 + ey, 19]], 'rgba(225,212,170,.5)');
+      wPoly([[v.x1, v.y1, .25], [v.x2, v.y2, .25], [v.x2 + ex, v.y2 + ey, .25], [v.x1 + ex, v.y1 + ey, .25]], '#c48a66');   // red-stained slab
+      for (let i = 0; i <= v.n; i++) { const f = i / v.n; wBox(v.x1 + (v.x2 - v.x1) * f + v.nx * 16, v.y1 + (v.y2 - v.y1) * f + v.ny * 16, 1.4, 1.4, 0, 25, '#efe3bd', '#efe3bd'); }
+      wPoly([[v.x1, v.y1, 27], [v.x2, v.y2, 27], [v.x2 + ex, v.y2 + ey, 25], [v.x1 + ex, v.y1 + ey, 25]], 'rgba(236,226,192,.62)');   // skillion roof sloping off the building
     });
   });
   CAMP_DOORS.forEach((d, i) => {
-    if (i % 3 === 0) add(d.x + d.nx * 7, d.y + d.ny * 7, () => { wBox(d.x + d.nx * 7 + d.dx * 8, d.y + d.ny * 7 + d.dy * 8, 5, 5, 0, 5, '#f2efe6', '#f2efe6'); wBox(d.x + d.nx * 9 + d.dx * 8, d.y + d.ny * 9 + d.dy * 8, 4, 4, 5, 11, '#f2efe6', '#f2efe6'); });   // white plastic chair
+    if (i % 2 === 0) add(d.x + d.nx * 7, d.y + d.ny * 7, () => { if (!near2(d.x, d.y, 200)) return; const c = hash(i) < .5 ? '#f2efe6' : '#6b7278'; wBox(d.x + d.nx * 6 + d.dx * 8, d.y + d.ny * 6 + d.dy * 8, 5, 5, 0, 5, c, c); wBox(d.x + d.nx * 4 + d.dx * 8, d.y + d.ny * 4 + d.dy * 8, 5, 1.5, 5, 11, c, c); });   // plastic or steel chair outside the room
+    if (i % 4 === 1) add(d.x + d.nx * 2, d.y + d.ny * 2, () => { if (!near2(d.x, d.y, 200)) return; const ex = d.x + d.nx * .8 + d.dx * 7.5, ey = d.y + d.ny * .8 + d.dy * 7.5; wBox(ex, ey, 1.6, 1.6, 9, 14, '#d42020', '#e53935'); });   // fire extinguisher on the wall
     if (d.last && i % 2 === 0) add(d.x + d.nx * 8, d.y + d.ny * 8, () => wBox(d.x + d.nx * 8 + d.dx * 9, d.y + d.ny * 8 + d.dy * 9, 5, 5, 0, 9, '#3f6b4a', '#4f7d58'));   // green wheelie bin
   });
+  for (const p of CAMP_PODS) {
+    if (p.smoker) { const x = p.x + POD_W - POD_SIDE - 16, y = p.y + 14; add(x, y, () => { campOval(x, y, 2, 3.2, 3.2, 2, '#9aa1a6'); wBox(x, y, 1.4, 1.4, 2, 11, '#9aa1a6', '#b8bec2'); }); }   // smokers' bin
+    if (p.cone) { const x = p.x + POD_SIDE + 14, y = p.y + 60; add(x, y, () => { wBox(x, y, 4, 4, 0, .8, '#e85d1a', '#e85d1a'); campOval(x, y, 4, 1.5, 1.5, 4, '#f26b1d'); }); }   // orange cone
+  }
+  for (const x of [172, 332, 482]) for (let y = 490; y < 1440; y += 70) add(x + 7, y, () => { if (!near2(x, y, 300)) return; wBox(x + 7, y, 1.4, 1.4, 0, 9, '#6b7278', '#d9dcde'); wBox(x + 7, y, 1.8, 1.8, 7, 8.5, '#f4f4ee', '#fff8d8'); });   // bollard lights
   for (const [tx, ty] of CAMP_TREES) add(tx, ty, () => {   // olive-type courtyard trees
-    wBox(tx, ty, 2.6, 2.6, 0, 13, '#8a5a34', '#8a5a34');
-    for (const [ox, oy, z, r] of [[0, 0, 12, 11], [-5, 3, 15, 8], [5, -3, 17, 8], [0, 0, 22, 7]]) wBox(tx + ox, ty + oy, r * 1.6, r * 1.6, z, z + 7, '#6f7d5c', '#7f8d6a');
+    for (const [ox, oy] of [[-1, 0], [1, .5], [0, -1]]) wBox(tx + ox, ty + oy, 1.3, 1.3, 0, 18, '#a8673f', '#a8673f');   // multi-stemmed trunk
+    for (const [ox, oy, z, r] of [[0, 0, 16, 12], [-7, 3, 20, 9], [7, -3, 22, 9], [2, 1, 28, 8]]) campOval(tx + ox, ty + oy, z + 3, r, r, 4.5, '#7d8a5e');
   });
   // wet mess: slab, back wall with bar, fridges and TV, posts, picnic tables, and a see-through roof over everyone
   wFlat(MESS.x0, MESS.y0, MESS.x1 - MESS.x0, MESS.y1 - MESS.y0, '#bdb6a6', .12);
