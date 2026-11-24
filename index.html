@@ -595,7 +595,7 @@ function makeYard() {
     P(bw + 100, TY), P(bw, 390, { lk: 1 }), P(bw, WK_MOUTH - 42, { lk: 1, stop: 10 }), P(bw, 860, { lk: 1 }), P(bw + 80, 1000), P(960, 1000), P(960, TY), P(150, TY), P(150, 390)];
   return {
     parked: [park(55, 1100, 0, .8), park(100, 1100, 0, 0), park(45, 120, 0, .6), park(90, 120, 0, 0),
-      ...PIT_TRUCK_BAYS.map(b => ({ x: wkBayX(b), y: WK.y + WK.h / 2 + 4, h: Math.PI, f: 0, j: null, cab: 1 }))],   // prime movers in for service, over the pits
+      ...PIT_TRUCK_BAYS.map(b => park(wkBayX(b), WK.y + 52, Math.PI, .8))],   // pink rigs in for service: cab and first trailer over the pit, the other three trailers still out the back
     movers: [
       truck(.7, pa, 1, .5), truck(0, pb, 5, .5), truck(.15, pw, 1, .5),
       ute([P(380, 1150), P(620, 1150), P(620, 1400), P(380, 1400)])],
@@ -815,11 +815,11 @@ function shopLayout() {
 function shopSolids() {
   const L = shopL, o = [];
   o.push([sbx(L.bay), (L.F + 4 + L.T0 - 302) / 2, 74, L.F + 4 - (L.T0 - 302)]);
-  for (const pm of L.pms) o.push([sbx(pm.bay), pm.F - 155, 74, 320]);
+  for (const pm of L.pms) { const T0 = pm.F - 230; o.push([sbx(pm.bay), (pm.F + 4 + T0 - 302) / 2, 74, pm.F + 4 - (T0 - 302)]); }   // prime mover and its first trailer
   { const pm0 = L.pms[0] || { bay: L.bay, F: L.F }; o.push([sbx(pm0.bay) - 56, pm0.F - 152, 44, 48]); }   // mobile work platform
   if (L.lv) o.push([sbx(L.lv.bay), L.lv.F - 69, 60, 146]);
-  o.push([40, 120, 46, 38]);                                       // tyre inflation cage
-  o.push([22, 435, 30, 200]);                                      // tyre rack along the Bay 1 wall (ends short of a Bay 1 cab door)
+  o.push([40, 60, 46, 38]);                                        // tyre inflation cage (back corner)
+  o.push([22, 175, 30, 150]);                                      // tyre rack on the Bay 1 wall behind the side door: the aisle from the bay mouth to the door stays clear
   for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
   o.push([SH_W - 24, 620, 32, 42]); o.push([SH_W - 42, 172, 56, 56]); o.push([SH_W - 26, 700, 34, 40]);
   for (let i = 0; i <= 6; i++) o.push([i * SB, SH_D - 6, 14, 14]);     // front door columns
@@ -835,7 +835,7 @@ function shopBlocked(x, y) {
   if (x > SH_W - 8 || y < 8 || y > SH_D - 8) return true;
   for (const i of PIT_BAYS) { const p = shopPit(i); if (Math.abs(x - p.x) < p.w / 2 + 5 && y > p.y0 - 5 && y < p.y1 + 5) return true; }
   if (shopSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 5 && Math.abs(y - cy) < l / 2 + 5)) return true;
-  return shopCrew.some(m => Math.hypot(x - m.x, y - m.y) < 9);
+  return false;   // the crew step round you (they pause when you're close), so they never block the way to the crib room
 }
 const shopCabDoor = () => ({ x: sbx(shopL.bay) - 46, y: shopL.F - 104 });   // driver's door: right-hand drive, on the -x side
 const shopAtCab = () => workshopFoot.x > 0 && Math.hypot(workshopFoot.x - shopCabDoor().x, workshopFoot.y - shopCabDoor().y) < 40;
@@ -845,7 +845,7 @@ function shopCrewInit() {
   shopCrew = [
     crew('MECHANIC', [[sbx((L.pms[L.pms.length - 1] || { bay: L.bay }).bay) + 34, SH_D - 105], [sbx((L.pms[L.pms.length - 1] || { bay: L.bay }).bay) + 34, SH_D - 135]], '#e6bb21'),   // working on the engine
     crew('MECHANIC', [[bx - 50, L.T0 - 228], [bx - 50, L.T0 - 120]], '#d6a82b'),
-    crew('TYRE FITTER', L.bay === 0 ? [[bx + 52, L.T0 - 255], [bx + 52, L.F - 48]] : [[78, 150], [78, 220]], '#e45c37'),
+    crew('TYRE FITTER', L.bay === 0 ? [[bx + 52, L.T0 - 255], [bx + 52, L.F - 48]] : [[78, 90], [78, 160]], '#e45c37'),
     crew('MULLET MECHANIC', [[SH_W - 56, 300], [SH_W - 56, 440]], '#ec9d27', true),
     { ...crew('AUTO SPARKY', [[px - 47, pm0.F - 152]], '#5ba8d5'), z: 60, reach: 1, heading: 0, still: 1 },   // up on the work platform, changing the beacon
     crew('LEADING HAND', [[lvx - 48, lvF - 20], [lvx - 48, lvF - 130]], '#f0f0f0'),
@@ -1129,6 +1129,20 @@ function drawWorkshopFoot() {
   trailer(sbx(L.bay), L.T0, 0, L.loaded);
   const pm0bay = L.pms.length ? L.pms[0].bay : 3;
   L.pms.forEach((pm, i) => primeMover(sbx(pm.bay), pm.F, pm.col, pm.fleet, i === L.pms.length - 1));   // the last pink truck has its bonnet up
+  // all four trailers behind every rig: the first inside the shed, the rest out the open back (behind your rig's too)
+  for (const [bay, T0, first] of [...L.pms.map(pm => [pm.bay, pm.F - 230, true]), [L.bay, L.T0, false]])
+    for (let k = first ? 0 : 1; k < NT; k++) { const t0 = T0 - k * 312; if ((t0 - 150 - CY) * fy + (sbx(bay) - CX) * fx < 1100) trailer(sbx(bay), t0, 0, true); }
+  // a mechanic down in the pit under the first pink truck, working overhead by a lead light
+  if (L.pms.length) { const pb = L.pms[0].bay, p = shopPit(pb), mx = p.x, my = L.pms[0].F - 232;
+    add(mx, my, () => {
+      const C = [[p.x - p.w / 2, p.y0], [p.x + p.w / 2, p.y0], [p.x + p.w / 2, p.y1], [p.x - p.w / 2, p.y1]].map(([x, y]) => camPt(x, y, 0));
+      if (C.some(q => q[1] < near)) return;
+      ctx.save(); ctx.beginPath(); C.forEach((q, i) => { const [sx, sy] = scr(q); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.closePath(); ctx.clip();
+      const lq = camPt(mx, my + 8, -6); if (lq[1] > near) { const [gx, gy] = scr(lq), r = focus * 30 / lq[1], g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r); g.addColorStop(0, 'rgba(255,240,180,.55)'); g.addColorStop(1, 'rgba(255,240,180,0)'); ctx.fillStyle = g; ctx.fillRect(gx - r, gy - r, 2 * r, 2 * r); }
+      human({ role: 'MECHANIC', x: mx, y: my, col: '#e6bb21', phase: footTime, walk: false, heading: Math.PI / 2, z: -36, reach: 1 });
+      ctx.restore();
+    });
+  }
   { // yellow mobile work platform against the first pink truck's sleeper: the auto sparky is up top changing the roof beacon
     const pm0 = L.pms[0] || { bay: L.bay, F: L.F }, cx = sbx(pm0.bay), px = cx - 50, py = pm0.F - 152, t2 = footTime;
     add(px, py, () => {
@@ -1168,10 +1182,10 @@ function drawWorkshopFoot() {
     }
   }
   // tyre bay gear: rack of new tyres on the Bay 1 wall, inflation cage, wheel dolly
-  for (let k = 0; k < 6; k++) { const y = 350 + k * 34; add(22, y, () => { tyre(22, y, 13.5, 12, '#7d858c'); }); }
-  add(22, 435, () => { box(8, 435, 2, 200, 2, '#d62828', '#d62828', 30); box(8, 435, 2, 200, 2, '#d62828', '#d62828', 4); });
-  add(40, 120, () => { box(40, 120, 46, 38, 2, '#333', '#444'); for (const [x, y] of [[-21, -17], [21, -17], [-21, 17], [21, 17]]) box(40 + x, 120 + y, 3, 3, 46, '#d62828'); for (const z of [14, 30, 46]) { box(40, 103, 46, 2, 2, '#d62828', '#d62828', z); box(40, 137, 46, 2, 2, '#d62828', '#d62828', z); box(19, 120, 2, 38, 2, '#d62828', '#d62828', z); box(61, 120, 2, 38, 2, '#d62828', '#d62828', z); } });
-  add(40, 120, () => tyre(40, 120, 13.5, 12));
+  for (let k = 0; k < 4; k++) { const y = 120 + k * 34; add(22, y, () => { tyre(22, y, 13.5, 12, '#7d858c'); }); }
+  add(22, 175, () => { box(8, 175, 2, 150, 2, '#d62828', '#d62828', 30); box(8, 175, 2, 150, 2, '#d62828', '#d62828', 4); });
+  add(40, 60, () => { box(40, 60, 46, 38, 2, '#333', '#444'); for (const [x, y] of [[-21, -17], [21, -17], [-21, 17], [21, 17]]) box(40 + x, 60 + y, 3, 3, 46, '#d62828'); for (const z of [14, 30, 46]) { box(40, 43, 46, 2, 2, '#d62828', '#d62828', z); box(40, 77, 46, 2, 2, '#d62828', '#d62828', z); box(19, 60, 2, 38, 2, '#d62828', '#d62828', z); box(61, 60, 2, 38, 2, '#d62828', '#d62828', z); } });
+  add(40, 60, () => tyre(40, 60, 13.5, 12));
   // right wall: workbenches with vices, tool cabinets, bulk oil, parts washer, hose reels, extinguishers
   for (const y of [260, 380, 500]) add(SH_W - 24, y, () => {
     box(SH_W - 24, y, 30, 60, 3, '#7d6f52', '#a8946a', 32);
@@ -2218,11 +2232,15 @@ function ute3(x, y, col, face, o = {}) {
 
 // ---------- change over: dual-cab ute down the dirt road to Camp ----------
 const UTE_Y = 480, CP0 = 6400, UHW = 72;
-let udust = [], us = 0, ux = 0, uv = 0, uh = 0, ud = 0, ucows = [], uoncoming = [], ucars = [], uslots = [], uT = 0, uBump = 0, uBumps = 0, uSpawn = 0, uPark = 0, uHint = 0, uTank = 0;
+// start of shift: the dirt road ends at a T-junction with the highway; turn left onto it, then pull into the parking bay on the
+// left where the pink road train is waiting. Highway coordinates restart at 0 after the turn.
+const HW_HALF = 80, HB0 = 760, HB_CAB = HB0 + 430, HB_SPOT = HB0 + 540, HB_EDGE = W / 2 - HW_HALF, HB_TX = HB_EDGE - 70, HB_SPOTX = HB_EDGE - 62;
+let uHw = false, uTurnT = 0;
+let uHint2 = 0, udust = [], us = 0, ux = 0, uv = 0, uh = 0, ud = 0, ucows = [], uoncoming = [], ucars = [], uslots = [], uT = 0, uBump = 0, uBumps = 0, uSpawn = 0, uPark = 0, uHint = 0, uTank = 0;
 const ys = s => UTE_Y - (s - us);
 // dirt-road centre offset at distance s: bends build up from the start and ease out before the car park
 function uOff(s) {
-  if (s <= 0) return 0;
+  if (uHw || s <= 0) return 0;
   const ramp = Math.min(1, s / 600) * Math.min(1, Math.max(0, (CP0 - 150 - s) / 500));
   return ramp * (95 * Math.sin(s / 520) + 45 * Math.sin(s / 190 + 1));
 }
@@ -2232,6 +2250,7 @@ function toUte() {
     if(score>best){best=score;localStorage.oreBest=best;}
     recordRun(true);
   }
+  uHw = false; uTurnT = 0;
   state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; uh = 0; ud = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uTank = 0; uoncoming = []; udust = []; particles = []; ptrs.clear(); syncBtns();
   ucows = [];
   for (let s = 800; s < CP0 - 600; s += 380 + Math.random() * 380) {   // lone cows, well spaced
@@ -2239,24 +2258,23 @@ function toUte() {
     ucows.push({ s, rel: -dir * (UHW + 55 + Math.random() * 10), dir, go: false, done: false, ph: Math.random() * 6, col: Math.random() < .5 ? '#1e1e1e' : '#6b3e1f', x: 0 });
   }
   uslots = []; ucars = [];
-  if(shiftStart){
-    for(let k=0;k<6;k++)uslots.push({x:55+k*36,s0:CP0+120,free:true});
-  }else for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
+  if (!shiftStart) for (const s0 of [CP0 + 60, CP0 + 190]) for (let k = 0; k < 10; k++) uslots.push({ x: k < 5 ? 30 + 36 * k : 306 + 36 * (k - 5), s0, free: true });
   const cols = ['#f4f4f4', '#f4f4f4', '#eeeeee', '#ffffff'];
   const order = uslots.map((_, i) => i).sort(() => Math.random() - .5);
   for (const i of order.slice(0, shiftStart ? 3 : 14)) {   // the 6-bay truck park keeps 3 bays free
   uslots[i].free = false; ucars.push({ x: uslots[i].x, s: uslots[i].s0 + 32, col: cols[Math.floor(Math.random() * cols.length)] }); }
-  flash(shiftStart?'Follow the dirt road to the highway truck parking bay':'Dual-cab ute: follow the dirt road to Camp');
+  flash(shiftStart ? 'Follow the dirt road out to the highway' : 'Dual-cab ute: follow the dirt road to Camp');
 }
 function updateUte(dt) {
   for (const d of udust) d.l += dt;
   udust = udust.filter(d => d.l < d.life).slice(-260);
   const puff = (x, s, sp) => { if (Math.random() < Math.min(1, Math.abs(sp) / 60 * 60 * dt * .5)) udust.push({ x: x + (Math.random() - .5) * 16, s, vx: (Math.random() - .3) * 14, l: 0, life: 1.1 + Math.random() * .9, r: 5 + Math.random() * 4 }); };
-  puff(ux, us - 32, uv);
+  if (!uHw) puff(ux, us - 32, uv);
   for (const o of uoncoming) if (!o.tank) puff(o.x, o.s + 32, o.v);   // water truck keeps its own dust down
-  uT += dt; msgT -= dt; shake = Math.max(0, shake - dt); uBump = Math.max(0, uBump - dt);
+  uT += dt; msgT -= dt; uTurnT = Math.max(0, uTurnT - dt); shake = Math.max(0, shake - dt); uBump = Math.max(0, uBump - dt);
   const gas = keys.ArrowUp || keys.KeyW || keys.TG, brk = keys.ArrowDown || keys.KeyS || keys.TB;
-  const cx = W / 2 + uOff(us), onRoad = us > CP0 - 40 || Math.abs(ux - cx) < UHW + 6, vmax = onRoad ? 150 : 70;
+  const inBay = uHw && us > HB0 && us < HB0 + BAY_L && ux < HB_EDGE + 4;
+  const cx = W / 2 + uOff(us), onRoad = uHw ? (Math.abs(ux - W / 2) < HW_HALF + 8 || inBay) : (us > CP0 - 40 || Math.abs(ux - cx) < UHW + 6), vmax = onRoad ? (uHw ? 200 : 150) : 70;
   if (gas) uv += 90 * dt; else if (brk) uv -= 200 * dt; else uv -= Math.sign(uv) * Math.min(Math.abs(uv), 40 * dt);
   if (uv > vmax) uv = Math.max(vmax, uv - 200 * dt);
   uv = Math.max(-45, uv);
@@ -2267,7 +2285,14 @@ function updateUte(dt) {
   ux = Math.max(14, Math.min(W - 14, ux + uv * Math.sin(uh) * dt));
   us += uv * Math.cos(uh) * dt;
   if (us < 0) { us = 0; uv = Math.max(0, uv); }
-  if (us > CP0 + 270) { us = CP0 + 270; uv = 0; }
+  const usMax = !shiftStart ? CP0 + 270 : uHw ? HB0 + BAY_L + 260 : CP0 + 150;
+  if (us > usMax) { us = usMax; uv = Math.min(uv, 0); }
+  if (shiftStart && !uHw && us > CP0 + 40) {   // at the T-junction: turn left onto the highway
+    if (uh < -.5) {
+      uHw = true; uTurnT = .7; us = 0; ux = W / 2 - HW_HALF / 2; uh = 0; ud = 0; uv = Math.max(uv, 40);
+      ucows = []; uoncoming = []; udust = []; uSpawn = 2.5; flash('On the highway: the parking bay is on the left');
+    } else if (!uHint2) { uHint2 = 1; flash('Give way, then steer LEFT onto the highway'); }
+  }
   const bump = msg => { if (uBump > 0) return; uBump = .8; uBumps++; uv = Math.min(uv, 0) - 15; shake = .3; flash(msg); };
   for (const c of ucows) {
     if (!c.go && us > c.s - 430) c.go = true;
@@ -2276,21 +2301,24 @@ function updateUte(dt) {
     if (Math.abs(c.x - ux) < 24 && Math.abs(c.s - us) < 30) bump('Mind the cattle!');
   }
   uSpawn -= dt;
-  if (uSpawn <= 0 && us < CP0 - 900) { const tank = !uTank && us > 2000; uTank ||= tank; uoncoming.push({ s: us + 720, rel: 38, v: 120 + Math.random() * 30, tb: Math.random() < .5, tank }); uSpawn = 6 + Math.random() * 6; }
+  if (uSpawn <= 0 && (uHw ? us < HB0 + BAY_L : us < CP0 - 900)) { const tank = !uTank && us > 2000; uTank ||= tank; uoncoming.push({ s: us + 720, rel: 38, v: 120 + Math.random() * 30, tb: Math.random() < .5, tank }); uSpawn = 6 + Math.random() * 6; }
   for (const o of uoncoming) {
     o.s -= o.v * dt; o.x = W / 2 + uOff(o.s) + o.rel;
     if (Math.abs(o.x - ux) < (o.tank ? 30 : 22) && Math.abs(o.s - us) < (o.tank ? 64 : 48)) bump(o.tank ? 'Water truck! Keep left' : 'Head-on! Keep left');
   }
   uoncoming = uoncoming.filter(o => o.s > us - 160);
   for (const c of ucars) if (Math.abs(c.x - ux) < 20 && Math.abs(c.s - us) < 48) bump('Bump! Mind the parked cars');
-  if (!uHint && us > CP0 - 300) { uHint = 1; flash(shiftStart ? 'Truck park ahead - park in a free bay' : 'Camp ahead - park in a free bay'); }
-  const sl = uslots.find(q => q.free && Math.abs(ux - q.x) < 12 && Math.abs(us - (q.s0 + 32)) < 22);
+  if (!uHint && us > CP0 - 300 && !uHw) { uHint = 1; flash(shiftStart ? 'Highway ahead - give way, then turn left' : 'Camp ahead - park in a free bay'); }
+  if (uHw && Math.abs(ux - HB_TX) < 24 && us > HB_CAB - 300 && us < HB_CAB + 50) bump('Careful - that\'s the truck you\'re taking over!');
+  if (uHw && uHint < 2 && us > HB0 - 250) { uHint = 2; flash('Pull into the bay and park in front of the pink truck'); }
+  const sl = shiftStart ? uHw && Math.abs(ux - HB_SPOTX) < 13 && Math.abs(us - HB_SPOT) < 22 : uslots.find(q => q.free && Math.abs(ux - q.x) < 12 && Math.abs(us - (q.s0 + 32)) < 22);
   uPark = sl && Math.abs(uv) < 3 ? uPark + dt : 0;
   if (uPark > .8) { state = 'uteend'; ptrs.clear(); syncBtns(); }
 }
 function drawUteWorld() {
   camX = W / 2 + (ux - W / 2) * .55; scroll = us;
   drawSky(); drawGround();
+  if (uHw) return drawUteHighway();
   const ye = ys(CP0), ya = Math.max(-120, ye);
   if (ya < H + 80) {
     strip(W / 2 - UHW - 14, W / 2 + UHW + 14, '#a8683f', ya); strip(W / 2 - UHW, W / 2 + UHW, '#c08a58', ya);
@@ -2299,15 +2327,14 @@ function drawUteWorld() {
   const clampY = y => Math.max(-118, Math.min(H + 80, y));
   const gT = clampY(ys(CP0 + 300)), gB = clampY(ys(CP0 - 20));
   if (gT < gB) {
-      if(shiftStart){
-        const outer=[],inner=[];
-        for(let i=0;i<=32;i++){
-          const a=-Math.PI/2+Math.PI*i/32;
-          outer.push(P(ROAD_L-13-BAY_D*Math.cos(a),clampY(ys(CP0+140)+BAY_L/2*Math.sin(a))));
-          inner.push(P(ROAD_L-13-(BAY_D-5)*Math.cos(a),clampY(ys(CP0+140)+(BAY_L/2-5)*Math.sin(a))));
-        }
-        poly(outer,'#eee8d5');poly(inner,'#5e5a54');
-      }else topRect(-80, gT, W + 80, gB, 0, '#9a8368');
+      if (shiftStart) {   // the highway across the end of the dirt road: T-junction with a give-way line
+        const yA = clampY(ys(CP0 + 40 + HW_HALF * 2)), yB2 = clampY(ys(CP0 + 40)), yM = clampY(ys(CP0 + 40 + HW_HALF));
+        topRect(-80, clampY(ys(CP0 + 52 + HW_HALF * 2)), W + 80, clampY(ys(CP0 + 28)), 0, '#a8683f');
+        topRect(-80, yA, W + 80, yB2, .02, '#4a4c50');
+        for (const sy of [CP0 + 44, CP0 + 36 + HW_HALF * 2]) topRect(-80, clampY(ys(sy + 2)), W + 80, clampY(ys(sy)), .04, '#ececec');
+        for (let x = -80; x < W + 80; x += 44) topRect(x, yM - 1.5, x + 22, yM + 1.5, .04, '#ececec');
+        for (let x = W / 2 - UHW; x < W / 2 + UHW; x += 14) topRect(x, clampY(ys(CP0 + 34)), x + 8, clampY(ys(CP0 + 31)), .05, '#f4f4f4');   // give-way line
+      } else topRect(-80, gT, W + 80, gB, 0, '#9a8368');
     }
   for (const q of uslots) {
     const yT = ys(q.s0 + 64), yB = ys(q.s0);
@@ -2342,7 +2369,9 @@ function drawUteWorld() {
   } });
   const yS = ys(CP0 - 10);
   if (yS > -115 && yS < H + 80) list.push({ y: yS, fn: () => {
-    const x = W / 2 + UHW + 30; box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 44, 3, 30, 44, '#1d5fb4');
+    const x = W / 2 + UHW + 30;
+    if (shiftStart) { box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 30, 3, 30, 52, '#c62828'); box(x, yS, 24, 3.4, 33, 49, '#f4f4f4'); const [sx, sy] = P(x, yS + 1.8, 41), k = sc(yS); text('GIVE WAY', sx, sy + 3 * k, 6 * k, '#c62828'); return; }
+    box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 44, 3, 30, 44, '#1d5fb4');
     const [sx, sy] = P(x, yS + 1.6, 37), k = sc(yS); text('CAR PARK', sx, sy + 3 * k, 8 * k, '#fff');
   } });
   list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud })) });
@@ -2358,19 +2387,57 @@ function drawUteWorld() {
   }
   atmosphere();
 }
+// after the left turn: the bitumen highway, the dirt road joining from the right behind you, and the parking bay on the left
+// with the pink road train waiting in it and a marked spot in front of it for the ute
+function drawUteHighway() {
+  const C = y => Math.max(-118, Math.min(H + 80, y));
+  strip(W / 2 - HW_HALF - 18, W / 2 + HW_HALF + 18, '#a8683f'); strip(W / 2 - HW_HALF, W / 2 + HW_HALF, '#4a4c50');
+  strip(W / 2 - HW_HALF + 4, W / 2 - HW_HALF + 6, '#ececec'); strip(W / 2 + HW_HALF - 6, W / 2 + HW_HALF - 4, '#ececec');
+  for (let s0 = Math.floor((us - 400) / 60) * 60; s0 < us + 700; s0 += 60) { const y0 = ys(s0 + 30), y1 = ys(s0); if (y1 > -118 && y0 < H + 80) topRect(W / 2 - 1.5, C(y0), W / 2 + 1.5, C(y1), .03, '#f2f2f2'); }
+  { const y0 = ys(70), y1 = ys(-30); if (y1 > -118 && y0 < H + 80) { topRect(W / 2 + HW_HALF, C(y0), W + 200, C(y1), .01, '#c08a58'); } }   // the dirt road you came off
+  const yc = ys(HB0 + BAY_L / 2);
+  if (yc - BAY_L / 2 < H + 80 && yc + BAY_L / 2 > -120) {
+    const oval = (d, l) => { const o = []; for (let i = 0; i <= 32; i++) { const a = -Math.PI / 2 + Math.PI * i / 32; o.push(P(HB_EDGE - d * Math.cos(a), C(yc + l * Math.sin(a)))); } return o; };
+    poly(oval(BAY_D, BAY_L / 2), '#eee8d5'); poly(oval(BAY_D - 5, BAY_L / 2 - 5), '#5e5a54');
+    const sy0 = ys(HB_SPOT + 22), sy1 = ys(HB_SPOT - 22), glow = .25 + .15 * Math.sin(uT * 5);   // marked spot for the ute
+    topRect(HB_SPOTX - 13, C(sy0), HB_SPOTX + 13, C(sy1), .05, `rgba(120,255,140,${glow})`);
+    for (const x of [HB_SPOTX - 13, HB_SPOTX + 12]) topRect(x, C(sy0), x + 1.2, C(sy1), .06, '#f4f4f4');
+    topRect(HB_SPOTX - 13, C(sy0), HB_SPOTX + 13, C(sy0) + 1.2, .06, '#f4f4f4');
+  }
+  const list = [];
+  for (let g = Math.floor((us - 340) / 150); g <= Math.ceil((us + 620) / 150); g++) {   // scenery, kept out of the bay
+    const s0 = g * 150 + hash(g * 3.1) * 100, y = ys(s0); if (y < -115 || y > H + 60) continue;
+    list.push({ y, fn: () => { for (const side of [-1, 1]) { if (side < 0 && s0 > HB0 - 80 && s0 < HB0 + BAY_L + 80) continue;
+      const d = hash(g * 2 + side), r = hash(g * 11 + side), sx = W / 2 + side * (HW_HALF + 40 + hash(g * 5 + side) * 160);
+      if (r < .4) { dome(sx, y, 14 + d * 12, 10 + d * 12, '#9a6a55'); } else if (r < .75) { dome(sx, y, 16 + d * 8, 12, '#6f7d3c'); dome(sx - 10, y + 5, 9, 7, '#8a9650'); } else dome(sx, y, 12, 6, '#b39a58'); } } });
+  }
+  { const y = ys(HB0 - 60); if (y > -115 && y < H + 80) list.push({ y, fn: () => { const x = HB_EDGE - 14; box(x, y, 2, 2, 0, 30, '#ccc'); box(x, y, 16, 2, 30, 46, '#1d5fb4'); const [px, py] = P(x, y + 1.2, 38); text('P', px, py + 4 * sc(y), 12 * sc(y), '#fff'); } }); }
+  // the pink road train waiting in the bay, facing the way you're going; trailers behind
+  const ty = ys(HB_CAB);
+  if (ty > -400 && ty < H + 120) {
+    const J = straightChain(HB_TX, ty, 1);
+    list.push({ y: ty, fn: () => withFrame(HB_TX, ty, 0, () => cab3(HB_TX, ty)) });
+    for (let i = 0; i < NT; i++) { const p = chainPose(J, i); if (p.y > -115 && p.y < H + 80) list.push({ y: p.y - 1, fn: () => withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, .9, 0)) }); }
+  }
+  for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => o.tank ? waterTruck3(o.x, y) : ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb }) }); }
+  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud })) });
+  list.sort((a, b) => a.y - b.y); for (const o of list) o.fn();
+  atmosphere();
+}
 function drawUteScreen() {
   drawUteWorld();
   rect(0, 0, W, 64, '#000a');
   text('DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
   text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
-  text(us < CP0 ? `${Math.round((CP0 - us) / 4)} m to ${shiftStart ? 'Truck Park' : 'Camp'}` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
+  text(shiftStart ? (uHw ? (us < HB0 ? `${Math.round((HB0 - us) / 4)} m to the parking bay` : 'Park in front of the pink truck') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to the highway` : 'Give way - turn LEFT') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
   text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
+  if (uTurnT > 0) rect(0, 0, W, H, `rgba(0,0,0,${uTurnT / .7 * .6})`);   // quick dip as you swing round onto the highway
   if (uPark > 0) bar(W / 2 - 60, 80, 120, 12, uPark / .8, '#4c4');
   if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
   if (state === 'ute' && isTouch) { drawStick(); drawBtns(DB); }
   if (state === 'uteend') {
     rect(30, 200, W - 60, 300, '#000d');
-    text(shiftStart ? 'AT THE TRUCK PARK!' : 'ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
+    text(shiftStart ? 'AT THE PARKING BAY!' : 'ARRIVED AT CAMP!', W / 2, 270, 34, '#4c4');
     text(`Parked in ${Math.round(uT)}s with ${uBumps} bump${uBumps === 1 ? '' : 's'}`, W / 2, 320, 17);
     text(isTouch ? (shiftStart ? 'Tap to begin driver handover' : 'Tap to hop out') : (shiftStart ? 'Press SPACE to begin driver handover' : 'Press SPACE to hop out'), W / 2, 440, 18, '#ff6');
   }
