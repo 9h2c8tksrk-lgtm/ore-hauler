@@ -2601,62 +2601,105 @@ function wText(str, x, y, z, size, col) {
   const [sx, sy] = wProj(q); text(str, sx, sy, Math.max(5, Math.min(15, size * WF / q[1])), col);
 }
 // Rounded shaded 3D ellipsoid projected through the existing chase camera.
-function campOval(x,y,z,rx,ry,rz,base) {
-  const rings=7, sides=12;
-  const P=[];
+let ovalLOD = 1;   // 1 = full detail; lower for people far from the camera
+// rot (optional): rx runs across the body and ry along its heading, so the shape turns with the person
+function campOval(x,y,z,rx,ry,rz,base,rot) {
+  if(ovalLOD<1&&ovalSink){   // people further off: each part is one shaded screen ellipse (2 fills instead of ~14 facets)
+    const c=wCamPt(x,y,z); if(c[1]<WNEAR) return;
+    const [sx,sy]=wProj(c), k=WF/c[1], r=Math.max(rx,ry), w=r*k, h=(rz*.92+r*.38)*k;
+    ovalSink.push({d:c[1],draw:()=>{ctx.fillStyle=shade(base,.8);ctx.beginPath();ctx.ellipse(sx,sy,w,h,0,0,7);ctx.fill();
+      if(w>1.2){ctx.fillStyle=base;ctx.beginPath();ctx.ellipse(sx-w*.12,sy-h*.12,w*.78,h*.74,0,0,7);ctx.fill();}}});
+    return;
+  }
+  const sz=Math.max(rx,ry,rz), lo=sz<1.6||ovalLOD===0, mid=sz<3.2||ovalLOD<1, rings=lo?3:mid?4:6, sides=lo?6:mid?8:11;   // small parts and distant people get fewer facets
+  const ca=rot===undefined?1:Math.cos(rot), sa=rot===undefined?0:Math.sin(rot);
+  // local (side, front) -> world; with no rot, local axes are the world axes
+  const W2=(u,v)=>rot===undefined?[u,v]:[-u*sa+v*ca, u*ca+v*sa];
+  const P=[], Nn=[];
   for(let j=0;j<=rings;j++) {
-    const theta=Math.PI*j/rings, row=[];
+    const theta=Math.PI*j/rings, row=[], nrow=[];
     for(let i=0;i<sides;i++) {
-      const phi=2*Math.PI*i/sides;
-      row.push([x+rx*Math.sin(theta)*Math.cos(phi), y+ry*Math.sin(theta)*Math.sin(phi), z+rz*Math.cos(theta)]);
+      const phi=2*Math.PI*i/sides, lu=Math.sin(theta)*Math.cos(phi), lv=Math.sin(theta)*Math.sin(phi), lz=Math.cos(theta);
+      const [wx,wy]=W2(rx*lu,ry*lv), [nx,ny]=W2(lu/rx,lv/ry);
+      row.push([x+wx, y+wy, z+rz*lz]); nrow.push([nx,ny,lz/rz]);
     }
-    P.push(row);
+    P.push(row); Nn.push(nrow);
   }
   for(let j=0;j<rings;j++)for(let i=0;i<sides;i++){
     const ni=(i+1)%sides, q=[P[j][i],P[j][ni],P[j+1][ni],P[j+1][i]];
     const mx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4, my=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4, mz=(q[0][2]+q[1][2]+q[2][2]+q[3][2])/4;
+    const n=[0,1,2].map(k=>(Nn[j][i][k]+Nn[j][ni][k]+Nn[j+1][ni][k]+Nn[j+1][i][k])/4);
     // skip faces turned away from the camera so the back of the shape never paints over the front
-    if(((mx-x)/(rx*rx))*(wCam.x-mx)+((my-y)/(ry*ry))*(wCam.y-my)+((mz-z)/(rz*rz))*(WCH-mz)<=0)continue;
+    if(n[0]*(wCam.x-mx)+n[1]*(wCam.y-my)+n[2]*(WCH-mz)<=0)continue;
     const f=.77+.2*Math.cos(2*Math.PI*i/sides)+.1*Math.cos(Math.PI*j/rings), col=shade(base,Math.max(.52,Math.min(1.18,f)));
     if(ovalSink)ovalSink.push({d:wCamPt(mx,my,mz)[1],q,col});else wPoly(q,col);
   }
 }
 let ovalSink=null;   // when set, campOval queues its faces so a whole figure can be depth-sorted
 // Camp models use the same projected world geometry and chase camera as the buildings.
-function campHuman(x,y,moustache=false,player=false) {
-  const a=player?(state==='officeinside'?officeHeading:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
-  const walking=player && (state==='officeinside'
-    ? (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB)
-    : (keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB));
-  const moving=player?(walking?Math.sin(wT*10)*2.1:0):Math.sin(wT*3+x)*1.1;
-  const originalOval=campOval, outerSink=ovalSink;
-  ovalSink=[];   // collect every face of this person, then paint far to near
-  const scale=player?.70:1;
-  const scaledOval=(xx,yy,zz,ww,ll,hh,col)=>originalOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col);
+// o (optional, for camp folk): dir, walk, ph (stride phase), t (own clock), scale, lod ('low' far away),
+// shirt, stripe (reflective tape, null for none), pants, shorts, skin, shoes, hair ('short' | 'buzz' | 'mullet' | 'long' |
+// 'ponytail' | 'bald' | 'cap' | 'hardhat'), hairCol, cap, beard, sunnies, pose ('drink' | 'dribble' | 'shoot' | 'bag' | 'pack'), can, bag
+function campHuman(x,y,moustache=false,player=false,o={}) {
+  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const keysWalk=keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB;
+  const walking=player?keysWalk:!!o.walk, ph=player?wT*10:(o.ph||0), t=o.t!==undefined?o.t:wT;
+  const moving=walking?Math.sin(ph)*2.1:(player?0:Math.sin(wT*3+x)*.25);
+  const outerSink=ovalSink, outerLOD=ovalLOD;
+  ovalSink=[]; ovalLOD=o.lod==='low'?0:o.lod==='mid'?.5:1;   // collect every face of this person, then paint far to near
+  const detail=o.lod!=='low';
+  const scale=o.scale!==undefined?o.scale:player?.70:1;
+  const O=(xx,yy,zz,ww,ll,hh,col)=>campOval(x+(xx-x)*scale,y+(yy-y)*scale,zz*scale,ww*scale,ll*scale,hh*scale,col,a);   // turns with the person
   const point=(side,front=0)=>[x+rx*side+fx*front,y+ry*side+fy*front];
-  // Boots and separate moving legs, naturally rounded rather than block-shaped.
+  const shirt=o.shirt||'#e7e900', stripe=o.stripe===undefined?'#e4e8e9':o.stripe, pants=o.pants||'#293b56', skin=o.skin||'#d8a27b';
+  const hairCol=o.hairCol||'#49332b', hair=o.hair||'short', shoes=o.shoes||'#202329', pose=o.pose;
+  // legs: boots, shins and thighs (bare shins in shorts)
   for(const side of [-1,1]){
-    let p=point(side*2.6,side*moving);
-    scaledOval(p[0],p[1],2,2.8,3.7,2.5,'#202329');
-    p=point(side*2.7,side*moving*.45);
-    scaledOval(p[0],p[1],9,2.5,2.5,7,'#293b56');
-    p=point(side*6,side*moving*.3);
-    scaledOval(p[0],p[1],18,2.8,2.9,7,'#e8e900');
-    scaledOval(p[0],p[1],13,2.9,3,1.3,'#dce4e7');
-    p=point(side*6,side*moving);
-    scaledOval(p[0],p[1],9,2,2,4,'#c89570');
+    let p=point(side*2.6,side*moving);O(p[0],p[1],2,2.3,3.4,2.3,shoes);
+    p=point(side*2.7,side*moving*.6);O(p[0],p[1],7,2.1,2.2,4.2,o.shorts?skin:pants);
+    p=point(side*2.7,side*moving*.3);O(p[0],p[1],13,2.6,2.6,4.2,o.shorts?o.shorts:pants);
   }
-  scaledOval(x,y,18.5,6.2,4.3,8,'#e7e900');
-  scaledOval(x,y,16.5,6.35,4.45,1,'#e4e8e9');
-  scaledOval(x,y,22,6.1,4.35,1,'#e4e8e9');
-  scaledOval(x,y,26,2.1,2.2,2.5,'#c78e6a');
-  scaledOval(x,y,31,4.7,4.2,5.8,'#d8a27b');
-  let p=point(0,-1.5);scaledOval(p[0],p[1],35,4.7,3.9,2.5,'#49332b');   // hair
-  p=point(0,-2.4);scaledOval(p[0],p[1],31.5,4.3,2.6,4.6,'#49332b');      // back of the head
-  p=point(0,4);scaledOval(p[0],p[1],30,2.4,1.1,1.1,'#bd8566');          // nose
-  if(moustache){p=point(0,4.5);scaledOval(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
-  const faces=ovalSink;ovalSink=outerSink;
-  faces.sort((a,b)=>b.d-a.d);for(const f of faces)wPoly(f.q,f.col);
+  // arms by pose
+  const arm=(side,sx,sf,sz,hx,hf,hz)=>{let p=point(side*sx,sf);O(p[0],p[1],sz,2.5,2.6,6,shirt);if(stripe&&sz<22)O(p[0],p[1],sz-4.5,2.6,2.7,1.1,stripe);p=point(side*hx,hf);O(p[0],p[1],hz,1.9,1.9,3.6,skin);return p;};
+  for(const side of [-1,1]){
+    if(pose==='shoot'){arm(side,5.4,1.5,26,2.6,2.4,40);continue;}
+    if(pose==='drink'&&side===1){const k=Math.max(0,Math.sin(t*.9))**2;const p=arm(1,6,1,19,5-k*2.2,2+k*2.4,10+k*16);
+      if(detail){const c=point(5-k*2.2,2.8+k*2.4);O(c[0],c[1],12+k*16,1.15,1.15,1.9,o.can||'#c9302c');}continue;}
+    if(pose==='dribble'&&side===1){arm(1,6.4,1.5,18,7,3.4,10);continue;}
+    if((pose==='bag')&&side===1){const p=arm(1,6.2,0,18,6.6,0,9);O(p[0],p[1],6,3.1,3.1,2.8,o.bag||'#2c4a7a');continue;}
+    arm(side,6,side*moving*.3,18,6,side*moving,9);
+  }
+  // torso, tape, neck, head
+  O(x,y,18.5,6.1,4.3,8,shirt);
+  if(stripe){O(x,y,16.5,6.25,4.45,1,stripe);O(x,y,22,6,4.4,1,stripe);}
+  if(pose==='pack'){const p=point(0,-4.2);O(p[0],p[1],21,4.6,2.4,5.2,o.bag||'#3b4d2e');}
+  O(x,y,26,2.1,2.2,2.5,shade(skin,.92));
+  O(x,y,31,4.3,4.6,5.6,skin);
+  for(const side of [-1,1]){const p=point(side*4.3,0);O(p[0],p[1],31,.8,1.1,1.5,shade(skin,.9));}   // ears
+  let p=point(0,4.4);O(p[0],p[1],30.4,1.1,1.3,1.4,shade(skin,.93));                                      // nose
+  if(detail){
+    for(const side of [-1,1]){
+      p=point(side*1.65,3.95);O(p[0],p[1],32.3,.78,.42,.6,'#ebe5d8');                                       // eye white
+      p=point(side*1.65,4.3);O(p[0],p[1],32.2,.4,.26,.45,o.eyes||'#3a2a1e');                               // pupil
+      p=point(side*1.8,3.95);O(p[0],p[1],33.9,1.2,.5,.32,shade(hairCol,.85));                              // eyebrow
+    }
+    p=point(0,4.1);O(p[0],p[1],28.4,1.4,.45,.36,'#8c4a3e');                                                 // mouth
+    if(o.sunnies){p=point(0,4.15);O(p[0],p[1],32.3,3.6,.6,.85,'#1b1d20');}
+  }
+  // hair styles, caps and hats
+  const back=(zz=31.5,h=4.6)=>{p=point(0,-2.4);O(p[0],p[1],zz,4.2,2.7,h,hairCol);};
+  if(hair==='short'||hair==='mullet'||hair==='long'||hair==='ponytail'){p=point(0,-1.2);O(p[0],p[1],35,4.6,4.4,2.6,hairCol);back();}
+  if(hair==='buzz'){p=point(0,-.6);O(p[0],p[1],34.6,4.5,4.6,2.3,hairCol);back(32,3.6);}
+  if(hair==='mullet'){p=point(0,-3.4);O(p[0],p[1],27.6,3.6,1.9,3.8,hairCol);}
+  if(hair==='long'){p=point(0,-3);O(p[0],p[1],28,4.3,2.2,6,hairCol);for(const side of [-1,1]){p=point(side*4,-.4);O(p[0],p[1],29,1.1,2.4,4.6,hairCol);}}
+  if(hair==='ponytail'){p=point(0,-5.1);O(p[0],p[1],31,1.4,1.7,3.3,hairCol);}
+  if(hair==='bald'){p=point(0,-3);O(p[0],p[1],30,4,1.8,2,hairCol);}
+  if(hair==='cap'){p=point(0,-.6);O(p[0],p[1],35.2,4.7,4.8,2.7,o.cap||'#1d5fb4');p=point(0,4.6);O(p[0],p[1],33.6,3.2,2.7,.45,o.cap||'#1d5fb4');back(31,3.8);}
+  if(hair==='hardhat'){O(x,y,36,5.2,5.4,3.1,o.cap||'#f4f4f4');O(x,y,34.3,6,6.2,.5,o.cap||'#f4f4f4');back(31,3.8);}
+  if(o.beard){p=point(0,2.9);O(p[0],p[1],27.6,3.9,2.2,2.6,hairCol);}
+  if(moustache){p=point(0,4.5);O(p[0],p[1],29.5,3.9,1.25,1.35,'#33231e');}
+  const faces=ovalSink;ovalSink=outerSink;ovalLOD=outerLOD;
+  faces.sort((a,b)=>b.d-a.d);for(const f of faces)f.draw?f.draw():wPoly(f.q,f.col);
 }
 // wheel on an axle across the vehicle (world y axis): tread, sidewall and a white steel rim on the camera side
 function wWheel(x, y, r, w, rim = '#e9ebec') {
@@ -2699,6 +2742,72 @@ function campUteModel(x, y, col) {
   B(-30, -14.5, 1, 7, 54, 63, '#ff6a00', '#ff8a2a');                 // safety flag
   const faces = polySink; polySink = outer;
   faces.sort((a, b) => b.d - a.d); for (const f of faces) wPoly(f.pts, f.col);
+}
+// ---------- camp life: FIFO workers knocking off, drinking at the wet mess, shooting hoops, coming and going ----------
+const FOLK_LOOKS = [
+  { shirt: '#1f3a5f', stripe: null, pants: '#2b2b2b', hair: 'short', hairCol: '#2e2018', beard: 1 },
+  { shirt: '#e7e900', pants: '#293b56', hair: 'cap', cap: '#1d5fb4', hairCol: '#6b4a2b' },
+  { shirt: '#ff7a1a', pants: '#293b56', hair: 'buzz', hairCol: '#1e1a18', skin: '#b07a52' },
+  { shirt: '#2f2f33', stripe: null, pants: '#3c4a5c', hair: 'mullet', hairCol: '#8a5a2b', sunnies: 1 },
+  { shirt: '#8a2f2f', stripe: null, pants: '#3a3a3a', hair: 'long', hairCol: '#c9a25a', skin: '#e8b892' },
+  { shirt: '#e7e900', pants: '#293b56', hair: 'hardhat', cap: '#f4f4f4', hairCol: '#3a2a20', beard: 1 },
+  { shirt: '#3d6b45', stripe: null, pants: '#2b2b2b', hair: 'ponytail', hairCol: '#2a1c14', skin: '#c58a62' },
+  { shirt: '#5b6f86', stripe: null, pants: '#1e2a38', hair: 'bald', hairCol: '#5a4030', skin: '#8a5a3c', beard: 1 },
+  { shirt: '#ff7a1a', pants: '#293b56', hair: 'short', hairCol: '#b8862f', sunnies: 1 },
+  { shirt: '#f2f2f2', stripe: null, pants: '#2f4f7a', hair: 'cap', cap: '#c62828', hairCol: '#2e2018', skin: '#6b4430' }];
+// walkers go back and forth along a footpath route, pausing at each end; [route, speed, look, pose, start offset]
+const FOLK_WALKS = [
+  [[[560, 1735], [545, 1520], [545, 1085], [545, 820]], 20, 0, 'bag', 0],
+  [[[530, 1735], [545, 1520], [545, 1085], [300, 1085], [163, 1085], [163, 800]], 18, 4, 'pack', 40],
+  [[[805, 860], [744, 960], [744, 1090], [752, 1150]], 22, 1, null, 10],
+  [[[650, 1085], [300, 1085], [163, 1085], [163, 1230]], 19, 3, null, 25],
+  [[[712, 1078], [744, 960], [805, 900]], 21, 5, null, 5],
+  [[[810, 735], [810, 950], [744, 960], [744, 1085]], 20, 2, null, 60],
+  [[[575, 1735], [548, 1600], [548, 1240]], 17, 9, 'bag', 90]];
+function routeAt(pts, s, pause) {   // ping-pong along a polyline with a pause at each end: position and heading
+  const seg = [], L = pts.slice(1).reduce((t, p, i) => { const l = Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]); seg.push(l); return t + l; }, 0);
+  const cyc = 2 * L + 2 * pause; let u = ((s % cyc) + cyc) % cyc, back = false;
+  if (u < pause) return { x: pts[0][0], y: pts[0][1], dir: Math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]), walk: false };
+  u -= pause; if (u > L) { u -= L; if (u < pause) { const n = pts.length - 1; return { x: pts[n][0], y: pts[n][1], dir: Math.atan2(pts[n - 1][1] - pts[n][1], pts[n - 1][0] - pts[n][0]), walk: false }; } u = L - (u - pause); back = true; }
+  for (let i = 0; i < seg.length; i++) {
+    if (u <= seg[i] || i === seg.length - 1) { const f = Math.min(1, u / seg[i]), A = pts[i], B = pts[i + 1], d = Math.atan2(B[1] - A[1], B[0] - A[0]);
+      return { x: A[0] + (B[0] - A[0]) * f, y: A[1] + (B[1] - A[1]) * f, dir: back ? d + Math.PI : d, walk: true }; }
+    u -= seg[i];
+  }
+}
+const MESS_TABLES = [[684, 1186], [724, 1208], [690, 1242]];
+const HOOPS = [{ x: 825, y: 1325, by: 1320, pole: 1312 }, { x: 825, y: 1483, by: 1488, pole: 1496 }];
+function campCrowd(t) {
+  const out = [];
+  FOLK_WALKS.forEach(([pts, sp, look, pose, off], i) => { const r = routeAt(pts, t * sp + off * sp, 4 + i % 3); out.push({ x: r.x, y: r.y, o: { ...FOLK_LOOKS[look], dir: r.dir, walk: r.walk, ph: t * 9 + i, pose: r.walk || pose === 'pack' ? pose : (pose === 'bag' ? 'bag' : null) } }); });
+  // drinkers round the bar leaners at the wet mess, turning to each other as they talk
+  MESS_TABLES.forEach(([tx, ty], k) => {
+    const n = k === 1 ? 3 : 2;
+    for (let j = 0; j < n; j++) {
+      const ang = j / n * 2 * Math.PI + k, px = tx + Math.cos(ang) * 9.5, py = ty + Math.sin(ang) * 9.5;
+      out.push({ x: px, y: py, o: { ...FOLK_LOOKS[(k * 3 + j + 3) % FOLK_LOOKS.length], dir: ang + Math.PI + Math.sin(t * .4 + j * 2) * .5, pose: 'drink', t: t + j * 2.3 + k, can: ['#c9302c', '#2a6d2a', '#d8b24a'][(j + k) % 3] } });
+    }
+  });
+  // basketball on the north half: one dribbles then shoots, the ball goes through the net and the next player takes it
+  const hoop = HOOPS[0], T = 7, s = Math.floor(t / T) % 2, u = t % T;
+  const spot = (k, tt) => [825 + 22 * Math.sin(tt * 1.1 + k * 2.4), 1372 + 11 * Math.cos(tt * .8 + k * 1.7)];
+  const [sx, sy] = spot(s, Math.min(u, 4)), toHoop = Math.atan2(hoop.y - sy, hoop.x - sx);
+  let ball;
+  if (u < 4) ball = [sx + Math.cos(toHoop + Math.PI / 2) * 5, sy + Math.sin(toHoop + Math.PI / 2) * 5, Math.abs(Math.sin(u * 6)) * 7 + 1.4];
+  else if (u < 4.9) { const f = (u - 4) / .9; ball = [sx + (hoop.x - sx) * f, sy + (hoop.y + 2 - sy) * f, 29 + (60 - 29) * f + 24 * Math.sin(f * Math.PI)]; }
+  else if (u < 5.4) { const f = (u - 4.9) / .5; ball = [hoop.x, hoop.y + 2, 58 * (1 - f * f) + 1.4]; }
+  else { const f = (u - 5.4) / 1.6, [nx, ny] = spot(1 - s, 0); ball = [hoop.x + (nx - hoop.x) * f, hoop.y + 2 + (ny - hoop.y - 2) * f, Math.abs(Math.sin(f * 9)) * 6 * (1 - f) + 1.4]; }
+  const kit = [{ shirt: '#c62828', shorts: '#1b1b1b', hair: 'buzz', hairCol: '#1e1a18', skin: '#6b4430' }, { shirt: '#1d5fb4', shorts: '#e8e8e8', hair: 'short', hairCol: '#c9a25a' },
+    { shirt: '#f2f2f2', shorts: '#1d5fb4', hair: 'ponytail', hairCol: '#2a1c14', skin: '#c58a62' }, { shirt: '#2f2f33', shorts: '#c62828', hair: 'cap', cap: '#2f7a46', hairCol: '#3a2a20' }];
+  for (let k = 0; k < 4; k++) {
+    let x, y, dir, pose = null, walk = true;
+    if (k === s) { x = sx; y = sy; dir = toHoop; pose = u < 4 ? 'dribble' : u < 4.6 ? 'shoot' : null; walk = u < 4; }
+    else if (k === 1 - s) { const [nx, ny] = spot(k, u < 5.4 ? t * .7 : 0); x = nx + (u > 5.4 ? 0 : 8 * Math.sin(t)); y = ny; dir = Math.atan2(ball[1] - y, ball[0] - x); }
+    else if (k === 2) { x = sx + (hoop.x - sx) * .3 + 4; y = sy + (hoop.y - sy) * .3; dir = Math.atan2(sy - y, sx - x); walk = Math.abs(Math.sin(t * 2)) > .3; }   // defender marks the shooter
+    else { x = 825 + 30 * Math.cos(t * .6); y = 1400 + 8 * Math.sin(t * 1.2); dir = Math.atan2(ball[1] - y, ball[0] - x); }   // cutting round the arc
+    out.push({ x, y, o: { ...kit[k], stripe: null, pants: kit[k].shorts, shoes: '#f2f2f2', dir, walk, ph: t * 13 + k, pose } });
+  }
+  return { folk: out, ball };
 }
 function drawWalk() {
   const hx = Math.cos(wCamH), hy = Math.sin(wCamH);
@@ -2785,6 +2894,33 @@ function drawWalk() {
     wBox(tx, ty, 2.6, 2.6, 0, 13, '#8a5a34', '#8a5a34');
     for (const [ox, oy, z, r] of [[0, 0, 12, 11], [-5, 3, 15, 8], [5, -3, 17, 8], [0, 0, 22, 7]]) wBox(tx + ox, ty + oy, r * 1.6, r * 1.6, z, z + 7, '#6f7d5c', '#7f8d6a');
   });
+  // wet mess beer garden: bar leaners, an esky and a bin
+  for (const [tx, ty] of MESS_TABLES) add(tx, ty, () => { wBox(tx, ty, 6, 6, 0, 1, '#3a3f44', '#4a5056'); wBox(tx, ty, 1.6, 1.6, 1, 21, '#3a3f44', '#55606a'); campOval(tx, ty, 21.5, 6, 6, .8, '#6b4a33'); });
+  add(737, 1172, () => { wBox(737, 1172, 10, 6, 0, 6, '#1d5fb4', '#f4f4f4'); });
+  add(666, 1254, () => { wBox(666, 1254, 5, 5, 0, 9, '#2f6f3f', '#3f7f4f'); });
+  // basketball hoops: pole, backboard with its square, rim and net
+  for (const h of HOOPS) add(h.x, h.pole, ghost(h.x - 15, Math.min(h.pole, h.by) - 4, 30, Math.abs(h.by - h.pole) + 8, () => {
+    const s2 = Math.sign(h.y - h.pole);
+    wBox(h.x, h.pole, 2.6, 2.6, 0, 66, '#5d666d', '#7a848b');
+    wBox(h.x, (h.pole + h.by) / 2, 2, Math.abs(h.by - h.pole), 62, 64, '#5d666d', '#7a848b');
+    wPoly([[h.x - 15, h.by, 54], [h.x + 15, h.by, 54], [h.x + 15, h.by, 74], [h.x - 15, h.by, 74]], '#f4f6f7');
+    wPoly([[h.x - 5, h.by + s2 * .2, 57], [h.x + 5, h.by + s2 * .2, 57], [h.x + 5, h.by + s2 * .2, 64], [h.x - 5, h.by + s2 * .2, 64]], '#c62828');
+    const ring = (r, z) => Array.from({ length: 14 }, (_, i) => wCamPt(h.x + Math.cos(i / 14 * 2 * Math.PI) * r, h.y + Math.sin(i / 14 * 2 * Math.PI) * r, z));
+    const top = ring(4.3, 58), bot = ring(2.6, 51);
+    if (top.some(q => q[1] < WNEAR) || bot.some(q => q[1] < WNEAR)) return;
+    ctx.strokeStyle = 'rgba(245,245,245,.85)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i < 14; i++) { const [ax, ay] = wProj(top[i]), [bx, by] = wProj(bot[(i + 1) % 14]); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+    ctx.stroke();
+    ctx.strokeStyle = '#e2601c'; ctx.lineWidth = 2; ctx.beginPath(); top.forEach((q, i) => { const [qx, qy] = wProj(q); i ? ctx.lineTo(qx, qy) : ctx.moveTo(qx, qy); }); ctx.closePath(); ctx.stroke();
+  }));
+  // key and arc lines on the court
+  for (const h of HOOPS) { const s2 = Math.sign(h.y - h.pole), y0 = h.y - s2 * 7; wFlat(h.x - 16, Math.min(y0, y0 + s2 * 52), 32, 52, 'rgba(198,40,40,.45)', .15); }
+  // crew bus parked on the camp road: people with bags head between it and the room blocks
+  add(600, 1745, () => { wBox(600, 1745, 120, 26, 4, 36, '#f2f2f2', '#dfe3e6'); wBox(600, 1745, 116, 26.4, 20, 30, '#2a4554', '#2a4554'); wBox(600, 1745, 120, 26.6, 12, 15, '#1d5fb4', '#1d5fb4');
+    for (const bx of [560, 640]) for (const s2 of [-1, 1]) wWheel(bx, 1745 + s2 * 12, 5, 3); wText('CREW BUS', 600, 1732, 38, 7, '#1d5fb4'); });
+  const crowd = campCrowd(wT);
+  for (const f of crowd.folk) { const d = (f.x - wCam.x) * hx + (f.y - wCam.y) * hy, lat = (f.x - wCam.x) * -hy + (f.y - wCam.y) * hx; if (d < 700 && Math.abs(lat) < d * .62 + 40) add(f.x, f.y, () => campHuman(f.x, f.y, false, false, { ...f.o, scale: .7, lod: d > 230 ? 'low' : d > 120 ? 'mid' : 'hi' })); }
+  add(crowd.ball[0], crowd.ball[1], () => campOval(crowd.ball[0], crowd.ball[1], crowd.ball[2], 1.7, 1.7, 1.7, '#e2701c'));
   add(wp.x, wp.y, () => campHuman(wp.x, wp.y, false, true));
   ents.sort((p, q) => q.f - p.f);
   for (const e of ents) if (e.f > -40 && e.f < 1100) e.fn();
