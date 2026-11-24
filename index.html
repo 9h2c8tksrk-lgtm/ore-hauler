@@ -132,17 +132,18 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
   if (state === 'kitcheninside' && inR(p, [340, 558, 132, 52])) { kitchenInteract(); return; }
   if (state === 'shopinside' && inR(p, [340, 558, 132, 52])) { shopInteract(); return; }
+  if (state === 'wsoffice' && inR(p, [340, 558, 132, 52])) { wsoInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && inR(p, [340, 558, 132, 52])) { if (officeStep === 1) officeTouchHeld = true; else officeInteract(); return; }
   if (state === 'drive' && bayReady) {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if(state==='workshop'&&inR(p,[340,570,132,52])&&workshopParked()){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -259,6 +260,7 @@ function onKey(code) {
   if (state === 'menu' && code === 'KeyL') { homeRoom = -1; skipLoad(); return; }
   if (state === 'kitcheninside' && code === 'KeyE') { kitchenInteract(); return; }
   if (state === 'shopinside' && code === 'KeyE') { shopInteract(); return; }
+  if (state === 'wsoffice' && code === 'KeyE') { wsoInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
@@ -266,6 +268,7 @@ function onKey(code) {
     enterWorkshopFoot(); return;
   }
     if (state==='workshopfoot' && code==='KeyE') {
+      if (nearWsOffice()) { enterWsOffice(); return; }
       if(!cribReached){flash('Head out the Bay 1 side door to the crib room first.');return;}
       if(!shopAtCab()){flash('Walk back to your cab door (driver side) to climb in.');return;}
       workshopOnFoot=false;state='workshop';wk.done=true;wk.auto=false;wk.v=0;
@@ -811,6 +814,8 @@ const shDoorPt = b => b.face === 'S' ? { x: (b.x0 + b.x1) / 2, y: b.y1 } : b.fac
 const SH_CRIB_DOOR = shDoorPt(SH_BLDGS[0]), SH_TANK = { x: -40, y: 470, r: 16 };
 const shopPit = i => ({ x: sbx(i), y0: 180, y1: SH_D - 70, w: 30 });
 let shopL = null;   // vehicle layout for this visit
+const FORK = { x: sbx(5) - 16, y: 236 };   // the yard forklift, parked at the back of Bay 6 clear of the LV
+const pitRailed = i => shopL && i !== shopL.bay && !shopL.pms.some(pm => pm.bay === i);   // an open pit keeps its handrails up
 function shopLayout() {
   const bay = wk.auto ? wk.bay : Math.max(0, Math.min(5, Math.round((wk.x - wkBayX(0)) / BAY_W)));
   const F = SH_D - 60, K = F - 255;                // front bumper and kingpin of your rig
@@ -828,6 +833,8 @@ function shopSolids() {
   o.push([40, 60, 46, 38]);                                        // tyre inflation cage (back corner)
   o.push([22, 175, 30, 150]);                                      // tyre rack on the Bay 1 wall behind the side door: the aisle from the bay mouth to the door stays clear
   for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
+  for (const y of [320, 440]) o.push([SH_W - 22, y, 24, 22]);     // roll-around tool cabinets
+  o.push([FORK.x, FORK.y + 2, 30, 60]);                             // forklift
   o.push([SH_W - 24, 620, 32, 42]); o.push([SH_W - 42, 172, 56, 56]); o.push([SH_W - 26, 700, 34, 40]);
   for (let i = 0; i <= 6; i++) o.push([i * SB, SH_D - 6, 14, 14]);     // front door columns
   return o;
@@ -840,7 +847,7 @@ function shopBlocked(x, y) {
   }
   if (x < 8) return !(y > SH_DOOR.y0 + 6 && y < SH_DOOR.y1 - 6);
   if (x > SH_W - 8 || y < 8 || y > SH_D - 8) return true;
-  for (const i of PIT_BAYS) { const p = shopPit(i); if (Math.abs(x - p.x) < p.w / 2 + 5 && y > p.y0 - 5 && y < p.y1 + 5) return true; }
+  for (const i of PIT_BAYS) { const p = shopPit(i), r = pitRailed(i) ? 9 + 4 : 5; if (Math.abs(x - p.x) < p.w / 2 + r && y > p.y0 - (r + 4) && y < p.y1 + (r + 4)) return true; }
   if (shopSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 5 && Math.abs(y - cy) < l / 2 + 5)) return true;
   return false;   // the crew step round you (they pause when you're close), so they never block the way to the crib room
 }
@@ -904,16 +911,17 @@ function drawWorkshopFoot() {
   const eye = 72 + (90 - dist) * .5, pitch = Math.atan2(eye - 32, dist + 70), cp = Math.cos(pitch), sp = Math.sin(pitch), focus = 370, horizon = 360, near = 3;
   const camPt = (x, y, z) => { const dx = x - CX, dy = y - CY, f = dx * fx + dy * fy, v = z - eye; return [dx * rx + dy * ry, f * cp - v * sp, v * cp + f * sp]; };
   const scr = v => [W / 2 + focus * v[0] / v[1], horizon - focus * v[2] / v[1]];
-  const face = (points, col) => {
+  const facePath = points => {   // the polygon clipped to the near plane, traced as the current canvas path
     const src = points.map(p => camPt(...p)), out = [];
     for (let i = 0; i < src.length; i++) {
       const a = src[i], b = src[(i + 1) % src.length], ia = a[1] >= near, ib = b[1] >= near;
       if (ia) out.push(a);
       if (ia !== ib) { const t = (near - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, near, a[2] + (b[2] - a[2]) * t]); }
     }
-    if (out.length < 3) return;
-    ctx.fillStyle = col; ctx.beginPath(); out.forEach((v, i) => { const [sx, sy] = scr(v); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.closePath(); ctx.fill();
+    if (out.length < 3) return false;
+    ctx.beginPath(); out.forEach((v, i) => { const [sx, sy] = scr(v); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.closePath(); return true;
   };
+  const face = (points, col) => { if (facePath(points)) { ctx.fillStyle = col; ctx.fill(); } };
   // solid box with back-face culling, so near sides never get painted over by far ones
   const box = (x, y, w, l, h, col, top = col, z = 0) => {
     const x0 = x - w / 2, x1 = x + w / 2, y0 = y - l / 2, y1 = y + l / 2, z1 = z + h;
@@ -927,17 +935,17 @@ function drawWorkshopFoot() {
   const flat = (x0, y0, x1, y1, z, col) => face([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], col);
   const N = 12, ring = Array.from({ length: N }, (_, k) => [Math.cos(k / N * 2 * Math.PI), Math.sin(k / N * 2 * Math.PI)]);
   // tyre: cylinder on an axle across the truck (x axis), with rim and hub on the camera side
-  const tyre = (x, y, r, w, rim = '#c9ced2') => {
-    const x0 = x - w / 2, x1 = x + w / 2;
+  const tyre = (x, y, r, w, rim = '#c9ced2', z0 = 0) => {
+    const x0 = x - w / 2, x1 = x + w / 2, Z = z0;
     for (let k = 0; k < N; k++) {
       const [c0, s0] = ring[k], [c1, s1] = ring[(k + 1) % N], nc = (c0 + c1) / 2, ns = (s0 + s1) / 2;
-      if ((CY - y) * nc + (eye - r) * ns <= 0) continue;
-      face([[x0, y + c0 * r, r + s0 * r], [x1, y + c0 * r, r + s0 * r], [x1, y + c1 * r, r + s1 * r], [x0, y + c1 * r, r + s1 * r]], k % 2 ? '#1b1c1e' : '#232527');
+      if ((CY - y) * nc + (eye - Z - r) * ns <= 0) continue;
+      face([[x0, y + c0 * r, Z + r + s0 * r], [x1, y + c0 * r, Z + r + s0 * r], [x1, y + c1 * r, Z + r + s1 * r], [x0, y + c1 * r, Z + r + s1 * r]], k % 2 ? '#1b1c1e' : '#232527');
     }
     const sx = CX > x1 ? x1 : CX < x0 ? x0 : null; if (sx === null) return;
-    face(ring.map(([c, s]) => [sx, y + c * r, r + s * r]), '#151617');
-    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .2, y + c * r * .62, r + s * r * .62]), rim);
-    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .4, y + c * r * .22, r + s * r * .22]), shade(rim, .6));
+    face(ring.map(([c, s]) => [sx, y + c * r, Z + r + s * r]), '#151617');
+    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .2, y + c * r * .62, Z + r + s * r * .62]), rim);
+    face(ring.map(([c, s]) => [sx + Math.sign(sx - x) * .4, y + c * r * .22, Z + r + s * r * .22]), shade(rim, .6));
   };
   // upright cylinder (exhaust stacks, air cleaners, drums, hoist rams)
   const vcyl = (x, y, r, z0, z1, col, top = col) => {
@@ -1069,9 +1077,14 @@ function drawWorkshopFoot() {
     const cx = (bd.x0 + bd.x1) / 2, cy = (bd.y0 + bd.y1) / 2, w = bd.x1 - bd.x0, l = bd.y1 - bd.y0, dp = shDoorPt(bd);
     const nx = bd.face === 'E' ? 1 : bd.face === 'W' ? -1 : 0, ny = bd.face === 'S' ? 1 : bd.face === 'N' ? -1 : 0, tx = -ny, ty = nx, len = nx ? l : w;
     add(cx, cy, () => {
-      box(cx, cy, w, l, 10, '#6d6f71', '#7d7f81');
-      box(cx, cy, w, l, 50, '#e3e6e8', '#9aa3aa', 10);
-      box(cx, cy, w + 6, l + 6, 3, bd.col, bd.col, 60);
+      for (let u = 12; u < w; u += 34) for (let v = 12; v < l; v += 34) box(bd.x0 + u, bd.y0 + v, 7, 7, 6, '#8d9093', '#9da0a3');   // stands
+      box(cx, cy, w, l, 3, '#55595d', '#55595d', 6);
+      box(cx, cy, w, l, 50, '#dcdfe1', '#9aa3aa', 9);
+      box(cx, cy, w + 4, l + 4, 3, '#26344a', '#3b4654', 59);
+      { const bx = cx - nx * (w / 2 + 5), by = cy - ny * (l / 2 + 5);   // the back wall: split-system unit and orange power outlet box
+        if ((CX - bx) * nx + (CY - by) * ny < 0) {
+        box(bx + tx * 18, by + ty * 18, nx ? 6 : 16, ny ? 6 : 16, 12, '#eef0f1', '#f7f8f8', 1);
+        box(cx - nx * (w / 2 + .8) - tx * 14, cy - ny * (l / 2 + .8) - ty * 14, nx ? 2 : 9, ny ? 2 : 9, 10, '#e8641c', '#f07a34', 26); } }
       if ((CX - dp.x) * nx + (CY - dp.y) * ny <= 0) return;   // door side only seen from the courtyard
       const fx0 = dp.x + nx * .6, fy0 = dp.y + ny * .6;
       box(fx0, fy0, nx ? 1 : 24, ny ? 1 : 24, 38, '#aab2b8', '#aab2b8', 10);                       // door frame
@@ -1086,6 +1099,55 @@ function drawWorkshopFoot() {
   add(SH_TANK.x, SH_TANK.y, () => vcyl(SH_TANK.x, SH_TANK.y, SH_TANK.r, 0, 64, '#5e7f5a', '#4e6b4b'), outside);   // rainwater tank
   flat(-307, 269, -165, 428, .04, '#b7a58f');   // courtyard pavers
 
+  // ----- inspection pit, as on site: yellow steel kerb with bolt holes, white lined walls with LED strip lights, checker-plate
+  // floor with absorbent on the spills and a drain grate, steel stairs with yellow nosings at both ends, an oil drain tray and a
+  // blue pit jack riding on the kerb rails
+  const PD = 46;
+  function drawPit(i) {
+    const p = shopPit(i), x0 = p.x - p.w / 2, x1 = p.x + p.w / 2, y0 = p.y0, y1 = p.y1, cx = p.x;
+    flat(x0 - 6, y0 - 6, x1 + 6, y1 + 6, .15, '#dfa818');                                  // kerb
+    flat(x0 - 1.6, y0 - 1.6, x1 + 1.6, y1 + 1.6, .17, '#9c7514');                          // worn rail channel on the lip
+    if (Math.hypot(cx - CX, (y0 + y1) / 2 - CY) < 520) for (let y = y0 + 10; y < y1; y += 22) for (const x of [x0 - 3.6, x1 + 3.6]) flat(x - .8, y - .8, x + .8, y + .8, .19, '#5b4a1c');   // bolt holes
+    if (!facePath([[x0, y0, .2], [x1, y0, .2], [x1, y1, .2], [x0, y1, .2]])) return;
+    ctx.save(); ctx.clip();
+    flat(x0, y0, x1, y1, -PD, '#2b3035');                                                     // checker plate
+    for (let y = y0 + 3; y < y1; y += 6) flat(x0, y, x1, y + .9, -PD + .05, '#3a4047');
+    for (const [u, v, a, b] of [[-.3, .22, 12, 30], [.15, .4, 9, 22], [-.1, .63, 13, 40], [.25, .8, 8, 18]]) flat(cx + u * p.w - a / 2, y0 + v * (y1 - y0), cx + u * p.w + a / 2, y0 + v * (y1 - y0) + b, -PD + .1, 'rgba(214,218,216,.42)');   // absorbent on the spills
+    flat(cx - 10, y1 - 112, cx + 10, y1 - 88, -PD + .15, '#3d3026');                         // drain grate
+    for (let y = y1 - 110; y < y1 - 89; y += 2.6) flat(cx - 9, y, cx + 9, y + 1, -PD + .2, '#8a735a');
+    const wallC = '#e3e8eb';
+    if (CX > x0) face([[x0, y0, 0], [x0, y1, 0], [x0, y1, -PD], [x0, y0, -PD]], wallC);
+    if (CX < x1) face([[x1, y0, 0], [x1, y1, 0], [x1, y1, -PD], [x1, y0, -PD]], shade(wallC, .9));
+    if (CY > y0) face([[x0, y0, 0], [x1, y0, 0], [x1, y0, -PD], [x0, y0, -PD]], shade(wallC, .82));
+    if (CY < y1) face([[x0, y1, 0], [x1, y1, 0], [x1, y1, -PD], [x0, y1, -PD]], shade(wallC, .82));
+    for (const [x, vis, d] of [[x0, CX > x0, .25], [x1, CX < x1, -.25]]) if (vis) {
+      for (let y = y0 + 60; y < y1; y += 60) face([[x + d, y, 0], [x + d, y + .7, 0], [x + d, y + .7, -PD], [x + d, y, -PD]], '#b9c1c6');   // panel joints
+      for (let y = y0 + 70; y < y1 - 70; y += 115) {                                         // LED strip lights along the wall
+        face([[x + d, y - 2, -7], [x + d, y + 44, -7], [x + d, y + 44, -13], [x + d, y - 2, -13]], 'rgba(255,255,255,.55)');
+        face([[x + 2 * d, y, -8.6], [x + 2 * d, y + 42, -8.6], [x + 2 * d, y + 42, -11.4], [x + 2 * d, y, -11.4]], '#fbfeff');
+      }
+    }
+    // steel stairs down at both ends, yellow non-slip nosings
+    const steps = [];
+    for (const [ye, dir] of [[y0, 1], [y1, -1]]) for (let k = 0; k < 6; k++) { const zt = -(k + 1) * 7.4, yc = ye + dir * (k * 8 + 4); steps.push([yc, zt, dir]); }
+    steps.sort((a, b) => Math.abs(b[0] - CY) - Math.abs(a[0] - CY));
+    for (const [yc, zt, dir] of steps) { box(cx, yc, p.w, 8, PD + zt, '#2d3338', '#353b41', -PD); flat(x0 + 1, yc + dir * 1.2, x1 - 1, yc + dir * 4, zt + .05, '#d9a514'); }
+    const jy = y1 - 285;
+    box(cx, jy, 4.5, 4.5, PD - 4, '#1f3f8a', '#2a50a8', -PD + 2);                             // pit jack column, down into the pit
+    for (let z = -6; z > -30; z -= 3.2) box(cx + 4 + (z % 2 ? 1.2 : -.6), jy - 3, 1.6, 1.6, 1.4, '#3f7fd6', '#3f7fd6', z);   // coiled air line
+    ctx.restore();
+    // Levanta-style oil drain tray: black box on rollers across the kerb rails, mesh top
+    const ty = y1 - 165;
+    box(cx, ty, p.w + 4, 24, 7, '#202326', '#2c3034', -5);
+    flat(cx - p.w / 2 + 2, ty - 10, cx + p.w / 2 - 2, ty + 10, 2.1, '#3c4248'); flat(cx - 7, ty - 5, cx + 5, ty + 4, 2.2, 'rgba(225,228,226,.7)');
+    for (const s of [-1, 1]) for (const d of [-9, 9]) box(cx + s * (p.w / 2 + 3.5), ty + d, 3, 3, 3, '#9ea6ad', '#c3cacf', -.5);
+    box(cx, ty + 12.4, 8, .8, 2.5, '#1d5fb4', '#1d5fb4', -2);                                // the blue maker's badge
+    // pit jack carriage spanning the rails, with its saddle and control block
+    box(cx, jy, p.w + 6, 11, 4.5, '#2448a0', '#2d57b8', -1);
+    box(cx + 7, jy + 6, 10, 3, 4, '#c9ced2', '#e0e4e7', 0); box(cx, jy, 8, 8, 2.5, '#2b2f33', '#3a3f44', 3.5); box(cx, jy, 3, 3, 3, '#3a3f44', '#5a6168', 6);
+    for (const s of [-1, 1]) box(cx + s * (p.w / 2 + 3.5), jy, 3.5, 7, 3.5, '#9ea6ad', '#c3cacf', -.5);
+  }
+
   // ----- the shed shell (always behind everything inside it)
   const inside = CX >= 0;
   const shell = () => {
@@ -1096,13 +1158,7 @@ function drawWorkshopFoot() {
       if (i % 2 === 0) flat(x - SB / 2 + 10, SH_D - 30, x + SB / 2 - 10, SH_D - 26, .1, '#e8e8e8');  // stop line
     }
     flat(4, 90, SH_W - 4, 100, .1, '#2fa84a'); flat(4, 104, SH_W - 4, 108, .1, '#2fa84a');   // green pedestrian walkway across the back
-    for (const i of PIT_BAYS) {
-      const p = shopPit(i), x0 = p.x - p.w / 2, x1 = p.x + p.w / 2;
-      flat(x0 - 4, p.y0 - 4, x1 + 4, p.y1 + 4, .15, safety);
-      for (let y = p.y0 - 4; y < p.y1 + 4; y += 16) flat(x0 - 4, y, x1 + 4, y + 8, .16, '#232323');   // hazard stripes
-      flat(x0, p.y0, x1, p.y1, .2, '#121518');
-      for (let y = p.y1 - 6; y > p.y1 - 40; y -= 8) flat(x0 + 2, y, x1 - 2, y + 2, .25, '#4a4f54');  // stairs down
-    }
+    for (const i of PIT_BAYS) drawPit(i);
     // ceiling, purlins and high-bay LED lights
     flat(0, 0, SH_W, SH_D, SH_H, '#c8ced2');
     for (let y = 30; y < SH_D; y += 60) flat(0, y, SH_W, y + 3, SH_H - .5, '#97a1a8');
@@ -1180,17 +1236,29 @@ function drawWorkshopFoot() {
     Pq(136, () => { box(cx - 24, F - 136, 1.2, 1.2, 70, '#e8e8e8', '#e8e8e8', 48); box(cx - 24, F - 132, 1, 8, 10, '#ff6a00', '#ff8a2a', 106); });   // buggy-whip flag
     label(cx + 26.6, F - 60, 30, 'LV 07', 6, '#1d5fb4');
   }
-  // pit guard rails where no vehicle is over the pit
-  for (const i of PIT_BAYS) if (i !== L.bay && !L.pms.some(pm => pm.bay === i)) {
-    const p = shopPit(i);
-    for (const s of [-1, 1]) for (let y = p.y0 + 20; y < p.y1 - 10; y += 80) {
-      const x = p.x + s * (p.w / 2 + 6);
-      add(x, y + 40, () => { box(x, y, 2.4, 2.4, 28, safety); box(x, y + 40, 2, 80, 2, safety, safety, 26); box(x, y + 40, 2, 80, 2, safety, safety, 15); });
+  // yellow tube handrails with grey clamp fittings round a pit with no vehicle over it, a gate across each stair end
+  const railY = '#f0c419', railT = '#f7d64a', clampC = '#a3abb1';
+  for (const i of PIT_BAYS) if (pitRailed(i)) {
+    const p = shopPit(i), off = p.w / 2 + 9, ya = p.y0 - 9, yb = p.y1 + 9, n = Math.max(2, Math.round((yb - ya) / 66)), seg = (yb - ya) / n;
+    const post = (x, y) => add(x, y, () => { box(x, y, 6, 6, .8, clampC, clampC); box(x, y, 3, 3, 31, railY, railT); for (const z of [13.5, 27.5]) box(x, y, 4.4, 4.4, 3.8, clampC, '#c3cacf', z); });
+    for (const s of [-1, 1]) { const x = p.x + s * off;
+      for (let k = 0; k <= n; k++) post(x, ya + k * seg);
+      for (let k = 0; k < n; k++) { const ym = ya + (k + .5) * seg; add(x, ym, () => { for (const z of [14.5, 28.5]) box(x, ym, 2.6, seg - 4, 2.6, railY, railT, z); }); }
     }
+    for (const y of [ya, yb]) add(p.x, y, () => { for (const z of [14.5, 28.5]) box(p.x, y, 2 * off - 4, 2.6, 2.6, railY, railT, z); box(p.x, y, 2.6, 2.6, 30, railY, railT); });   // gates over the stairs
   }
   // tyre bay gear: rack of new tyres on the Bay 1 wall, inflation cage, wheel dolly
-  for (let k = 0; k < 4; k++) { const y = 120 + k * 34; add(22, y, () => { tyre(22, y, 13.5, 12, '#7d858c'); }); }
-  add(22, 175, () => { box(8, 175, 2, 150, 2, '#d62828', '#d62828', 30); box(8, 175, 2, 150, 2, '#d62828', '#d62828', 4); });
+  add(22, 175, () => {   // galvanised two-tier rack of new tyres on polished alloy rims
+    for (const y of [102, 175, 248]) for (const x of [10, 34]) box(x, y, 3, 3, 66, '#aeb6bc', '#c9d0d4');
+    for (const z of [2, 33]) for (const x of [10, 34]) box(x, 175, 2.5, 150, 2.5, '#d62828', '#e04444', z);
+    for (let k = 0; k < 4; k++) for (const z of [0, 33.5]) tyre(22, 120 + k * 34, 13.5, 12, '#e3e8eb', z + 2);
+  });
+  for (const [y, c] of [[320, '#c62828'], [440, '#1f4fa0']]) add(SH_W - 22, y, () => {   // roll-around tool cabinets
+    box(SH_W - 22, y, 22, 20, 34, c, shade(c, 1.15), 3); box(SH_W - 22, y, 23, 21, 1.2, '#1d2023', '#2b2f33', 37);
+    for (const z of [9, 15, 21, 27, 33]) box(SH_W - 33.4, y, .8, 18, .7, '#d6dbde', '#d6dbde', z);
+    for (const d of [-7, 7]) box(SH_W - 22, y + d, 4, 4, 3, '#1d2023', '#2b2f33');
+  });
+  add(2, (SH_DOOR.y0 + SH_DOOR.y1) / 2, () => { const yc = (SH_DOOR.y0 + SH_DOOR.y1) / 2; face([[1.3, yc - 9, 60], [1.3, yc + 9, 60], [1.3, yc + 9, 67], [1.3, yc - 9, 67]], '#1f8a4c'); label(1.3, yc, 62, 'EXIT', 4.5, '#fff'); });
   add(40, 60, () => { box(40, 60, 46, 38, 2, '#333', '#444'); for (const [x, y] of [[-21, -17], [21, -17], [-21, 17], [21, 17]]) box(40 + x, 60 + y, 3, 3, 46, '#d62828'); for (const z of [14, 30, 46]) { box(40, 43, 46, 2, 2, '#d62828', '#d62828', z); box(40, 77, 46, 2, 2, '#d62828', '#d62828', z); box(19, 60, 2, 38, 2, '#d62828', '#d62828', z); box(61, 60, 2, 38, 2, '#d62828', '#d62828', z); } });
   add(40, 60, () => tyre(40, 60, 13.5, 12));
   // right wall: workbenches with vices, tool cabinets, bulk oil, parts washer, hose reels, extinguishers
@@ -1209,7 +1277,7 @@ function drawWorkshopFoot() {
   });
   for (const [x, y] of [[SH_W - 3, 330], [SH_W - 3, 560], [3, 520], [3, 650]]) add(x, y, () => { vcyl(x + Math.sign(SH_W / 2 - x) * 4, y, 3, 30, 46, '#d62828'); box(x, y, 1, 16, 20, '#e8e8e8', '#e8e8e8', 50); });
   // portal frames on the side walls carrying the overhead crane runway
-  for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#6b7881', '#8a97a0'); });
+  for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#a3abb1', '#bcc3c8'); });
   for (const x of [9, SH_W - 9]) for (let y = 65; y < SH_D; y += 130) add(x, y, () => box(x, y, 8, 130, 8, safety, '#f6d64a', SH_H - 48));
   // two overhead gantry cranes spanning the shed, in per-bay sections so they sort cleanly
   for (const [gy, hoistBay] of [[300, pm0bay], [600, 3]]) for (let i = 0; i < 6; i++) add(sbx(i), gy, () => {
@@ -1217,11 +1285,36 @@ function drawWorkshopFoot() {
     if (i === hoistBay) { box(sbx(i), gy, 22, 18, 10, '#4d545a', '#62696f', SH_H - 64); box(sbx(i), gy, 1.2, 1.2, 60, '#222', '#222', SH_H - 124); box(sbx(i), gy, 6, 4, 6, safety, safety, SH_H - 128); }
   });
   // open front: columns with bollards, rolled-up roller doors and bay numbers
-  for (let i = 0; i <= 6; i++) add(i * SB, 6, () => { box(i * SB, 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, -6, 8, 8, 34, safety, '#f6d64a'); });   // back columns
+  for (let i = 0; i <= 6; i++) add(i * SB, 6, () => { box(i * SB, 6, 10, 10, 185, '#a3abb1', '#bcc3c8'); box(i * SB, -6, 8, 8, 34, safety, '#f6d64a'); });   // back columns
   const colGhost = x => Math.abs(x - (CX + me.x) / 2) < Math.abs(me.x - CX) / 2 + 10 && (CY - (SH_D - 6)) * (me.y - (SH_D - 6)) < 0;   // a door column between the camera and you is see-through
-  for (let i = 0; i <= 6; i++) add(i * SB, SH_D - 6, () => { if (colGhost(i * SB)) ctx.globalAlpha = .25; box(i * SB, SH_D - 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, SH_D + 6, 8, 8, 34, safety, '#f6d64a'); ctx.globalAlpha = 1; });
+  for (let i = 0; i <= 6; i++) add(i * SB, SH_D - 6, () => { if (colGhost(i * SB)) ctx.globalAlpha = .25; box(i * SB, SH_D - 6, 10, 10, 185, '#a3abb1', '#bcc3c8'); box(i * SB, SH_D + 6, 8, 8, 34, safety, '#f6d64a'); ctx.globalAlpha = 1; });
   for (let i = 0; i < 6; i++) add(sbx(i), SH_D - 8, () => { label(sbx(i), SH_D - 1, 205, `BAY ${i + 1}`, 14, i === L.bay ? '#ffe568' : '#fff'); });
   for (const m of shopCrew) add(m.x, m.y, () => human(m));
+  { // yellow 5 t forklift parked against the back of Bay 6, forks down, with its hi-vis strips and beacon
+    const x = FORK.x, y = FORK.y, Y = '#d9ac1e', Yt = '#e8bd34', B = '#1b1d20';
+    add(x, y - 20, () => { box(x, y - 22, 28, 10, 20, '#c99b16', Yt, 6); box(x, y - 27.2, 12, .6, 2, '#d7f52a', '#d7f52a', 18); });   // counterweight
+    add(x, y, () => {
+      for (const s of [-1, 1]) { tyre(x + s * 13, y + 9, 7.5, 6, '#2b2f33'); tyre(x + s * 13, y - 15, 6.5, 6, '#2b2f33'); }
+      box(x, y - 4, 26, 30, 12, Y, Yt, 6); box(x, y - 8, 10, 8, 7, B, '#2b2f33', 18); box(x, y - 12, 10, 2, 10, B, '#2b2f33', 25);   // body, seat
+      box(x + 9, y + 3, 2, 2, 8, B, B, 18); box(x + 9, y + 5, 6, 1, 6, '#c62828', '#d44', 18);                                    // steering column, extinguisher
+      for (const s of [-1, 1]) { box(x + s * 12, y + 7, 2, 2, 34, B, B, 18); box(x + s * 12, y - 16, 2, 2, 30, B, B, 18); box(x + s * 12.6, y + 7, .4, 1.6, 30, '#d7f52a', '#d7f52a', 20); }
+      box(x, y - 4, 26, 25, 1.6, B, '#2b2f33', 52); box(x, y + 7.5, 24, 1, 1.6, '#d7f52a', '#d7f52a', 52); box(x + 10, y - 15, 3, 3, 3, '#ff8a00', '#ffb04a', 53.6);   // overhead guard, beacon
+      label(x + 13.4, y - 6, 22, 'PF008', 5, B);
+    });
+    add(x, y + 16, () => {   // mast, carriage and forks
+      for (const s of [-1, 1]) box(x + s * 8, y + 15, 3, 3, 64, B, '#2b2f33', 2);
+      for (const z of [20, 44, 64]) box(x, y + 15, 19, 2, 2, B, '#2b2f33', z);
+      box(x, y + 17, 22, 2, 14, '#2b2f33', '#3a3f44', 1.5); for (const s of [-1, 1]) box(x + s * 7, y + 29, 3, 24, 1.4, '#2b2f33', '#3a3f44', .2);
+      box(x - 8, y + 16.8, .6, 1.6, 60, '#d7f52a', '#d7f52a', 4);
+    });
+  }
+  // big slow ceiling fans between the crane runs
+  for (const [fx0, fy0] of [[sbx(1), 450], [sbx(4), 450], [sbx(1), 150], [sbx(4), 150]]) add(fx0, fy0, () => {
+    const z = SH_H - 26, a0 = footTime * 1.3;
+    box(fx0, fy0, 1.5, 1.5, 24, '#3a3f44', '#3a3f44', z); vcyl(fx0, fy0, 4, z - 4, z + 1, '#2b2f33', '#3a3f44');
+    for (let k = 0; k < 6; k++) { const a = a0 + k * Math.PI / 3, c = Math.cos(a), s2 = Math.sin(a), pc = -s2 * 2.6, ps = c * 2.6;
+      face([[fx0 + c * 4 + pc, fy0 + s2 * 4 + ps, z - 2], [fx0 + c * 46 + pc, fy0 + s2 * 46 + ps, z - 1], [fx0 + c * 46 - pc, fy0 + s2 * 46 - ps, z - 1], [fx0 + c * 4 - pc, fy0 + s2 * 4 - ps, z - 2]], k % 2 ? '#8f989f' : '#a7b0b6'); }
+  });
 
   if (inside) { outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
   shell();
@@ -1236,7 +1329,8 @@ function drawWorkshopFoot() {
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
   text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: BAY 1 SIDE DOOR, THEN THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
-  if (isTouch) { drawStick(); drawBtns(DB); if (atCab) drawBtn([340, 570, 132, 52], 'ENTER CAB', false); }
+  const atOff = nearWsOffice(); if (atOff) text('PRESS E TO GO INTO THE WORKSHOP OFFICE', W / 2, 160, 14, '#83f5a3');
+  if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : 'ENTER CAB', false); }
 }
 function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
@@ -1336,6 +1430,7 @@ function update(dt) {
   if (state === 'officeinside') return updateOffice(dt);
   if (state === 'kitcheninside') return updateKitchen(dt);
   if (state === 'shopinside') return updateShop(dt);
+  if (state === 'wsoffice') return updateWsOffice(dt);
   if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
@@ -2769,6 +2864,117 @@ function drawShop() {
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) text(msg, W / 2, 110, 15, '#ffef79');
 }
+// ---------- workshop office (the transportable beside the crib room) ----------
+// Local coordinates: x across (-60..60), y from the back wall (-50) to the door (+50). L-shaped desk on the back and left walls
+// with the supervisor in his chair, CCTV screen on the left wall, split system with air fresheners, framed tickets, a stretch
+// poster, the big office copier, a broom and a stack of boxes in the corner.
+const WSO = { x0: -60, x1: 60, y0: -50, y1: 50 };
+const WS_OFF_DOOR = shDoorPt(SH_BLDGS[1]);
+const nearWsOffice = () => state === 'workshopfoot' && Math.hypot(workshopFoot.x - (WS_OFF_DOOR.x - 14), workshopFoot.y - WS_OFF_DOOR.y) < 22;
+const WSO_LINES = ["Supervisor: G'day mate. PA233 is on the board: brakes, the beacon and a grease.",
+  "Supervisor: The boys will have it sorted by smoko. Grab a feed in the crib room.",
+  "Supervisor: Sign the prestart on your way back out. Drive safe out there."];
+const WSO_SPOTS = [
+  { name: 'boss', x: -12, y: -4, r: 18 },
+  { name: 'cctv', x: -38, y: 12, r: 14, msg: 'Yard cameras: your rig in the bay, the wash pad clear, a road train at the gate.' },
+  { name: 'printer', x: 36, y: -24, r: 15, msg: 'Printed your service sheet off the copier. Signed and in the tray.' }];
+let wsoLine = -1;
+const wsoSolids = () => [[-25, -41, 70, 18], [-51, -14, 18, 36], [-12, -22, 16, 16], [38, -41, 22, 18], [52, 8, 14, 30], [50, -46, 10, 6]];
+function wsoBlocked(x, y) {
+  if (y > WSO.y1 - 5) return Math.abs(x) > 10;
+  if (x < WSO.x0 + 5 || x > WSO.x1 - 5 || y < WSO.y0 + 5) return true;
+  return wsoSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
+}
+function enterWsOffice() { state = 'wsoffice'; kit = { x: 0, y: 36, dir: -Math.PI / 2 }; wsoLine = -1; ptrs.clear(); syncBtns(); flash('Workshop office. Walk up to the supervisor, the cameras or the copier and press E.'); }
+function leaveWsOffice() { state = 'workshopfoot'; workshopFoot.x = WS_OFF_DOOR.x - 18; workshopFoot.y = WS_OFF_DOOR.y; footFacing = Math.PI; footCamH = footFacing; ptrs.clear(); syncBtns(); flash(cribReached ? 'Back outside. Walk back to your cab door.' : 'Back outside. The crib room is across the courtyard.'); }
+const wsoNear = () => WSO_SPOTS.find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
+function wsoInteract() {
+  const sp = wsoNear(); if (!sp) { flash('Walk up to the supervisor, the cameras or the copier.'); return; }
+  if (sp.name === 'boss') { wsoLine = (wsoLine + 1) % WSO_LINES.length; flash(WSO_LINES[wsoLine]); return; }
+  flash(sp.msg);
+}
+function updateWsOffice(dt) {
+  wT += dt; msgT -= dt; footTime += dt;
+  const fwd = (keys.ArrowUp || keys.KeyW || keys.TG ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB ? .65 : 0);
+  kit.dir += steerAxis() * 2.3 * dt;
+  if (fwd) { const nx = kit.x + Math.cos(kit.dir) * 40 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 40 * fwd * dt;
+    if (!wsoBlocked(nx, kit.y)) kit.x = nx; if (!wsoBlocked(kit.x, ny)) kit.y = ny; }
+  if (kit.y > WSO.y1 - 1) leaveWsOffice();
+}
+function drawWsOffice() {
+  const { hx, hy } = roomCam(kit, WSO, 58);
+  rect(0, 0, W, H, '#c3c8cb');
+  const ents = [], pre = [], add = (x, y, fn, list = ents) => list.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });   // pre: walls and what hangs on them, always behind the furniture
+  const Y = (x0, x1, y, z0, z1, c) => wPoly([[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], c);   // panel in a plane of constant y
+  const X = (x, y0, y1, z0, z1, c) => wPoly([[x, y0, z0], [x, y1, z0], [x, y1, z1], [x, y0, z1]], c);   // ... constant x
+  wFlat(WSO.x0, WSO.y0, WSO.x1 - WSO.x0, WSO.y1 - WSO.y0, '#c99f6a');                                     // tan vinyl floor
+  for (let x = WSO.x0 + 15; x < WSO.x1; x += 15) wFlat(x, WSO.y0, .5, WSO.y1 - WSO.y0, '#bb915d', .05);
+  wFlat(-30, -10, 34, 26, 'rgba(120,90,60,.18)', .06);                                                    // chair-worn patch
+  const WALL = '#c9cdd0', JOINT = '#b2b7ba', SKIRT = '#9aa0a4';
+  const wallY = (x0, x1, y, cut, z0 = 0) => add((x0 + x1) / 2, y, () => { if (cut()) ctx.globalAlpha = .18; Y(x0, x1, y, z0, 44, WALL); for (let x = Math.ceil(x0 / 24) * 24; x < x1; x += 24) Y(x, x + .5, y, z0, 44, JOINT); if (!z0) Y(x0, x1, y, 0, 3, SKIRT); ctx.globalAlpha = 1; }, pre);
+  const wallX = (x, y0, y1, cut) => add(x, (y0 + y1) / 2, () => { if (cut()) ctx.globalAlpha = .18; X(x, y0, y1, 0, 44, WALL); for (let y = Math.ceil(y0 / 24) * 24; y < y1; y += 24) X(x, y, y + .5, 0, 44, JOINT); X(x, y0, y1, 0, 3, SKIRT); ctx.globalAlpha = 1; }, pre);
+  wallY(WSO.x0, WSO.x1, WSO.y0, () => wCam.y < WSO.y0);
+  wallX(WSO.x0, WSO.y0, WSO.y1, () => wCam.x < WSO.x0);
+  wallX(WSO.x1, WSO.y0, WSO.y1, () => wCam.x > WSO.x1);
+  wallY(WSO.x0, -11, WSO.y1, () => wCam.y > WSO.y1); wallY(11, WSO.x1, WSO.y1, () => wCam.y > WSO.y1); wallY(-11, 11, WSO.y1, () => wCam.y > WSO.y1, 35);
+  add(0, WSO.y1, () => {   // the door out to the courtyard, seen from inside, with an exit sign
+    const y = WSO.y1 - .2; Y(-12, 12, y, 0, 35, '#8a949b'); Y(-10.5, 10.5, y - .1, 0, 33.5, '#1d5fb4');
+    Y(6, 9, y - .2, 15, 16.5, '#d8dde0'); Y(-6, 6, y - .2, 20, 30, '#2a4554');                      // handle, window
+    Y(-6, 6, y - .2, 37, 41, '#1f8a4c'); wText('EXIT', 0, y - .3, 39, 3.5, '#fff');
+  }, pre);
+  // back wall: split system with two tree air fresheners, the bucket drawing, two framed tickets, the stretch poster
+  add(0, WSO.y0 + 3, () => {
+    const y = WSO.y0 + .3;
+    wBox(-6, WSO.y0 + 3.2, 36, 6, 35, 42, '#f2f3f4', '#fbfbfb'); Y(-22, 10, WSO.y0 + 6.3, 35.6, 36.6, '#5e6468');
+    for (const [x, c] of [[-14, '#d62828'], [3, '#e8d21c']]) { Y(x - .1, x + .1, WSO.y0 + 6.6, 32, 35, '#444');
+      wPoly([[x, WSO.y0 + 6.7, 32.4], [x - 1.7, WSO.y0 + 6.7, 28.2], [x + 1.7, WSO.y0 + 6.7, 28.2]], c); wPoly([[x - .6, WSO.y0 + 6.7, 28.2], [x + .6, WSO.y0 + 6.7, 28.2], [x + .6, WSO.y0 + 6.7, 27.2], [x - .6, WSO.y0 + 6.7, 27.2]], c); }
+    Y(-4, 12, y, 18, 30, '#f7f7f5'); Y(-3, 4, y - .1, 24, 29, '#e07a2e'); Y(-3, 4, y - .1, 19, 23, '#9aa3aa'); Y(5, 11, y - .1, 19, 29, '#c8d8ea');   // bucket drawing and table
+    for (const x0 of [-32, -19]) { Y(x0, x0 + 10, y, 15, 23, '#1b1d20'); Y(x0 + .8, x0 + 9.2, y - .1, 15.8, 22.2, '#f4f4f2'); Y(x0 + 1, x0 + 2.4, y - .2, 16, 22, '#3a5c86'); Y(x0 + 6.6, x0 + 8, y - .15, 16.4, 17.8, '#d6a51c'); }   // framed tickets
+    Y(24, 35, y, 12, 30, '#fbfbfb'); Y(24.4, 34.6, y - .1, 26, 29.6, '#1f6fa8'); for (let k = 0; k < 4; k++) Y(25.5 + k * 2.3, 26.8 + k * 2.3, y - .1, 18, 24, '#e2a33a');   // stretch poster
+    wText('STRETCH IT OUT!', 29.5, y - .2, 27.8, 1.6, '#fff');
+  }, pre);
+  // left wall: the CCTV screen with six camera tiles
+  add(WSO.x0 + 2, -34, () => {
+    const x = WSO.x0 + .4; X(x, -46, -24, 26, 38, '#15171a');
+    const tiles = ['#5b7fa8', '#8a6447', '#6f8fb0', '#3e5f86', '#a77a52', '#7b9cbc'];
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) X(x + .1, -45 + c * 6.8, -39 + c * 6.8, 27 + r * 5.4, 31.8 + r * 5.4, shade(tiles[(r * 3 + c + Math.floor(wT / 4)) % 6], .9 + .1 * Math.sin(wT * 3 + c)));
+  }, pre);
+  // L-shaped desk: back run and left return, drawer pedestal, three screens, keyboard, radio, safety glasses, sticky note, phone
+  add(-25, -41, () => {
+    for (const [x, y] of [[-57, -48], [8, -48], [8, -34]]) wBox(x, y, 2, 2, 0, 13, '#9a9ea2', '#9a9ea2');
+    wBox(-25, -41, 70, 18, 13, 15, '#b9925f', '#d8b07a');
+    for (const x of [-42, -20]) { wBox(x, -47, 2, 2, 15, 18, '#1d2023', '#2b2f33'); wBox(x, -46.5, 20, 2, 18, 29.5, '#121417', '#1d2023'); }
+    wPoly([[-16, -45.4, 22], [-12, -45.4, 22], [-12, -45.4, 25], [-16, -45.4, 25]], '#e8f04a');                    // sticky note
+    wBox(-30, -37, 15, 5, 15, 15.7, '#25292e', '#3a3f44'); wBox(-19, -36, 3, 4, 15, 15.6, '#25292e', '#3a3f44');    // keyboard, mouse
+    wBox(-6, -38, 7, 2.4, 15, 16, '#d8d000', '#efe62a');                                                           // safety glasses
+    wBox(4, -45, 3, 3, 15, 22, '#1b1d20', '#2b2f33'); wBox(-2, -46, 4, 5, 15, 21, '#e8e8e8', '#f4f4f4');           // radio on its charger, glue bottle
+  });
+  add(-51, -14, () => {
+    wBox(-51, -2, 16, 14, 0, 13, '#c7a06c', '#d2ab76'); for (const z of [4, 8.5]) wPoly([[-43, -9, z], [-43, 5, z], [-43, 5, z + .4], [-43, -9, z + .4]], '#8a6a44');
+    wBox(-51, -14, 18, 36, 13, 15, '#b9925f', '#d8b07a');
+    wBox(-56, -22, 2, 14, 15, 27, '#121417', '#1d2023'); wBox(-48, 0, 5, 8, 15, 15.6, '#15171a', '#25292e');         // third screen, phone
+  });
+  add(-12, -22, () => {   // black office chair and the supervisor in it, sunnies on his head, gloves in his hands
+    wBox(-12, -22, 12, 2, .5, 1.5, '#1d2023', '#2b2f33'); wBox(-12, -22, 2, 12, .5, 1.5, '#1d2023', '#2b2f33'); wBox(-12, -22, 2, 2, 1.5, 7, '#2b2f33', '#3a3f44');
+    wBox(-12, -23, 12, 11, 7, 8.5, '#1d1f22', '#2a2d31'); wBox(-12, -29, 12, 2.5, 8.5, 24, '#1d1f22', '#2a2d31');
+    campHuman(-12, -21, true, false, { dir: Math.PI / 2, sit: 1, scale: .7, shirt: '#e6e21a', stripe: '#e4e8e9', pants: '#2a3b5c', hair: 'mullet', hairCol: '#7a5530', skin: '#e2ab86', t: wT });
+    wBox(-12, -15.5, 3, 2, 7, 9, '#6b6f66', '#80857a');
+  });
+  add(38, -41, () => {   // the big office copier: paper drawers, scanner lid, touch screen, output tray
+    wBox(38, -41, 22, 18, 0, 26, '#26292d', '#2f3337'); for (const z of [5, 10, 15, 20]) wPoly([[27, -31.9, z], [49, -31.9, z], [49, -31.9, z + .4], [27, -31.9, z + .4]], '#4a5056');
+    wBox(38, -42, 22, 16, 26, 31, '#2f3337', '#3a3f44'); wBox(38, -43, 20, 12, 31, 33, '#3a3f44', '#454b51');
+    wBox(44, -32, 7, 3, 30, 31.5, '#1d2023', '#5fb0e8'); wBox(30, -35, 7, 8, 26.5, 27.2, '#f4f4f4', '#ffffff');
+  });
+  add(50, -46, () => { wBox(50, -46, 1, 1, 0, 34, '#3fae3a', '#55c450'); wBox(50, -45, 9, 3, 0, 3, '#3fae3a', '#55c450'); });   // broom
+  add(52, 8, () => { wBox(52, 8, 14, 30, 0, 12, '#b88a55', '#c99a65'); wBox(52, 2, 13, 14, 12, 21, '#c09260', '#d2a470'); });   // boxes
+  add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
+  for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
+  rect(0, 0, W, 80, '#142536dd'); text('WORKSHOP OFFICE', W / 2, 27, 22, '#ffea69');
+  text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
+  const sp = wsoNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { boss: 'talk to the supervisor', cctv: 'check the yard cameras', printer: 'grab your service sheet' }[sp.name], W / 2, 560, 14, '#fff'); }
+  if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
+  if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
+}
 // ---------- camp dining room (inside the kitchen building) ----------
 // Local coordinates: x across (-150..150), y from the back wall (-110) to the double doors (+110). Bain-marie along the back,
 // fresh food and crib bag benches on the east wall, dish return and two coffee machines on the west wall, TV in the north-east
@@ -3162,7 +3368,7 @@ let ovalSink=null;   // when set, campOval queues its faces so a whole figure ca
 // shirt, stripe (reflective tape, null for none), pants, shorts, skin, shoes, hair ('short' | 'buzz' | 'mullet' | 'long' |
 // 'ponytail' | 'bald' | 'cap' | 'hardhat'), hairCol, cap, beard, sunnies, pose ('drink' | 'dribble' | 'shoot' | 'bag' | 'pack'), can, bag
 function campHuman(x,y,moustache=false,player=false,o={}) {
-  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'||state==='wsoffice'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
   const keysWalk=keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB;
   const walking=player?keysWalk:!!o.walk, ph=player?wT*10:(o.ph||0), t=o.t!==undefined?o.t:wT;
   const moving=walking?Math.sin(ph)*2.1:(player?0:Math.sin(wT*3+x)*.25);
@@ -4696,6 +4902,7 @@ function render() {
   else if (state === 'officeinside') drawOffice();
   else if (state === 'kitcheninside') drawKitchen();
   else if (state === 'shopinside') drawShop();
+  else if (state === 'wsoffice') drawWsOffice();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
