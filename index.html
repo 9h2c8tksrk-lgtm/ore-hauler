@@ -781,7 +781,7 @@ function wkHome() {
 // Walkable workshop interior. The truck is stationary; the player can move
 // around a safe observation area and watch independent repair animations.
 // IMMERSIVE WORKSHOP: first-person pseudo-3D, based on the existing WK six-bay yard footprint.
-let footTime=0, footFacing=0, cribReached=false, shopCrew=[];
+let footTime=0, footFacing=0, footCamH=0, cribReached=false, shopCrew=[];
 const workshopParked = () => state==='workshop' && wk && wk.v<8 &&
   (wk.auto || (wk.x>WK.x-40 && wk.x<WK.x+WK.w+40 && wk.y>WK.y-100 && wk.y<WK_MOUTH+115));
 // ---------- walk-in workshop: a real-scale 6-bay drive-through heavy vehicle shed ----------
@@ -814,6 +814,7 @@ function shopSolids() {
   const L = shopL, o = [];
   o.push([sbx(L.bay), (L.F + 4 + L.T0 - 302) / 2, 74, L.F + 4 - (L.T0 - 302)]);
   for (const pm of L.pms) o.push([sbx(pm.bay), pm.F - 155, 74, 320]);
+  { const pm0 = L.pms[0] || { bay: L.bay, F: L.F }; o.push([sbx(pm0.bay) - 56, pm0.F - 152, 44, 48]); }   // mobile work platform
   if (L.lv) o.push([sbx(L.lv.bay), L.lv.F - 69, 60, 146]);
   o.push([40, 120, 46, 38]);                                       // tyre inflation cage
   o.push([22, 435, 30, 200]);                                      // tyre rack along the Bay 1 wall (ends short of a Bay 1 cab door)
@@ -844,7 +845,7 @@ function shopCrewInit() {
     crew('MECHANIC', [[bx - 50, L.T0 - 228], [bx - 50, L.T0 - 120]], '#d6a82b'),
     crew('TYRE FITTER', L.bay === 0 ? [[bx + 52, L.T0 - 255], [bx + 52, L.F - 48]] : [[78, 150], [78, 220]], '#e45c37'),
     crew('MULLET MECHANIC', [[SH_W - 56, 300], [SH_W - 56, 440]], '#ec9d27', true),
-    crew('AUTO SPARKY', [[px + 50, pm0.F - 70], [px + 50, pm0.F - 140]], '#5ba8d5'),
+    { ...crew('AUTO SPARKY', [[px - 47, pm0.F - 152]], '#5ba8d5'), z: 60, reach: 1, heading: 0, still: 1 },   // up on the work platform, changing the beacon
     crew('LEADING HAND', [[lvx - 48, lvF - 20], [lvx - 48, lvF - 130]], '#f0f0f0'),
     crew('STORE PERSON', [[360, 120], [720, 120]], '#3f9d5a')];
 }
@@ -853,13 +854,14 @@ function enterWorkshopFoot() {
   state = 'workshopfoot'; workshopOnFoot = true; footTime = 0; cribReached = false;
   shopL = shopLayout();
   const bx = sbx(shopL.bay), s = shopL.bay === 0 ? 1 : -1;
-  workshopFoot = { x: bx + s * 62, y: SH_D - 26 }; footFacing = Math.atan2(-120, -s * 62);   // front corner of your rig, looking along it
+  workshopFoot = { x: bx + s * 62, y: SH_D - 70 }; footFacing = Math.atan2(-120, -s * 62); footCamH = footFacing;   // front corner of your rig, looking along it
   shopCrewInit(); wk.v = 0; ptrs.clear(); syncBtns();
   flash('Walk to the Bay 1 side door and out to the crib room.');
 }
 function updateWorkshopFoot(dt) {
   time += dt; msgT -= dt; footTime += dt;
   footFacing += steerAxis() * 2.0 * dt;
+  footCamH += angDiff(footFacing, footCamH) * (1 - Math.exp(-5 * dt));   // chase camera swings in behind
   const fwd = (keys.KeyW || keys.ArrowUp || keys.TG ? 1 : 0) - ((keys.KeyS || keys.ArrowDown || keys.TB) ? .65 : 0);
   const st = 62 * fwd * dt;
   const nx = workshopFoot.x + Math.cos(footFacing) * st, ny = workshopFoot.y + Math.sin(footFacing) * st;
@@ -867,6 +869,7 @@ function updateWorkshopFoot(dt) {
   if (!shopBlocked(workshopFoot.x, ny)) workshopFoot.y = ny;
   for (const m of shopCrew) {
     m.phase += dt;
+    if (m.still) { m.walk = false; continue; }
     if (m.wait > 0) { m.wait -= dt; m.walk = false; continue; }
     const [tx, ty] = m.points[m.i], dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
     if (d < 2) { m.i = (m.i + 1) % m.points.length; m.wait = 2 + (m.i % 3) * 1.2; m.walk = false; continue; }
@@ -880,9 +883,17 @@ function updateWorkshopFoot(dt) {
   }
 }
 function drawWorkshopFoot() {
-  const fx = Math.cos(footFacing), fy = Math.sin(footFacing), rx = -fy, ry = fx;
-  const CX = workshopFoot.x, CY = workshopFoot.y, eye = 42, focus = 370, horizon = 330, near = 3;
-  const camPt = (x, y, z) => { const dx = x - CX, dy = y - CY; return [dx * rx + dy * ry, dx * fx + dy * fy, z - eye]; };
+  // third-person: the camera trails 90 units behind and 85 up, swinging round after you; it never leaves the side of the wall you're on
+  const fx = Math.cos(footCamH), fy = Math.sin(footCamH), rx = -fy, ry = fx, me = workshopFoot;
+  // pull the camera in if a truck, column or wall is behind you, so it never ends up inside something
+  const inShed = me.x >= 0, sol = inShed ? shopSolids().filter(([, cy, w]) => !(w === 14 && cy > SH_D - 10))   // columns only clip a sliver, so they don't pull the camera in
+    : SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]);
+  const camBlocked = (x, y) => (inShed ? (x < 6 || x > SH_W - 6 || y < 6) : (x > -6 || x < -415 || y < 165 || y > 535)) || sol.some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
+  let dist = 90; for (let t = 8; t <= 90; t += 3) if (camBlocked(me.x - fx * t, me.y - fy * t)) { dist = Math.max(22, t - 6); break; }
+  const CX = me.x - fx * dist, CY = me.y - fy * dist;
+  // a camera pulled in close rises and tilts down to look over whatever is behind you; pitch keeps you centred
+  const eye = 72 + (90 - dist) * .5, pitch = Math.atan2(eye - 32, dist + 70), cp = Math.cos(pitch), sp = Math.sin(pitch), focus = 370, horizon = 360, near = 3;
+  const camPt = (x, y, z) => { const dx = x - CX, dy = y - CY, f = dx * fx + dy * fy, v = z - eye; return [dx * rx + dy * ry, f * cp - v * sp, v * cp + f * sp]; };
   const scr = v => [W / 2 + focus * v[0] / v[1], horizon - focus * v[2] / v[1]];
   const face = (points, col) => {
     const src = points.map(p => camPt(...p)), out = [];
@@ -934,9 +945,10 @@ function drawWorkshopFoot() {
     const [sx, sy] = scr(q); text(s, sx, sy, Math.min(60, px), col);
   };
   const human = m => {
+    const z0 = m.z || 0, B = (x, y, w, l, h, c, t = c, z = 0) => box(x, y, w, l, h, c, t, z + z0);
     const stride = m.walk ? Math.sin(m.phase * 8) * 5 : 0, gesture = m.walk ? 0 : Math.sin(m.phase * 5) * 2;
     const limb = (x1, y1, z1, x2, y2, z2, r, c) => {
-      const a = camPt(x1, y1, z1), b = camPt(x2, y2, z2); if (a[1] < near || b[1] < near) return;
+      const a = camPt(x1, y1, z1 + z0), b = camPt(x2, y2, z2 + z0); if (a[1] < near || b[1] < near) return;
       ctx.strokeStyle = c; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(1, focus * r / Math.max(a[1], b[1]));
       ctx.beginPath(); ctx.moveTo(...scr(a)); ctx.lineTo(...scr(b)); ctx.stroke();
     };
@@ -945,17 +957,18 @@ function drawWorkshopFoot() {
       const bx = m.x + sxv * side * 3, by = m.y + syv * side * 3, st = side * stride;
       limb(bx, by, 17, bx + hx * st * .5, by + hy * st * .5, 9, 4, '#293b56');
       limb(bx + hx * st * .5, by + hy * st * .5, 9, bx + hx * st, by + hy * st, 3, 3.5, '#293b56');
-      box(bx + hx * st, by + hy * st, 6, 6, 4, '#202329');
+      B(bx + hx * st, by + hy * st, 6, 6, 4, '#202329');
       const ax = m.x + sxv * side * 7, ay = m.y + syv * side * 7;
       limb(ax, ay, 31, ax + sxv * side * 2 - hx * st * .4, ay + syv * side * 2 - hy * st * .4, 23, 3, m.col);
-      limb(ax + sxv * side * 2, ay + syv * side * 2, 23, ax + sxv * side * 2 + hx * gesture, ay + syv * side * 2 + hy * gesture, 16, 2.5, '#c99572');
+      if (m.reach) limb(ax + sxv * side * 2, ay + syv * side * 2, 23, ax + hx * 7 - sxv * side * 2, ay + hy * 7 - syv * side * 2, 44 + gesture * side, 2.5, '#c99572');   // hands up, working overhead
+      else limb(ax + sxv * side * 2, ay + syv * side * 2, 23, ax + sxv * side * 2 + hx * gesture, ay + syv * side * 2 + hy * gesture, 16, 2.5, '#c99572');
     }
-    box(m.x, m.y, 12, 12, 20, m.col, m.col, 15);
-    box(m.x, m.y, 12.5, 12.5, 2, '#e7ecee', '#e7ecee', 25);   // reflective tape
-    box(m.x, m.y, 5, 5, 4, '#c99572', '#c99572', 35);
-    box(m.x, m.y, 9, 9, 9, '#d7a07b', '#d7a07b', 38);
-    box(m.x, m.y, 10, 10, 3, m.mullet ? '#51301c' : '#f3eddd', m.mullet ? '#51301c' : '#f3eddd', 46);
-    if (m.mullet) box(m.x - hx * 4, m.y - hy * 4, 8, 8, 12, '#51301c', '#51301c', 35);
+    B(m.x, m.y, 12, 12, 20, m.col, m.col, 15);
+    B(m.x, m.y, 12.5, 12.5, 2, '#e7ecee', '#e7ecee', 25);   // reflective tape
+    B(m.x, m.y, 5, 5, 4, '#c99572', '#c99572', 35);
+    B(m.x, m.y, 9, 9, 9, '#d7a07b', '#d7a07b', 38);
+    B(m.x, m.y, 10, 10, 3, m.mullet ? '#51301c' : '#f3eddd', m.mullet ? '#51301c' : '#f3eddd', 46);
+    if (m.mullet) B(m.x - hx * 4, m.y - hy * 4, 8, 8, 12, '#51301c', '#51301c', 35);
   };
   const objs = [], outside = [];
   const add = (x, y, fn, list = objs) => list.push({ d: (x - CX) * fx + (y - CY) * fy, fn });
@@ -1100,6 +1113,21 @@ function drawWorkshopFoot() {
   trailer(sbx(L.bay), L.T0, 0, L.loaded);
   const pm0bay = L.pms.length ? L.pms[0].bay : 3;
   for (const pm of L.pms) primeMover(sbx(pm.bay), pm.F, pm.col, pm.fleet);
+  { // yellow mobile work platform against the first pink truck's sleeper: the auto sparky is up top changing the roof beacon
+    const pm0 = L.pms[0] || { bay: L.bay, F: L.F }, cx = sbx(pm0.bay), px = cx - 50, py = pm0.F - 152, t2 = footTime;
+    add(px, py, () => {
+      for (const [ox, oy] of [[-12, -20], [12, -20], [-12, 20], [12, 20]]) { box(px + ox, py + oy, 3, 3, 60, '#e8b100', '#f6d64a'); box(px + ox, py + oy, 5, 5, 3, '#2b2f33', '#2b2f33'); }
+      box(px, py, 30, 46, 3, '#c9a200', '#d9b21a', 58);                                   // deck
+      for (const k of [-1, 1]) box(px, py + k * 22, 30, 2, 2, '#e8b100', '#f6d64a', 88); box(px - 14, py, 2, 46, 2, '#e8b100', '#f6d64a', 88);   // handrails
+      for (let k = 0; k < 6; k++) box(px - 20 - k * 4, py, 6, 26, 2, '#d9b21a', '#e8c22a', 52 - k * 10);   // stairs down the far side
+      box(px - 8, py + 14, 6, 6, 4, '#ff8a00', '#ffb04a', 61);                              // the old beacon, unbolted, on the deck
+      box(px + 2, py - 14, 12, 8, 7, '#b52d2d', '#d44739', 61);                             // toolbox
+    });
+    add(cx - 14, py, () => {   // the new beacon on the sleeper roof, flashing as it's tested
+      box(cx - 14, py, 8, 8, 3, '#2b2f33', '#3a3f44', 104); box(cx - 14, py, 6, 6, 6, '#ff8a00', '#ffb04a', 107);
+      if (Math.sin(t2 * 9) > .2 && (t2 % 6) > 2) { const q = camPt(cx - 14, py, 110); if (q[1] > near) { const [gx, gy] = scr(q), r = focus * 14 / q[1]; const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r); g.addColorStop(0, 'rgba(255,170,40,.85)'); g.addColorStop(1, 'rgba(255,170,40,0)'); ctx.fillStyle = g; ctx.fillRect(gx - r, gy - r, r * 2, r * 2); } }
+    });
+  }
   // service LV (dual-cab ute with a big side-opening toolbox body) parked in the bay with no pit; front at F, facing the doors
   if (L.lv) { const cx = sbx(L.lv.bay), F = L.lv.F, Pq = (y, f) => add(cx, F - y, f), wh = '#f4f4f4';
     Pq(69, () => box(cx, F - 69, 40, 124, 8, black, '#2b2f33', 10));
@@ -1153,23 +1181,25 @@ function drawWorkshopFoot() {
   });
   // open front: columns with bollards, rolled-up roller doors and bay numbers
   for (let i = 0; i <= 6; i++) add(i * SB, 6, () => { box(i * SB, 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, -6, 8, 8, 34, safety, '#f6d64a'); });   // back columns
-  for (let i = 0; i <= 6; i++) add(i * SB, SH_D - 6, () => { box(i * SB, SH_D - 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, SH_D + 6, 8, 8, 34, safety, '#f6d64a'); });
+  const colGhost = x => Math.abs(x - (CX + me.x) / 2) < Math.abs(me.x - CX) / 2 + 10 && (CY - (SH_D - 6)) * (me.y - (SH_D - 6)) < 0;   // a door column between the camera and you is see-through
+  for (let i = 0; i <= 6; i++) add(i * SB, SH_D - 6, () => { if (colGhost(i * SB)) ctx.globalAlpha = .25; box(i * SB, SH_D - 6, 10, 10, 185, '#6b7881', '#8a97a0'); box(i * SB, SH_D + 6, 8, 8, 34, safety, '#f6d64a'); ctx.globalAlpha = 1; });
   for (let i = 0; i < 6; i++) add(sbx(i), SH_D - 8, () => { label(sbx(i), SH_D - 1, 205, `BAY ${i + 1}`, 14, i === L.bay ? '#ffe568' : '#fff'); });
   for (const m of shopCrew) add(m.x, m.y, () => human(m));
 
   if (inside) { outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
   shell();
-  objs.sort((a, b) => b.d - a.d); for (const o of objs) if (o.d > -80) o.fn();
+  const walking = keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.TG || keys.TB;
+  add(me.x, me.y, () => human({ x: me.x, y: me.y, col: '#e7e900', phase: footTime, walk: walking, heading: footFacing }));   // you
+  objs.sort((a, b) => b.d - a.d); for (const o of objs) if (o.d > -10) o.fn();
   if (!inside) { leftWallOutside(); outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
 
   // ----- HUD
   const atCab = cribReached && shopAtCab();
-  rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - ON FOOT', W / 2, 26, 19, '#ffe568');
+  rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - THIRD PERSON', W / 2, 26, 19, '#ffe568');
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
   text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (C509, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: BAY 1 SIDE DOOR, THEN THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
   if (isTouch) { drawStick(); drawBtns(DB); if (atCab) drawBtn([340, 570, 132, 52], 'ENTER CAB', false); }
-  ctx.strokeStyle = '#fff9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(235, horizon); ctx.lineTo(245, horizon); ctx.moveTo(240, horizon - 5); ctx.lineTo(240, horizon + 5); ctx.stroke();
 }
 function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
