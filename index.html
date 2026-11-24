@@ -382,8 +382,14 @@ function spawn() {
 }
 
 const SKY_X = 190, EDGE_X = 250;
-const lidBtn = i => [6, qy + OFF(i) - 28, 112, 26, tr[i].want ? 'CLOSE LID' : 'OPEN LID'];
-const tipBtn = i => [6, qy + OFF(i) + 2, 112, 26, 'TIP BIN'];
+// 3D Skyway: x across (deck x < 0, the wall face at x = 0, the drop and the ROM stockpile at x > 0), y along the rig (cab at 0,
+// trailers behind at negative y), z up (deck top 0, ground -200). Side-tipper tubs hinge on their outer bottom edge.
+const SKW_X = -22, SKW_TY = i => -62 - i * 92, SKW_TIP = 1.0, SKW_GROUND = -200;
+const SKW_PILE = { x: 80, y: -170, r: 130 };
+const SKW_PILE_Z = (x, y) => { const d = Math.hypot(x - SKW_PILE.x, (y - SKW_PILE.y) / 1.9); return SKW_GROUND + Math.max(0, skwPileH() * (1 - d / SKW_PILE.r)); };
+const skwPileH = () => 80 + 30 * (arrivalOre > 0 ? Math.max(0, 1 - ore() / arrivalOre) : 0);   // the stockpile grows as you tip
+const lidBtn = i => [W - 118 - i * 118, H - 168, 112, 30, tr[i].want ? 'CLOSE LID' : 'OPEN LID'];   // bottom bar, trailer 1 (by the cab) on the right
+const tipBtn = i => [W - 118 - i * 118, H - 132, 112, 30, 'TIP BIN'];
 function toggleLid(i) { const t = tr[i]; if (t.dir || t.p > 0 || t.hold > 0) return; t.want = 1 - t.want; }
 function tipTrailer(i) {
   const t = tr[i]; if (t.dir || t.p > 0 || t.hold > 0) return;
@@ -531,13 +537,14 @@ function updateSkyway(dt) {
     t.lid += Math.sign(t.want - t.lid) * Math.min(Math.abs(t.want - t.lid), dt * 2.5);
     if (t.dir === 1) {
       t.p += dt / 1.2;
-      if (fills[i] > 0) for (let k = 0; k < 2; k++) rocks.push({ x: SKY_X + 14, y: y + (Math.random() - .5) * 40, vx: 60 + Math.random() * 90, vy: (Math.random() - .5) * 30, l: 1.4, c: Math.random() < .5 ? '#8a5a44' : '#a8705a' });
+      if (fills[i] > 0 && t.p > .25) for (let k = 0; k < 3; k++) { const th = t.p * SKW_TIP, lx = SKW_X + 12 + 22 * Math.sin(th), lz = 14 + 22 * Math.cos(th);   // ore spilling off the tub lip
+        rocks.push({ x: lx, y: SKW_TY(i) + (Math.random() - .5) * 64, z: lz, vx: 25 + Math.random() * 40, vy: (Math.random() - .5) * 8, vz: -Math.random() * 15, l: 3, c: ['#8a5a44', '#a8705a', '#6e4434', '#b8805e'][Math.floor(Math.random() * 4)] }); }
       if (t.p >= 1) { t.p = 1; t.dir = 0; t.hold = .7; fills[i] = 0; }
     } else if (t.hold > 0) { t.hold -= dt; if (t.hold <= 0) t.dir = -1; }
     else if (t.dir === -1) { t.p -= dt / 1.2; if (t.p <= 0) { t.p = 0; t.dir = 0; } }
   }
-  for (const r of rocks) { r.x += r.vx * dt; r.y += r.vy * dt; r.l -= dt; }
-  rocks = rocks.filter(r => r.l > 0); msgT -= dt;
+  for (const r of rocks) { r.x += r.vx * dt; r.y += r.vy * dt; r.z = (r.z || 0) + (r.vz || 0) * dt; r.vz = (r.vz || 0) - 320 * dt; r.l -= dt; }
+  rocks = rocks.filter(r => r.l > 0 && r.z > SKW_PILE_Z(r.x, r.y)); msgT -= dt;
   if (state === 'skyway' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0)) {
     startReturn();
   }
@@ -1985,6 +1992,21 @@ function drawWorld3D(playerX, menu) {
   if (!menu) track3D();
   drawBays(list);
   drawScenery(list, ry === null ? -Infinity : ry);
+  // the steep access road up to the Skyway: the road runs in a cutting whose red rock walls rise either side as you climb,
+  // with LOW GEAR and SKYWAY signs near the top
+  if (!menu && !ret && scroll > R - CLIMB - 900) {
+    const k0 = R - CLIMB - 500, step = 36;
+    for (let j = 0; j < 26; j++) {
+      const y = -110 + j * step - (scroll % step), sAt = scroll + qy - y; if (sAt < k0 || y > H + 60) continue;
+      const prog = Math.min(1, (sAt - k0) / (CLIMB + 500)), hgt = 8 + 90 * prog * prog, o = roadX(y);
+      for (const side of [-1, 1]) { const x = (side < 0 ? ROAD_L - 16 : ROAD_R + 16) + o + side * 22;
+        list.push({ y: y - 30, fn: () => { box(x, y, 44, step + 1, 0, hgt, (j & 1) ? '#8f4a2e' : '#984f31'); box(x + side * 6, y, 30, step + 1, hgt, hgt + 4, '#a85a38'); } }); }
+    }
+    for (const [sAt, l1, l2, col] of [[R - CLIMB + 250, 'STEEP GRADE', 'USE LOW GEAR', '#f2c200'], [R - 500, 'SKYWAY', 'TIP AREA AHEAD', '#1d5fb4']]) {
+      const y = scroll + qy - sAt; if (y < -115 || y > H + 60) continue; const x = ROAD_L - 30 + roadX(y);
+      list.push({ y, fn: () => { box(x, y, 2, 2, 0, 46, '#bbb'); box(x, y, 44, 3, 46, 72, col); const [sx, sy] = P(x, y + 1.6, 63), k = sc(y); text(l1, sx, sy, 8 * k, col === '#f2c200' ? '#111' : '#fff'); const [s2x, s2y] = P(x, y + 1.6, 52); text(l2, s2x, s2y, 6 * k, col === '#f2c200' ? '#111' : '#fff'); } });
+    }
+  }
   if (!menu) {
     for (const t of traffic) if (t.y > -115) list.push({ y: t.y, fn: () => car3(t) });
     for (const a of animals) if (a.y > -115) list.push({ y: a.y, fn: () => drawAnimal3(a) });
@@ -3715,27 +3737,126 @@ function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
 }
 function drawSkyway() {
   const t = beaconClock();
-  rect(0, 0, W, H, '#a74626');
-  for (let i = 0; i < 24; i++) rect((i * 89) % 240, (i * 53) % H, 6, 6, '#85371f');
-  const g = ctx.createLinearGradient(EDGE_X, 0, W, 0); g.addColorStop(0, '#2b1c18'); g.addColorStop(1, '#05060a');
-  ctx.fillStyle = g; ctx.fillRect(EDGE_X, 0, W - EDGE_X, H);
-  ctx.fillStyle = '#ffffff12';
-  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(EDGE_X + 40 + ((i * 97 + t * 8) % 220), 80 + i * 130, 50, 14, 0, 0, 7); ctx.fill(); }
-  rect(150, 0, 90, H, '#514f4b'); rect(152, 0, 3, H, '#eee8d5'); rect(235, 0, 3, H, '#eee8d5');
-  for (let y = 0; y < H; y += 24) { rect(EDGE_X - 8, y, 8, 12, '#e8b100'); rect(EDGE_X - 8, y + 12, 8, 12, '#222'); }
-  text('THE SKYWAY', 365, 330, 30, '#ff6'); text('DEEP DROP', 365, 360, 16, '#e66');
-  ctx.strokeStyle = '#312d2c'; ctx.lineWidth = 4;
-  for (let i = 0; i < NT; i++) {
-    ctx.beginPath(); ctx.moveTo(SKY_X, i === 0 ? qy + 22 : qy + OFF(i - 1) + 28); ctx.lineTo(SKY_X, qy + OFF(i) - 28); ctx.stroke();
+  // drone-style camera out over the drop, looking back along the rig and down onto the stockpile
+  const C = [330, 160, 170], T = [-40, -175, -60], f0 = 400, cyS = H * .44;
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l); }, cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const fw = nrm(sub(T, C)), rt = nrm(cross(fw, [0, 0, 1])), up = cross(rt, fw), NEAR = 5;
+  const cam = p => { const d = sub(p, C); return [dot(d, rt), dot(d, fw), dot(d, up)]; };
+  const scr = q => [W / 2 + f0 * q[0] / q[1], cyS - f0 * q[2] / q[1]];
+  const face = (pts, col) => {
+    const src = pts.map(cam), out = [];
+    for (let i = 0; i < src.length; i++) { const a = src[i], b = src[(i + 1) % src.length], ia = a[1] >= NEAR, ib = b[1] >= NEAR;
+      if (ia) out.push(a); if (ia !== ib) { const k = (NEAR - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * k, NEAR, a[2] + (b[2] - a[2]) * k]); } }
+    if (out.length < 3) return; ctx.fillStyle = col; ctx.beginPath(); out.forEach((q, i) => { const [x, y] = scr(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.fill();
+  };
+  const L = nrm([.5, .35, .8]), lit = (col, n) => shade(col, .62 + .45 * Math.max(0, dot(n, L)));
+  // queued faces for the rig, sorted far to near; an oriented box maps local corners through tf and culls hidden faces
+  const Q = [];
+  const obox = (tf, x0, x1, y0, y1, z0, z1, col, top = col, skipTop = false) => {
+    const V = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]].map(tf);
+    const F = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]];
+    F.forEach((ix, k) => { if (k === 1 && skipTop) return; const P0 = V[ix[0]], n = nrm(cross(sub(V[ix[1]], P0), sub(V[ix[2]], P0)));
+      const c3 = [0, 1, 2].map(j => (V[ix[0]][j] + V[ix[2]][j]) / 2); if (dot(n, sub(C, c3)) <= 0) return;
+      Q.push({ d: cam(c3)[1], pts: ix.map(i => V[i]), col: lit(k === 1 ? top : col, n) }); });
+  };
+  const id = p => p, box = (cx, cy, cz, hx, hy, hz, col, top) => obox(id, cx - hx, cx + hx, cy - hy, cy + hy, cz - hz, cz + hz, col, top);
+  const wheelQ = (x, y, r, w) => { for (const sx of [x - w / 2, x + w / 2]) if (C[0] > sx === sx > x) {
+      const ring = Array.from({ length: 10 }, (_, k) => [sx, y + Math.cos(k * .628) * r, r + Math.sin(k * .628) * r]);
+      Q.push({ d: cam([sx, y, r])[1] - .5, pts: ring, col: '#141516' }); Q.push({ d: cam([sx, y, r])[1] - .6, pts: ring.map(p => [p[0] + Math.sign(sx - x) * .2, y + (p[1] - y) * .5, r + (p[2] - r) * .5]), col: '#aeb4b9' }); }
+    box(x, y, r, w / 2, r * .9, r * .9, '#1b1c1e'); };
+
+  // ----- sky, ranges and the plain far below
+  const sg = ctx.createLinearGradient(0, 0, 0, H * .55); sg.addColorStop(0, '#3b78bf'); sg.addColorStop(.7, '#a9c7e2'); sg.addColorStop(1, '#ecd9bd');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+  face([[-4000, -4000, SKW_GROUND], [4000, -4000, SKW_GROUND], [4000, 2500, SKW_GROUND], [-4000, 2500, SKW_GROUND]], '#a9542f');
+  for (const [col, dist, amp, k, ph] of [['#9a6f8a', 3200, 260, .0016, 1], ['#9c4d36', 2400, 170, .0031, 3]]) {   // Pilbara ranges
+    const pts = [[-4000, -dist, SKW_GROUND]]; for (let x = -4000; x <= 4000; x += 160) pts.push([x, -dist + x * .25, SKW_GROUND + amp * (.35 + .4 * Math.sin(x * k + ph) + .25 * Math.sin(x * k * 2.7 + ph * 2))]);
+    pts.push([4000, -dist + 1000, SKW_GROUND]); face(pts, col);
   }
+  // ----- the steep access road climbing up to the deck from behind, with windrows
+  face([[-175, -1500, SKW_GROUND], [10, -1500, SKW_GROUND], [10, -540, 0], [-175, -540, 0]], '#8f5a3c');
+  face([[-150, -1500, SKW_GROUND + 1], [-15, -1500, SKW_GROUND + 1], [-15, -540, .5], [-150, -540, .5]], '#5d5a55');
+  for (const x of [-148, -20]) face([[x, -1500, SKW_GROUND + 2], [x + 3, -1500, SKW_GROUND + 2], [x + 3, -540, 1], [x, -540, 1]], '#e8e2d0');
+  // ----- stockpile (ROM pocket) below the wall: a cone of ore that grows as you tip
+  const pk = [SKW_PILE.x, SKW_PILE.y, SKW_GROUND + skwPileH()], seg = 28, tris = [];
+  for (let k = 0; k < seg; k++) { const a0 = k / seg * 2 * Math.PI, a1 = (k + 1) / seg * 2 * Math.PI, P = a => [SKW_PILE.x + Math.cos(a) * SKW_PILE.r, SKW_PILE.y + Math.sin(a) * SKW_PILE.r * 1.9, SKW_GROUND];
+    const A = P(a0), B = P(a1), n = nrm(cross(sub(B, A), sub(pk, A))); tris.push({ d: cam([(A[0] + B[0] + pk[0]) / 3, (A[1] + B[1] + pk[1]) / 3, (A[2] + pk[2]) / 2])[1], pts: [A, B, pk], col: lit('#82503a', n[2] < 0 ? n.map(v => -v) : n) }); }
+  tris.sort((a, b) => b.d - a.d).forEach(f => face(f.pts, f.col));
+  for (let k = 0; k < 14; k++) { const a = hash(k * 3.3) * 6.28, r = SKW_PILE.r * (.25 + .7 * hash(k * 1.7)), x = SKW_PILE.x + Math.cos(a) * r, y = SKW_PILE.y + Math.sin(a) * r * 1.9; const z = SKW_PILE_Z(x, y);
+    const q = cam([x, y, z]); if (q[1] > NEAR) { const [sx, sy] = scr(q), rr = f0 * 4 / q[1]; ctx.fillStyle = '#5d3727'; ctx.beginPath(); ctx.ellipse(sx, sy, rr, rr * .55, 0, 0, 7); ctx.fill(); } }
+  // conveyor carrying ore away from the pocket to a stacker
+  { const A = [SKW_PILE.x + 150, SKW_PILE.y + 160, SKW_GROUND + 10], B = [SKW_PILE.x + 900, SKW_PILE.y + 1300, SKW_GROUND + 120];
+    for (const off of [0, 10]) { const a = cam([A[0], A[1] + off, A[2]]), b = cam([B[0], B[1] + off, B[2]]); if (a[1] > NEAR && b[1] > NEAR) { ctx.strokeStyle = '#d9a90e'; ctx.lineWidth = Math.max(1, f0 * 3 / a[1]); ctx.beginPath(); ctx.moveTo(...scr(a)); ctx.lineTo(...scr(b)); ctx.stroke(); } }
+    for (let k = 0; k <= 12; k++) { const f = k / 12, p = [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f + 5, A[2] + (B[2] - A[2]) * f], g = [p[0], p[1], SKW_GROUND], a = cam(p), b = cam(g);
+      if (a[1] > NEAR && b[1] > NEAR) { ctx.strokeStyle = '#8a8f94'; ctx.lineWidth = Math.max(.8, f0 * 1.5 / a[1]); ctx.beginPath(); ctx.moveTo(...scr(a)); ctx.lineTo(...scr(b)); ctx.stroke(); } } }
+  // dozer working the toe of the pile
+  { const dx = SKW_PILE.x + 70 + 25 * Math.sin(t * .35), dy = SKW_PILE.y - 40 + 60 * Math.cos(t * .35), z0 = SKW_PILE_Z(dx, dy) + 1, hd = t * .35;
+    const tf = p => [dx + p[0] * Math.cos(hd) - p[1] * Math.sin(hd), dy + p[0] * Math.sin(hd) + p[1] * Math.cos(hd), z0 + p[2]];
+    obox(tf, -9, 9, -12, 12, 0, 6, '#2b2d30'); obox(tf, -7, 7, -9, 9, 6, 14, '#e8b100'); obox(tf, -5, 5, -6, 3, 14, 22, '#e8b100', '#f6d64a'); obox(tf, -12, 12, 13, 15, 0, 9, '#c79a00');
+    Q.sort((a, b) => b.d - a.d).forEach(f => face(f.pts, f.col)); Q.length = 0; }
+  // ----- the Skyway: retaining wall face with panel joints and rust streaks, then the deck on top
+  face([[0, 220, SKW_GROUND], [0, -540, SKW_GROUND], [0, -540, 0], [0, 220, 0]], '#a29e95');
+  for (let y = 200; y > -540; y -= 38) { face([[.3, y, SKW_GROUND], [.3, y - 1.5, SKW_GROUND], [.3, y - 1.5, 0], [.3, y, 0]], '#7f7b73'); face([[.4, y - 12, -6], [.4, y - 18, -6], [.4, y - 18, -60 - 30 * hash(y)], [.4, y - 12, -60 - 30 * hash(y)]], 'rgba(150,70,40,.35)'); }
+  for (const z of [-70, -140]) face([[.3, 220, z], [.3, -540, z], [.3, -540, z - 1.5], [.3, 220, z - 1.5]], '#878379');
+  face([[0, -540, SKW_GROUND], [-175, -540, SKW_GROUND], [-175, -540, 0], [0, -540, 0]], '#8f8a80');   // wall end where the ramp meets it
+  face([[-175, 220, 0], [0, 220, 0], [0, -540, 0], [-175, -540, 0]], '#b4afa3');
+  for (let y = 200; y > -540; y -= 60) face([[-170, y, .3], [-165, y, .3], [-165, y - 30, .3], [-170, y - 30, .3]], '#eceadf');   // lane edge line
+  for (let k = 0; k < 2; k++) face([[SKW_X - 18 + k * 30, 120, .2], [SKW_X - 12 + k * 30, 120, .2], [SKW_X - 12 + k * 30, -520, .2], [SKW_X - 18 + k * 30, -520, .2]], 'rgba(40,30,25,.18)');   // tyre tracks
+  // kerb along the edge in hazard stripes, and the stop block ahead of the cab
+  for (let y = 210; y > -535; y -= 20) { const yl = Math.max(y - 20, -535); box(-3, (y + yl) / 2, 6, 3, (y - yl) / 2, 6, (Math.floor(y / 20) & 1) ? '#e8b100' : '#202020'); }
+  box(SKW_X, 75, 6, 26, 3, 6, '#e8b100', '#f6d64a');
+  Q.sort((a, b) => b.d - a.d).forEach(f => face(f.pts, f.col)); Q.length = 0;
+  // ----- the rig on the deck: cab, then each trailer with its tub swung out on the rams
+  const X = SKW_X;
+  box(X, -14, 9, 6, 46, 2.2, '#25282b');                                                       // chassis rails
+  box(X, 22, 20, 11, 10, 9, '#f062a4', '#d94a8c'); box(X, 32.6, 20, 8, .4, 7, '#c9ced2');     // bonnet, grille
+  box(X, 35.5, 14, 14, 1.4, 6, '#2b2e33');                                                     // bull bar
+  box(X, 2, 24, 13, 10, 13, '#f062a4', '#d94a8c'); box(X, 12.3, 30, 11, .3, 5, '#2a4554');   // cab, windscreen
+  box(X, -16, 26, 13, 8, 15, '#f062a4', '#d94a8c'); box(X, -6, 41.6, 12.5, 18, .7, '#e9ecee'); // sleeper, roof
+  box(X + 12.5, -6, 40, 1.3, 1.3, 22, '#d6dadd');                                              // single exhaust stack
+  for (const sx of [-1, 1]) { box(X + sx * 12.5, 14, 26, 1.6, 1.6, 8, '#d9dce0'); box(X + sx * 13, -2, 9, 2.5, 7, 3.5, '#c9ced2'); }   // air intakes, fuel tanks
+  { const on = Math.sin(t * 10) > 0; box(X, -6, 43.6, 2, 2, 1.4, on ? '#ffb020' : '#a86a10'); }
+  for (const sx of [-1, 1]) { wheelQ(X + sx * 12, 20, 6, 4); for (const wy of [-26, -38]) wheelQ(X + sx * 12, wy, 6, 6); }
   for (let i = 0; i < NT; i++) {
-    drawTrailer(SKY_X, qy + OFF(i), 34, 56, fills[i] / TRAILER_CAP * (1 - tr[i].p), 0, tr[i].lid, tr[i].p);
+    const Y = SKW_TY(i), tt = tr[i], th = tt.p * SKW_TIP, fill = fills[i] / TRAILER_CAP, hx = X + 12, hz = 14;
+    box(X, Y, 10, 4, 40, 2, '#25282b');                                                         // trailer chassis
+    if (i) box(X, Y + 46, 10, 1.5, 8, 1.5, '#e8b100');                                          // dolly drawbar
+    for (const sx of [-1, 1]) for (const wy of [-20, -29, -38]) wheelQ(X + sx * 12, Y + wy, 5.5, 6);
+    const tipT = p => { const dx = p[0] - hx, dz = p[2] - hz; return [hx + dx * Math.cos(th) + dz * Math.sin(th), p[1], hz - dx * Math.sin(th) + dz * Math.cos(th)]; };
+    obox(tipT, X - 12, X + 12, Y - 38, Y + 38, 14, 36, '#c93a8a', '#c93a8a', true);              // the tub (open top)
+    for (let k = -3; k <= 3; k++) obox(tipT, X + 12, X + 12.6, Y + k * 11 - .8, Y + k * 11 + .8, 15, 36, '#8f1a5e');   // side ribs
+    obox(tipT, X - 12, X + 12, Y - 38, Y + 38, 35, 36.6, '#e766b0', '#e766b0', false);            // top rim
+    { const inner = [[X - 10.5, Y - 36.5, 35.9], [X + 10.5, Y - 36.5, 35.9], [X + 10.5, Y + 36.5, 35.9], [X - 10.5, Y + 36.5, 35.9]].map(tipT);
+      Q.push({ d: cam(tipT([X, Y, 35]))[1] - .1, pts: inner, col: fill > .02 ? '#8a5a44' : '#5a1238' }); }   // ore (or the empty tub floor) seen through the top
+    // lid: a cover hinged on the inner top edge that swings up and over as it opens
+    { const la = tt.lid * 1.9, lt = p => { const dx = p[0] - (X - 12), dz = p[2] - 36.6; return tipT([X - 12 + dx * Math.cos(la) - dz * Math.sin(la), p[1], 36.6 + dx * Math.sin(la) + dz * Math.cos(la)]); };
+      obox(lt, X - 12, X + 12, Y - 37, Y + 37, 36.6, 37.6, '#cfd4d8', '#e3e7ea'); }
+    if (th > .02) for (const yy of [Y - 26, Y + 26]) { const a = cam([X - 2, yy, 12]), b = cam(tipT([X - 6, yy, 14])); Q.push({ d: Math.min(a[1], b[1]) + 2, ram: [a, b] }); }   // tipping rams
+  }
+  Q.sort((a, b) => b.d - a.d).forEach(f => { if (f.ram) { if (f.ram[0][1] > NEAR && f.ram[1][1] > NEAR) { ctx.strokeStyle = '#d6dadd'; ctx.lineWidth = Math.max(1, f0 * 1.6 / f.ram[0][1]); ctx.beginPath(); ctx.moveTo(...scr(f.ram[0])); ctx.lineTo(...scr(f.ram[1])); ctx.stroke(); } } else face(f.pts, f.col); });
+  Q.length = 0;
+  // ----- ore pouring off the lips down the wall face, falling rocks, and dust where it lands
+  for (let i = 0; i < NT; i++) { const tt = tr[i]; if (!(fills[i] > 0 && tt.p > .3)) continue;
+    const th = tt.p * SKW_TIP, Y = SKW_TY(i), lx = X + 12 + 22 * Math.sin(th), lz = 14 + 22 * Math.cos(th), bz = SKW_PILE_Z(lx + 45, Y);
+    face([[lx, Y - 34, lz], [lx, Y + 34, lz], [lx + 45, Y + 40, bz], [lx + 45, Y - 40, bz]], 'rgba(122,74,52,.85)');
+    const q = cam([lx + 50, Y, bz + 8]); if (q[1] > NEAR) { const [sx, sy] = scr(q), r = f0 * (40 + 10 * Math.sin(t * 7 + i)) / q[1]; const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r); g.addColorStop(0, 'rgba(196,140,100,.6)'); g.addColorStop(1, 'rgba(196,140,100,0)'); ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, 2 * r, 2 * r); } }
+  for (const r of rocks) { if (r.z === undefined) continue; const q = cam([r.x, r.y, r.z]); if (q[1] < NEAR) continue; const [sx, sy] = scr(q), s2 = Math.max(1.2, f0 * 2.2 / q[1]); rect(sx - s2 / 2, sy - s2 / 2, s2, s2, r.c); }
+  // ----- pink lighting towers and a dust-suppression mist cannon on the deck edge
+  for (const ty of [150, -480]) { box(-120, ty, 4, 6, 11, 4, '#e0479a', '#f27bb8'); box(-120, ty, 70, 1.4, 1.4, 66, '#8a8f94'); box(-120, ty, 137, 11, 3, 3, '#2b2f33', '#fff6c8'); }
+  box(-12, -250, 8, 5, 5, 8, '#2f6fa0', '#3a82b8');
+  Q.sort((a, b) => b.d - a.d).forEach(f => face(f.pts, f.col)); Q.length = 0;
+  for (let k = 0; k < 8; k++) { const f2 = (t * .6 + k / 8) % 1, q = cam([-6 + f2 * 120, -250 + Math.sin(k * 2.1) * 30 * f2, 20 + 25 * f2 - 60 * f2 * f2]); if (q[1] < NEAR) continue;
+    const [sx, sy] = scr(q), r = f0 * (2 + f2 * 9) / q[1]; ctx.fillStyle = `rgba(235,240,245,${.28 * (1 - f2)})`; ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill(); }
+  { const q = cam([-100, 170, 60]); if (q[1] > NEAR) { const [sx, sy] = scr(q), k = f0 / q[1]; rect(sx - 34 * k, sy - 9 * k, 68 * k, 18 * k, '#1d5fb4'); text('SKYWAY TIP', sx, sy + 5 * k, 11 * k, '#fff'); } }
+  // ----- controls: lid and tip for each trailer
+  rect(0, H - 200, W, 200, 'rgba(10,18,28,.8)');
+  for (let i = 0; i < NT; i++) {
+    const [bx] = lidBtn(i);
+    text(`TRAILER ${i + 1}` + (fills[i] > 0 ? '' : ' ✓'), bx + 56, H - 178, 13, fills[i] > 0 ? '#ffd23a' : '#7fdf7f');
     drawBtn(lidBtn(i), lidBtn(i)[4], tr[i].want); drawBtn(tipBtn(i), tipBtn(i)[4], tr[i].dir !== 0 || tr[i].hold > 0);
-    text(String(i + 1), 142, qy + OFF(i) + 6, 18, '#ddd');
   }
-  drawCab(SKY_X, qy);
-  for (const r of rocks) { const z = 5 * Math.min(1, r.l); rect(r.x, r.y, z, z, r.c); }
-  text(isTouch ? 'Open each lid, then tip the bin' : '1-4 open/close lid · Q W E R tip bin', W / 2, 640, 14, '#ccc');
+  text(isTouch ? 'Open each lid, then tip the bin over the wall' : '1-4 open/close lid · Q W E R tip bin over the wall', W / 2, H - 76, 14, '#fff');
 }
 // tyre look: -1 plain, 0 worn, 1 bare hub, 2 brand new
 function wheel(x, y, w, h, st = -1) {
