@@ -2442,19 +2442,48 @@ function loopAt(pts, speed, t) {   // closed loop with pauses at some points: po
   }
   return { x: pts[0][0], y: pts[0][1], dir: 0, moving: false };
 }
-// Hiace-style crew shuttle (camp units), heading h = direction of travel: white body, coloured stripe, windows, wheels
+// Hiace-style crew shuttle (camp units), heading h = direction of travel. Built from faces in the van's own frame:
+// f forward, g across (+ = left side), z up; faces are depth-sorted so it reads from any angle.
 function hiaceModel(x, y, h, stripe) {
   const outer = polySink; polySink = [];
-  const c = Math.cos(h), sn = Math.sin(h), a = h - Math.PI / 2, P = (f, g) => [x + f * c - g * sn, y + f * sn + g * c];
-  const B = (f, g, w, l, z0, z1, col, roof = col) => { const [px, py] = P(f, g); wBox(px, py, w, l, z0, z1, col, roof, a); };
-  for (const f of [-19, 19]) for (const g of [-12.6, 12.6]) B(f, g, 3.6, 9, 0, 9, '#1c1d1f');           // wheels
-  B(0, 0, 25, 58, 4, 28, '#f4f4f4', '#f4f4f4');                                                     // body
-  B(-3, 0, 25.6, 44, 17.5, 25.5, '#2c4656');                                                         // side windows
-  B(28.6, 0, 22, 1.4, 15, 27, '#2c4656');                                                            // windscreen
-  B(0, 0, 26, 58.6, 10, 12.5, stripe);                                                               // livery stripe
-  B(0, 0, 24, 56, 28, 30, '#e9ecee', '#ffffff');                                                     // roof
-  for (const g of [-8, 8]) { B(29.3, g, 5, 1, 9, 12, '#fff6c8'); B(-29.3, g, 4, 1, 9, 12, '#d01818'); }   // lights
+  const c = Math.cos(h), sn = Math.sin(h), Wd = (f, g, z) => [x + f * c - g * sn, y + f * sn + g * c, z];
+  const Q = (pts, col) => wPoly(pts.map(p => Wd(...p)), col);
+  const L = 30, R = -29, HW = 12.5, white = '#f4f5f6', glass = '#26404f', blk = '#1d1f22';
+  const vx = wCam.x - x, vy = wCam.y - y, seeLeft = vx * -sn + vy * c > 0, seeFront = vx * c + vy * sn > 0;
+  // 1. body shell, depth-sorted
+  const prof = [[R, 4], [L, 4], [L, 11], [L - 3, 15], [L - 10, 27], [L - 12, 30], [R + 1, 30], [R, 28.5]];
+  for (const g of [-HW, HW]) Q(prof.map(([f, z]) => [f, g, z]), g > 0 ? white : '#e6e8ea');
+  Q([[R + 1, -HW, 30], [L - 12, -HW, 30], [L - 12, HW, 30], [R + 1, HW, 30]], '#ffffff');
+  Q([[R, -HW, 4], [R, HW, 4], [R, HW, 28.5], [R, -HW, 28.5]], '#e3e5e7');
+  Q([[L, -HW, 11], [L, HW, 11], [L - 3, HW, 15], [L - 3, -HW, 15]], white);
+  Q([[L - 3, -HW, 15], [L - 3, HW, 15], [L - 10, HW, 27], [L - 10, -HW, 27]], glass);   // raked windscreen
+  Q([[L - 10, -HW, 27], [L - 10, HW, 27], [L - 12, HW, 30], [L - 12, -HW, 30]], white);
+  Q([[L, -HW, 4], [L, HW, 4], [L, HW, 11], [L, -HW, 11]], white);
   const faces = polySink; polySink = outer; faces.sort((p, q) => q.d - p.d); for (const f of faces) wPoly(f.pts, f.col);
+  // 2. details on the faces turned to the camera, painted straight over the shell
+  const g = seeLeft ? HW + .05 : -HW - .05;
+  for (const [f0, f1] of [[R + 3, R + 15], [R + 16, R + 30], [R + 31, L - 14]]) Q([[f0, g, 18], [f1, g, 18], [f1, g, 27], [f0, g, 27]], glass);   // side windows
+  Q([[L - 13, g, 16], [L - 4.5, g, 16], [L - 9.6, g, 26.5], [L - 13, g, 26.5]], glass);   // cab door window
+  Q([[R, g, 9.5], [L, g, 9.5], [L - 1.2, g, 12.5], [R, g, 12.5]], stripe);                // livery stripe
+  if (seeLeft) Q([[R + 15, g, 5], [R + 15.6, g, 5], [R + 15.6, g, 27], [R + 15, g, 27]], '#b9bec2');   // sliding door seam (kerb side)
+  Q([[L - 13.2, g, 14], [L - 12.8, g, 14], [L - 12.8, g, 27], [L - 13.2, g, 27]], '#c9cdd0');   // front door seam
+  for (const f of [-19, 19]) {
+    Q(Array.from({ length: 9 }, (_, i) => { const a2 = Math.PI * i / 8; return [f + Math.cos(a2) * 7.5, g, 4 + Math.sin(a2) * 8]; }), '#2a2d30');   // wheel arch
+    Q(Array.from({ length: 12 }, (_, i) => { const a2 = 2 * Math.PI * i / 12; return [f + Math.cos(a2) * 6, g * 1.01, 6 + Math.sin(a2) * 6]; }), '#151617');   // tyre
+    Q(Array.from({ length: 8 }, (_, i) => { const a2 = 2 * Math.PI * i / 8; return [f + Math.cos(a2) * 3.2, g * 1.02, 6 + Math.sin(a2) * 3.2]; }), '#c3c8cc');   // hub
+  }
+  Q([[R - .3, g * 1.01, 3], [L + 1, g * 1.01, 3], [L + 1, g * 1.01, 5.5], [R - .3, g * 1.01, 5.5]], blk);   // bumper ends / sill
+  Q([[L - 13.5, g * 1.03, 21], [L - 11, g * 1.3, 21], [L - 11, g * 1.3, 25], [L - 13.5, g * 1.03, 25]], blk);   // mirror
+  if (seeFront) {
+    Q([[L + .1, -7, 6.5], [L + .1, 7, 6.5], [L + .1, 7, 10], [L + .1, -7, 10]], '#2f3337');   // grille
+    for (const s2 of [-1, 1]) Q([[L + .1, s2 * 7.5, 7], [L + .1, s2 * 11.8, 7], [L + .1, s2 * 11.8, 10.5], [L + .1, s2 * 7.5, 10.5]], '#fff6d0');   // headlights
+    Q([[L + .2, -HW - .3, 3], [L + .2, HW + .3, 3], [L + .2, HW + .3, 6.5], [L + .2, -HW - .3, 6.5]], blk);   // bumper
+  } else {
+    Q([[R - .1, -10, 16], [R - .1, 10, 16], [R - .1, 10, 26], [R - .1, -10, 26]], glass);   // rear window
+    for (const s2 of [-1, 1]) Q([[R - .15, s2 * 9, 12], [R - .15, s2 * 12, 12], [R - .15, s2 * 12, 19], [R - .15, s2 * 9, 19]], '#c81818');   // tail lights
+    Q([[R - .2, -HW - .3, 3], [R - .2, HW + .3, 3], [R - .2, HW + .3, 6.5], [R - .2, -HW - .3, 6.5]], blk);
+  }
+  const q = wCamPt(...Wd(-4, g * 1.02, 6.4)); if (q[1] > 30 && q[1] < 420) { const [tx, ty] = wProj(q); text('CAMP SHUTTLE', tx, ty, Math.max(4, Math.min(11, 3.6 * WF / q[1])), '#2b3a48'); }
 }
 const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...[CAMP_BIG.kitchen, CAMP_BIG.office].map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS,
   { x: 755, y: 1097, w: 120, h: 6 }, { x: 770, y: 1103, w: 90, h: 11 }, ...MESS_POSTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 })),
