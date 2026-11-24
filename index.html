@@ -2416,13 +2416,45 @@ const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035]
 const BIG_PARK = { x0: 895, x1: 1215, y0: 815, y1: 1135 }, BP_ROWS = [935, 1055, 1170], BP_BAYS = Array.from({ length: 10 }, (_, k) => 836 + k * 30);
 const BP_UTES = []; BP_ROWS.forEach((rx, r) => BP_BAYS.forEach((by, k) => { if (!(rx === MY_BAY.x && by === MY_BAY.y) && hash(r * 13 + k * 7.1) < .72) BP_UTES.push({ x: rx, y: by, col: ['#f4f4f4', '#f4f4f4', '#e9e9e9', '#c62828', '#1d5fb4', '#2f2f33', '#9aa3a8'][Math.floor(hash(r * 5 + k * 3.3) * 7)] }); }));
 const BP_LIGHTS = [[995, 830], [958, 1128], [1112, 830], [1112, 1120]];
-// L-shaped dirt road out of the car park: south from the end of the first driveway, then a right turn west behind the
-// basketball court, out to the footpath that runs down to the crew bus. [x0, y0, x1, y1] for each leg (road is 30 wide).
-const CAMP_DIRT = [[983, 1135, 1013, 1576], [560, 1546, 1013, 1576]];
+// L-shaped dirt road out of the car park: south from the end of the first driveway, past the basketball court, then a
+// right turn onto the camp road the crew bus uses (same dirt road). [x0, y0, x1, y1] for each leg.
+const CAMP_DIRT = [[983, 1135, 1013, 1762], [-400, 1728, 1013, 1762]];
+// bus stop pull-off behind (east of) the wet mess: gravel pad with a turning circle and a shelter on its west side
+const BUS_STOP = { x0: 892, x1: 983, y0: 1182, y1: 1270 }, BUS_SHELTER = { x: 902, y: 1218 };
+// the two Hiace shuttles: in along the camp road (keep left), up the leg, round the turning circle, stop at the shelter, out again.
+// [x, y, pause seconds at this point]
+const HIACE_LOOP = [[-420, 1738, 7], [985, 1738], [990, 1712], [990, 1300], [968, 1272], [940, 1254], [918, 1234], [916, 1210, 8], [934, 1192], [958, 1196],
+  [974, 1222], [990, 1262], [1006, 1300], [1006, 1748], [998, 1752], [-420, 1752, 7]];
+function loopAt(pts, speed, t) {   // closed loop with pauses at some points: position, heading, moving?
+  const legs = pts.map((p, i) => { const q = pts[(i + 1) % pts.length]; return { p, q, len: Math.hypot(q[0] - p[0], q[1] - p[1]), pause: p[2] || 0 }; });
+  const total = legs.reduce((a, l) => a + l.pause + l.len / speed, 0); let u = ((t % total) + total) % total;
+  for (const l of legs) {
+    const d = Math.atan2(l.q[1] - l.p[1], l.q[0] - l.p[0]);
+    if (u < l.pause) return { x: l.p[0], y: l.p[1], dir: d, moving: false };
+    u -= l.pause; const tt = l.len / speed;
+    if (u < tt) { const f = u / tt; return { x: l.p[0] + (l.q[0] - l.p[0]) * f, y: l.p[1] + (l.q[1] - l.p[1]) * f, dir: d, moving: true }; }
+    u -= tt;
+  }
+  return { x: pts[0][0], y: pts[0][1], dir: 0, moving: false };
+}
+// Hiace-style crew shuttle (camp units), heading h = direction of travel: white body, coloured stripe, windows, wheels
+function hiaceModel(x, y, h, stripe) {
+  const outer = polySink; polySink = [];
+  const c = Math.cos(h), sn = Math.sin(h), a = h - Math.PI / 2, P = (f, g) => [x + f * c - g * sn, y + f * sn + g * c];
+  const B = (f, g, w, l, z0, z1, col, roof = col) => { const [px, py] = P(f, g); wBox(px, py, w, l, z0, z1, col, roof, a); };
+  for (const f of [-19, 19]) for (const g of [-12.6, 12.6]) B(f, g, 3.6, 9, 0, 9, '#1c1d1f');           // wheels
+  B(0, 0, 25, 58, 4, 28, '#f4f4f4', '#f4f4f4');                                                     // body
+  B(-3, 0, 25.6, 44, 17.5, 25.5, '#2c4656');                                                         // side windows
+  B(28.6, 0, 22, 1.4, 15, 27, '#2c4656');                                                            // windscreen
+  B(0, 0, 26, 58.6, 10, 12.5, stripe);                                                               // livery stripe
+  B(0, 0, 24, 56, 28, 30, '#e9ecee', '#ffffff');                                                     // roof
+  for (const g of [-8, 8]) { B(29.3, g, 5, 1, 9, 12, '#fff6c8'); B(-29.3, g, 4, 1, 9, 12, '#d01818'); }   // lights
+  const faces = polySink; polySink = outer; faces.sort((p, q) => q.d - p.d); for (const f of faces) wPoly(f.pts, f.col);
+}
 const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h: 6 })), ...CAMP_WINGS, ...CAMP_DECOR, ...[CAMP_BIG.kitchen, CAMP_BIG.office].map(o => ({ x: o[0], y: o[1], w: o[2], h: o[3] })), ...CAR_SPOTS,
   { x: 755, y: 1097, w: 120, h: 6 }, { x: 770, y: 1103, w: 90, h: 11 }, ...MESS_POSTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 })),
   ...MESS_SMALL.map(([x, y]) => ({ x: x - 16, y: y - 16, w: 32, h: 32 })), { x: MESS_BIG.x - 16, y: MESS_BIG.y - MESS_BIG.len / 2 - 2, w: 32, h: MESS_BIG.len + 4 },
-  ...BP_UTES.map(u => ({ x: u.x - 32, y: u.y - 13, w: 64, h: 26 })), ...BP_LIGHTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 }))];
+  ...BP_UTES.map(u => ({ x: u.x - 32, y: u.y - 13, w: 64, h: 26 })), { x: BUS_SHELTER.x - 7, y: BUS_SHELTER.y - 20, w: 14, h: 40 }, ...BP_LIGHTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 }))];
 const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
@@ -3034,13 +3066,13 @@ const FOLK_LOOKS = [
   { shirt: '#f2f2f2', stripe: null, pants: '#2f4f7a', hair: 'cap', cap: '#c62828', hairCol: '#2e2018', skin: '#6b4430' }];
 // walkers go back and forth along a footpath route, pausing at each end; [route, speed, look, pose, start offset]
 const FOLK_WALKS = [
-  [[[560, 1735], [545, 1520], [545, 1085], [545, 820]], 20, 0, 'bag', 0],
-  [[[530, 1735], [545, 1520], [545, 1085], [300, 1085], [163, 1085], [163, 800]], 18, 4, 'pack', 40],
+  [[[560, 1772], [545, 1520], [545, 1085], [545, 820]], 20, 0, 'bag', 0],
+  [[[530, 1772], [545, 1520], [545, 1085], [300, 1085], [163, 1085], [163, 800]], 18, 4, 'pack', 40],
   [[[960, 862], [750, 865], [744, 960], [744, 1090], [752, 1150]], 22, 1, null, 10],
   [[[650, 1085], [300, 1085], [163, 1085], [163, 1230]], 19, 3, null, 25],
   [[[712, 1078], [744, 960], [750, 865], [900, 862]], 21, 5, null, 5],
   [[[810, 735], [810, 950], [744, 960], [744, 1085]], 20, 2, null, 60],
-  [[[575, 1735], [548, 1600], [548, 1240]], 17, 9, 'bag', 90],
+  [[[575, 1772], [548, 1600], [548, 1240]], 17, 9, 'bag', 90],
   [[[1112, 1100], [1112, 1150], [900, 1150], [880, 1180]], 21, 7, null, 15],
   [[[995, 850], [995, 960], [890, 990], [882, 1090]], 19, 6, 'pack', 70]];
 function routeAt(pts, s, pause) {   // ping-pong along a polyline with a pause at each end: position and heading
@@ -3103,6 +3135,7 @@ function drawWalk() {
   wFlat(BIG_PARK.x1, 950, CAMP_W - BIG_PARK.x1 + 400, 60, '#8f7a5e', .07);                                        // access road off the east
   for (const rx of BP_ROWS) { for (let k = 0; k <= 10; k++) wFlat(rx - 34, 821 + k * 30, 68, 1.4, '#e8e8e8', .1); wFlat(rx + 34, 821, 1.4, 300, '#e8e8e8', .1); }   // bay lines
   for (const ax of [995, 1112]) for (let y = 830; y < 1130; y += 24) wFlat(ax - .8, y, 1.6, 12, '#f2c200', .1);   // driveway centre dashes
+  wFlat(BUS_STOP.x0, BUS_STOP.y0, BUS_STOP.x1 - BUS_STOP.x0, BUS_STOP.y1 - BUS_STOP.y0, '#c9b59a', .055);   // gravel bus stop pull-off
   for (const [x0, y0, x1, y1] of CAMP_DIRT) {   // dirt road: windrows along the edges, red dirt, two darker wheel ruts
     const vert = y1 - y0 > x1 - x0;
     wFlat(x0 - 4, y0 - (vert ? 0 : 4), x1 - x0 + 8, y1 - y0 + (vert ? 0 : 8), '#9a6a48', .05);
@@ -3242,12 +3275,21 @@ function drawWalk() {
   // key and arc lines on the court
   for (const h of HOOPS) { const s2 = Math.sign(h.y - h.pole), y0 = h.y - s2 * 7; wFlat(h.x - 16, Math.min(y0, y0 + s2 * 52), 32, 52, 'rgba(198,40,40,.45)', .15); }
   // crew bus parked on the camp road: people with bags head between it and the room blocks
-  add(600, 1745, () => { wBox(600, 1745, 120, 26, 4, 36, '#f2f2f2', '#dfe3e6'); wBox(600, 1745, 116, 26.4, 20, 30, '#2a4554', '#2a4554'); wBox(600, 1745, 120, 26.6, 12, 15, '#1d5fb4', '#1d5fb4');
-    for (const bx of [560, 640]) for (const s2 of [-1, 1]) wWheel(bx, 1745 + s2 * 12, 5, 3); wText('CREW BUS', 600, 1732, 38, 7, '#1d5fb4'); });
+  add(600, 1787, () => { wBox(600, 1787, 120, 26, 4, 36, '#f2f2f2', '#dfe3e6'); wBox(600, 1787, 116, 26.4, 20, 30, '#2a4554', '#2a4554'); wBox(600, 1787, 120, 26.6, 12, 15, '#1d5fb4', '#1d5fb4');
+    for (const bx of [560, 640]) for (const s2 of [-1, 1]) wWheel(bx, 1787 + s2 * 12, 5, 3); wText('CREW BUS', 600, 1774, 38, 7, '#1d5fb4'); });   // parked on the verge, off the road
   for (const u of BP_UTES) { const d = (u.x - wCam.x) * hx + (u.y - wCam.y) * hy, lat = (u.x - wCam.x) * -hy + (u.y - wCam.y) * hx; if (d < 900 && Math.abs(lat) < d * .62 + 50) add(u.x, u.y, () => campUteModel(u.x, u.y, u.col, d > 170)); }
-  // guide posts (white, red reflector) along the outside of the L, and a sign where it leaves the car park
-  for (let y = 1160; y < 1560; y += 50) for (const x of [978, 1018]) if (!(x === 978 && y > 1540)) add(x, y, () => { wBox(x, y, 1.4, 1.4, 0, 12, '#f4f4f4', '#f4f4f4'); wBox(x, y, 1.6, 1.6, 9, 11, '#d42020', '#d42020'); });
-  for (let x = 600; x < 1000; x += 50) for (const y of [1541, 1581]) if (!(y === 1541 && x > 975)) add(x, y, () => { wBox(x, y, 1.4, 1.4, 0, 12, '#f4f4f4', '#f4f4f4'); wBox(x, y, 1.6, 1.6, 9, 11, '#d42020', '#d42020'); });
+  // guide posts (white, red reflector) along both roads, with gaps at the bus stop and the junction
+  const gpost = (x, y) => add(x, y, () => { wBox(x, y, 1.4, 1.4, 0, 12, '#f4f4f4', '#f4f4f4'); wBox(x, y, 1.6, 1.6, 9, 11, '#d42020', '#d42020'); });
+  for (let y = 1160; y < 1720; y += 50) { gpost(1018, y); if (y < 1175 || y > 1285) gpost(978, y); }
+  for (let x = -380; x < 1000; x += 60) { gpost(x, 1767); if (x < 975 && Math.abs(x - 600) > 75) gpost(x, 1723); }
+  // bus stop: shelter with a bench facing the pull-off, and a sign
+  add(BUS_SHELTER.x, BUS_SHELTER.y, () => { const { x, y } = BUS_SHELTER;
+    for (const [ox, oy] of [[-6, -18], [6, -18], [-6, 18], [6, 18]]) wBox(x + ox, y + oy, 1.4, 1.4, 0, 34, '#7a848b', '#7a848b');
+    wPoly([[x - 6.5, y - 18, 1], [x - 6.5, y + 18, 1], [x - 6.5, y + 18, 32], [x - 6.5, y - 18, 32]], 'rgba(150,190,210,.45)');   // back panel
+    wBox(x - 2, y, 5, 32, 7, 9, '#6b4a33', '#8a5a34'); wBox(x, y, 16, 42, 34, 36, '#1d5fb4', '#2a6fd0'); });   // bench, roof
+  add(978, 1178, () => { wBox(978, 1178, 1.4, 1.4, 0, 34, '#7a848b', '#7a848b'); wBox(978, 1178, 2, 14, 26, 36, '#1d5fb4', '#1d5fb4'); wText('BUS STOP', 977, 1178, 31, 5, '#fff'); });
+  [['#1d5fb4', 0], ['#2f7a46', .5]].forEach(([col, ph]) => { const tot = 2 * 7 + 8 + 5600 / 70, r = loopAt(HIACE_LOOP, 70, wT + ph * tot);
+    const d = (r.x - wCam.x) * hx + (r.y - wCam.y) * hy; if (d > -40 && d < 900) add(r.x, r.y, () => hiaceModel(r.x, r.y, r.dir, col)); });
   add(1022, 1146, () => { wBox(1022, 1146, 1.6, 1.6, 0, 30, '#7a848b', '#7a848b'); wBox(1022, 1146, 18, 2, 24, 32, '#2f7a46', '#2f7a46'); wText('CAMP EXIT', 1022, 1145, 28, 5.5, '#fff'); });
   for (const [lx, ly] of BP_LIGHTS) add(lx, ly, () => { wBox(lx, ly, 2.2, 2.2, 0, 70, '#7a848b', '#8a949b'); wBox(lx, ly, 10, 4, 70, 72, '#3a3f44', '#fff8d0'); });
   add(BIG_PARK.x0 + 6, 970, () => { wBox(BIG_PARK.x0 + 6, 970, 2, 2, 0, 40, '#7a848b', '#7a848b'); wBox(BIG_PARK.x0 + 6, 970, 2.5, 34, 40, 52, '#1d5fb4', '#1d5fb4'); wText('CAR PARK', BIG_PARK.x0 + 5, 970, 46, 7, '#fff'); });
