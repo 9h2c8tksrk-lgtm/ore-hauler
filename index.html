@@ -2404,17 +2404,17 @@ campWing('D', 635, 748, 85, 38, 'S', 0); campWing('D', 635, 890, 85, 38, 'S', 0)
 campDoors('D', 673, 786, 720, 786, 3, 0, 1); campDoors('D', 673, 890, 720, 890, 3, 0, -1); campDoors('D', 673, 786, 673, 890, 3, 1, 0);
 for (const [x, y] of [[640, 500], [640, 550], [640, 600], [760, 540], [760, 595], [640, 700], [760, 705]]) campWing('E', x, y, 80, y < 600 && x === 640 && y === 500 ? 25 : 24, 'S', 3);
 // schedule office north of the tree at (715, 1035), doors facing the tree; the shop & reception sits where the office used to be
-const CAMP_BIG = { kitchen: [760, 880, 115, 200], mess: [755, 1100, 120, 190], office: [662, 955, 68, 45], shop: [670, 1090, 80, 45] };
+const CAMP_BIG = { kitchen: [785, 880, 95, 200], mess: [755, 1100, 120, 190], office: [638, 950, 64, 45], shop: [655, 1090, 70, 45] };   // spaced out: ~80 between office and dining room
 // Wet mess: an open undercover area (posts and a roof, no walls) with one back wall carrying the bar, fridges and a TV.
 // Four small square picnic tables and one long one down the middle.
 const MESS = { x0: 755, x1: 875, y0: 1100, y1: 1290 }, MESS_SMALL = [[782, 1142], [848, 1142], [782, 1262], [848, 1262]], MESS_BIG = { x: 815, y: 1203, len: 64 };
 const MESS_POSTS = [[757, 1102], [873, 1102], [757, 1196], [873, 1196], [757, 1288], [873, 1288]];
 const MY_BAY = { x: 935, y: 956 };   // your ute: first row of the big car park, nearest the kitchen
 const CAR_SPOTS = [{ x: MY_BAY.x - 32, y: MY_BAY.y - 13, w: 64, h: 26, mine: true }];
-const KITCHEN_DOOR = { x: 760, y: 980 };   // double doors into the dining room, on the kitchen's west face
+const KITCHEN_DOOR = { x: 785, y: 980 };   // double doors into the dining room, on the kitchen's west face
 const nearKitchen = () => Math.hypot(wp.x - (KITCHEN_DOOR.x - 18), wp.y - KITCHEN_DOOR.y) < 34;
-const OFFICE_DOOR = { x: 696, y: 1000, nx: 0, ny: 1, hw: 12 }, SHOP_DOOR = { x: 710, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
-const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [715, 1035], [260, 730], [260, 910], [260, 1230], [265, 1400]];
+const OFFICE_DOOR = { x: 670, y: 995, nx: 0, ny: 1, hw: 12 }, SHOP_DOOR = { x: 690, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
+const CAMP_TREES = [[485, 570], [485, 700], [485, 1035], [695, 655], [670, 1040], [260, 730], [260, 910], [260, 1230], [265, 1400]];
 // Big car park behind (east of) the kitchen and dining room: three rows of nose-in bays, driveways between them,
 // light poles. Most bays are taken by utes.
 const BIG_PARK = { x0: 895, x1: 1215, y0: 815, y1: 1135 }, BP_ROWS = [935, 1055, 1170], BP_BAYS = Array.from({ length: 10 }, (_, k) => 836 + k * 30);
