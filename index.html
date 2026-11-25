@@ -802,7 +802,10 @@ const workshopParked = () => state==='workshop' && wk && wk.v<8 &&
 // footprint (WK) is unchanged; this interior has its own coordinates: x across the bays, y from the back
 // wall (y = 0) to the open front roller doors (y = SH_D), z up.
 const SB = 156, SH_W = SB * 6, SH_D = 780, SH_H = 230, sbx = i => SB / 2 + i * SB;
-const SH_DOOR = { y0: 272, y1: 308 };            // personnel door in the left (Bay 1) wall, opening onto the courtyard
+const SH_DOORS = [{ y0: 150, y1: 186 }, { y0: 664, y1: 700 }];   // clear of the wall's portal frame columns (every 130)   // two PA doors in the left (Bay 1, tyre bay) wall, one at each end, opening towards the crib room
+const shInDoor = (y, pad = 0) => SH_DOORS.some(d => y > d.y0 - pad && y < d.y1 + pad);
+const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { o.push([a, d.y0]); a = d.y1; } o.push([a, SH_D]); return o; };   // solid stretches of the Bay 1 wall
+const SH_OUT = { x0: -420, y0: -90, y1: SH_D + 90 };   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
 // Four transportables in a pinwheel round a courtyard beside Bay 1, laid out like the yard's aerial map. Each has its door
 // on the courtyard side (face N/S/E/W); the crib room is the one you head for.
 const SH_BLDGS = [
@@ -831,7 +834,6 @@ function shopSolids() {
   { const pm0 = L.pms[0] || { bay: L.bay, F: L.F }; o.push([sbx(pm0.bay) - 56, pm0.F - 152, 44, 48]); }   // mobile work platform
   if (L.lv) o.push([sbx(L.lv.bay), L.lv.F - 69, 60, 146]);
   o.push([40, 60, 46, 38]);                                        // tyre inflation cage (back corner)
-  o.push([22, 175, 30, 150]);                                      // tyre rack on the Bay 1 wall behind the side door: the aisle from the bay mouth to the door stays clear
   for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
   for (const y of [320, 440]) o.push([SH_W - 22, y, 24, 22]);     // roll-around tool cabinets
   o.push([FORK.x, FORK.y + 2, 30, 60]);                             // forklift
@@ -840,15 +842,19 @@ function shopSolids() {
   return o;
 }
 function shopBlocked(x, y) {
-  if (x < 0) {   // outside the personnel door: the courtyard and the transportables round it
-    if (x < -420 || y < 160 || y > 540) return true;
+  if (x < SH_OUT.x0 || x > SH_W - 8 || y < SH_OUT.y0 || y > SH_OUT.y1) return true;
+  const inLen = y > 0 && y < SH_D;
+  if (Math.abs(x) < 8 && inLen) return !shInDoor(y, -6);   // the Bay 1 wall: only through a PA door
+  for (let i = 0; i <= 6; i++) if (Math.abs(x - i * SB) < 12 && (Math.abs(y - 6) < 12 || Math.abs(y + 6) < 9)) return true;   // back columns and bollards
+  const L = shopL;   // the rest of each rig's trailers run out the open back of its bay
+  for (const [bay, T0] of [[L.bay, L.T0], ...L.pms.map(pm => [pm.bay, pm.F - 230])]) if (Math.abs(x - sbx(bay)) < 42 && y < T0 - 290) return true;
+  if (x < 0) {   // the courtyard side: transportables and the tank
     if (Math.hypot(x - SH_TANK.x, y - SH_TANK.y) < SH_TANK.r + 5) return true;
     return SH_BLDGS.some(b => x > b.x0 - 5 && x < b.x1 + 5 && y > b.y0 - 5 && y < b.y1 + 5);
   }
-  if (x < 8) return !(y > SH_DOOR.y0 + 6 && y < SH_DOOR.y1 - 6);
-  if (x > SH_W - 8 || y < 8 || y > SH_D - 8) return true;
-  for (const i of PIT_BAYS) { const p = shopPit(i), r = pitRailed(i) ? 9 + 4 : 5; if (Math.abs(x - p.x) < p.w / 2 + r && y > p.y0 - (r + 4) && y < p.y1 + (r + 4)) return true; }
   if (shopSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 5 && Math.abs(y - cy) < l / 2 + 5)) return true;
+  if (!inLen) return false;   // out on the front or back apron
+  for (const i of PIT_BAYS) { const p = shopPit(i), r = pitRailed(i) ? 9 + 4 : 5; if (Math.abs(x - p.x) < p.w / 2 + r && y > p.y0 - (r + 4) && y < p.y1 + (r + 4)) return true; }
   return false;   // the crew step round you (they pause when you're close), so they never block the way to the crib room
 }
 const shopCabDoor = () => ({ x: sbx(shopL.bay) - 46, y: shopL.F - 104 });   // driver's door: right-hand drive, on the -x side
@@ -872,7 +878,7 @@ function enterWorkshopFoot() {
   const bx = sbx(shopL.bay), s = shopL.bay === 0 ? 1 : -1;
   workshopFoot = { x: bx + s * 62, y: SH_D - 70 }; footFacing = Math.atan2(-120, -s * 62); footCamH = footFacing;   // front corner of your rig, looking along it
   shopCrewInit(); wk.v = 0; ptrs.clear(); syncBtns();
-  flash('Walk to the Bay 1 side door and out to the crib room.');
+  flash('Walk to the crib room: out a Bay 1 PA door, or out the big bay doors and round the side.');
 }
 function updateWorkshopFoot(dt) {
   time += dt; msgT -= dt; footTime += dt;
@@ -902,9 +908,10 @@ function drawWorkshopFoot() {
   // third-person: the camera trails 90 units behind and 85 up, swinging round after you; it never leaves the side of the wall you're on
   const fx = Math.cos(footCamH), fy = Math.sin(footCamH), rx = -fy, ry = fx, me = workshopFoot;
   // pull the camera in if a truck, column or wall is behind you, so it never ends up inside something
-  const inShed = me.x >= 0, sol = inShed ? shopSolids().filter(([, cy, w]) => !(w === 14 && cy > SH_D - 10))   // columns only clip a sliver, so they don't pull the camera in
-    : SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]);
-  const camBlocked = (x, y) => (inShed ? (x < 6 || x > SH_W - 6 || y < 6) : (x > -6 || x < -415 || y < 165 || y > 535)) || sol.some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
+  const sol = [...shopSolids().filter(([, cy, w]) => !(w === 14 && cy > SH_D - 10)),   // columns only clip a sliver, so they don't pull the camera in
+    ...SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]),
+    ...[[shopL.bay, shopL.T0], ...shopL.pms.map(pm => [pm.bay, pm.F - 230])].map(([bay, T0]) => [sbx(bay), T0 - 290 - 600, 80, 1200])];   // trailers out the back of each bay
+  const camBlocked = (x, y) => x < SH_OUT.x0 + 5 || x > SH_W - 6 || y < SH_OUT.y0 - 60 || y > SH_OUT.y1 + 60 || (Math.abs(x) < 6 && y > 0 && y < SH_D && (!shInDoor(y) || Math.abs(me.x) > 8)) || sol.some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
   let dist = 90; for (let t = 8; t <= 90; t += 3) if (camBlocked(me.x - fx * t, me.y - fy * t)) { dist = Math.max(22, t - 6); break; }
   const CX = me.x - fx * dist, CY = me.y - fy * dist;
   // a camera pulled in close rises and tilts down to look over whatever is behind you; pitch keeps you centred
@@ -1098,6 +1105,10 @@ function drawWorkshopFoot() {
   }
   add(SH_TANK.x, SH_TANK.y, () => vcyl(SH_TANK.x, SH_TANK.y, SH_TANK.r, 0, 64, '#5e7f5a', '#4e6b4b'), outside);   // rainwater tank
   flat(-307, 269, -165, 428, .04, '#b7a58f');   // courtyard pavers
+  const [pa1, pa2] = SH_DOORS.map(d => (d.y0 + d.y1) / 2);
+  for (const [x0, y0, x1, y1] of [[-80, pa1 - 8, 0, pa1 + 8], [-80, pa2 - 8, 0, pa2 + 8], [-80, pa1 - 8, -64, pa2 + 8],   // paths from both PA doors
+    [-80, -60, -64, pa1], [-80, -60, SH_W, -44], [-80, pa2, -64, SH_D + 60], [-80, SH_D + 44, SH_W, SH_D + 60], [-165, 280, -64, 296]])   // round from the bay doors, and into the courtyard
+    flat(x0, y0, x1, y1, .03, '#b39b80');
 
   // ----- inspection pit, as on site: yellow steel kerb with bolt holes, white lined walls with LED strip lights, checker-plate
   // floor with absorbent on the spills and a drain grate, steel stairs with yellow nosings at both ends, an oil drain tray and a
@@ -1167,23 +1178,23 @@ function drawWorkshopFoot() {
     const wall = (pts, col) => face(pts, col);
     wall([[0, 0, 185], [SH_W, 0, 185], [SH_W, 0, SH_H], [0, 0, SH_H]], '#9aa4ab');   // back header: every bay is open, drive-through
     wall([[SH_W, 0, 0], [SH_W, SH_D, 0], [SH_W, SH_D, SH_H], [SH_W, 0, SH_H]], '#aab3b9');
-    wall([[0, 0, 0], [0, SH_DOOR.y0, 0], [0, SH_DOOR.y0, SH_H], [0, 0, SH_H]], '#aab3b9');
-    wall([[0, SH_DOOR.y1, 0], [0, SH_D, 0], [0, SH_D, SH_H], [0, SH_DOOR.y1, SH_H]], '#aab3b9');
-    wall([[0, SH_DOOR.y0, 56], [0, SH_DOOR.y1, 56], [0, SH_DOOR.y1, SH_H], [0, SH_DOOR.y0, SH_H]], '#aab3b9');
+    for (const [a, b] of shWallSegs()) wall([[0, a, 0], [0, b, 0], [0, b, SH_H], [0, a, SH_H]], '#aab3b9');
+    for (const d of SH_DOORS) wall([[0, d.y0, 56], [0, d.y1, 56], [0, d.y1, SH_H], [0, d.y0, SH_H]], '#aab3b9');
     wall([[0, SH_D, 185], [SH_W, SH_D, 185], [SH_W, SH_D, SH_H], [0, SH_D, SH_H]], '#9aa4ab');   // front header
-    for (let y = 10; y < SH_D; y += 20) { if (y > SH_DOOR.y0 - 4 && y < SH_DOOR.y1 + 4) continue; face([[1, y, 0], [1, y + 4, 0], [1, y + 4, SH_H], [1, y, SH_H]], '#9ca6ad'); face([[SH_W - 1, y, 0], [SH_W - 1, y + 4, 0], [SH_W - 1, y + 4, SH_H], [SH_W - 1, y, SH_H]], '#9ca6ad'); }
+    for (let y = 10; y < SH_D; y += 20) { if (shInDoor(y, 4)) continue; face([[1, y, 0], [1, y + 4, 0], [1, y + 4, SH_H], [1, y, SH_H]], '#9ca6ad'); face([[SH_W - 1, y, 0], [SH_W - 1, y + 4, 0], [SH_W - 1, y + 4, SH_H], [SH_W - 1, y, SH_H]], '#9ca6ad'); }
     for (const z of [60, 120, 175]) { face([[1, 0, z], [1, SH_D, z], [1, SH_D, z + 3], [1, 0, z + 3]], '#7e8a92'); face([[SH_W - 1, 0, z], [SH_W - 1, SH_D, z], [SH_W - 1, SH_D, z + 3], [SH_W - 1, 0, z + 3]], '#7e8a92'); }
     // lines on the floor are part of the slab; signage on the walls
     face([[SH_W - 1.5, 470, 95], [SH_W - 1.5, 560, 95], [SH_W - 1.5, 560, 140], [SH_W - 1.5, 470, 140]], '#f4f6f7');   // whiteboard
   };
   const leftWallOutside = () => {   // seen from the yard: the shed's corrugated Bay 1 wall with its door opening
     const c = '#c7ced3';
-    face([[0, 0, 0], [0, SH_DOOR.y0, 0], [0, SH_DOOR.y0, SH_H], [0, 0, SH_H]], c);
-    face([[0, SH_DOOR.y1, 0], [0, SH_D, 0], [0, SH_D, SH_H], [0, SH_DOOR.y1, SH_H]], c);
-    face([[0, SH_DOOR.y0, 56], [0, SH_DOOR.y1, 56], [0, SH_DOOR.y1, SH_H], [0, SH_DOOR.y0, SH_H]], c);
-    for (let y = 10; y < SH_D; y += 20) if (y < SH_DOOR.y0 - 4 || y > SH_DOOR.y1 + 4) face([[-.5, y, 0], [-.5, y + 4, 0], [-.5, y + 4, SH_H], [-.5, y, SH_H]], '#aeb6bc');
-    face([[-1, SH_DOOR.y0 - 3, 56], [-1, SH_DOOR.y1 + 3, 56], [-1, SH_DOOR.y1 + 3, 60], [-1, SH_DOOR.y0 - 3, 60]], '#1d5fb4');
-    label(-1, (SH_DOOR.y0 + SH_DOOR.y1) / 2, 70, 'WORKSHOP', 9, '#1d5fb4');
+    for (const [a, b] of shWallSegs()) face([[0, a, 0], [0, b, 0], [0, b, SH_H], [0, a, SH_H]], c);
+    for (const d of SH_DOORS) face([[0, d.y0, 56], [0, d.y1, 56], [0, d.y1, SH_H], [0, d.y0, SH_H]], c);
+    for (let y = 10; y < SH_D; y += 20) if (!shInDoor(y, 4)) face([[-.5, y, 0], [-.5, y + 4, 0], [-.5, y + 4, SH_H], [-.5, y, SH_H]], '#aeb6bc');
+    for (const d of SH_DOORS) {
+      face([[-1, d.y0 - 3, 56], [-1, d.y1 + 3, 56], [-1, d.y1 + 3, 60], [-1, d.y0 - 3, 60]], '#1d5fb4');
+      label(-1, (d.y0 + d.y1) / 2, 70, 'WORKSHOP', 9, '#1d5fb4');
+    }
   };
 
   // ----- interior objects
@@ -1247,18 +1258,18 @@ function drawWorkshopFoot() {
     }
     for (const y of [ya, yb]) add(p.x, y, () => { for (const z of [14.5, 28.5]) box(p.x, y, 2 * off - 4, 2.6, 2.6, railY, railT, z); box(p.x, y, 2.6, 2.6, 30, railY, railT); });   // gates over the stairs
   }
-  // tyre bay gear: rack of new tyres on the Bay 1 wall, inflation cage, wheel dolly
-  add(22, 175, () => {   // galvanised two-tier rack of new tyres on polished alloy rims
-    for (const y of [102, 175, 248]) for (const x of [10, 34]) box(x, y, 3, 3, 66, '#aeb6bc', '#c9d0d4');
-    for (const z of [2, 33]) for (const x of [10, 34]) box(x, 175, 2.5, 150, 2.5, '#d62828', '#e04444', z);
-    for (let k = 0; k < 4; k++) for (const z of [0, 33.5]) tyre(22, 120 + k * 34, 13.5, 12, '#e3e8eb', z + 2);
+  // tyre bay gear: rack of new tyres up on the Bay 1 wall, inflation cage, wheel dolly
+  add(22, 290, () => {   // galvanised two-tier rack of new tyres on polished alloy rims, bracketed to the Bay 1 wall above head height so the aisle under it stays clear
+    for (const y of [217, 290, 363]) { box(3, y, 3, 3, 130, '#aeb6bc', '#c9d0d4', 2); for (const z of [64, 95]) box(20, y, 34, 3, 2.5, '#aeb6bc', '#c9d0d4', z - 3); }   // wall posts and brackets
+    for (const z of [64, 95]) for (const x of [10, 34]) box(x, 290, 2.5, 150, 2.5, '#d62828', '#e04444', z);
+    for (let k = 0; k < 4; k++) for (const z of [64, 95.5]) tyre(22, 235 + k * 34, 13.5, 12, '#e3e8eb', z + 2);
   });
   for (const [y, c] of [[320, '#c62828'], [440, '#1f4fa0']]) add(SH_W - 22, y, () => {   // roll-around tool cabinets
     box(SH_W - 22, y, 22, 20, 34, c, shade(c, 1.15), 3); box(SH_W - 22, y, 23, 21, 1.2, '#1d2023', '#2b2f33', 37);
     for (const z of [9, 15, 21, 27, 33]) box(SH_W - 33.4, y, .8, 18, .7, '#d6dbde', '#d6dbde', z);
     for (const d of [-7, 7]) box(SH_W - 22, y + d, 4, 4, 3, '#1d2023', '#2b2f33');
   });
-  add(2, (SH_DOOR.y0 + SH_DOOR.y1) / 2, () => { const yc = (SH_DOOR.y0 + SH_DOOR.y1) / 2; face([[1.3, yc - 9, 60], [1.3, yc + 9, 60], [1.3, yc + 9, 67], [1.3, yc - 9, 67]], '#1f8a4c'); label(1.3, yc, 62, 'EXIT', 4.5, '#fff'); });
+  for (const d of SH_DOORS) { const yc = (d.y0 + d.y1) / 2; add(2, yc, () => { face([[1.3, yc - 9, 60], [1.3, yc + 9, 60], [1.3, yc + 9, 67], [1.3, yc - 9, 67]], '#1f8a4c'); label(1.3, yc, 62, 'EXIT', 4.5, '#fff'); }); }
   add(40, 60, () => { box(40, 60, 46, 38, 2, '#333', '#444'); for (const [x, y] of [[-21, -17], [21, -17], [-21, 17], [21, 17]]) box(40 + x, 60 + y, 3, 3, 46, '#d62828'); for (const z of [14, 30, 46]) { box(40, 43, 46, 2, 2, '#d62828', '#d62828', z); box(40, 77, 46, 2, 2, '#d62828', '#d62828', z); box(19, 60, 2, 38, 2, '#d62828', '#d62828', z); box(61, 60, 2, 38, 2, '#d62828', '#d62828', z); } });
   add(40, 60, () => tyre(40, 60, 13.5, 12));
   // right wall: workbenches with vices, tool cabinets, bulk oil, parts washer, hose reels, extinguishers
@@ -1271,7 +1282,7 @@ function drawWorkshopFoot() {
   add(SH_W - 24, 620, () => { box(SH_W - 24, 620, 30, 40, 44, '#b52d2d', '#d44739'); for (let z = 6; z < 42; z += 6) box(SH_W - 39.5, 620, 1, 34, 1, '#e0e4e7', '#e0e4e7', z); });
   add(SH_W - 42, 172, () => { for (const [x, y, c] of [[-14, -14, '#1f4fa0'], [14, -14, '#1f4fa0'], [-14, 14, '#2b7a3d'], [14, 14, '#d9a400']]) vcyl(SH_W - 42 + x, 172 + y, 11, 0, 34, c); });   // 205 L oil drums
   add(SH_W - 26, 700, () => { box(SH_W - 26, 700, 34, 40, 34, '#2f6f9f', '#3a82b8'); box(SH_W - 26, 700, 30, 36, 2, '#9aa3aa', '#c3cacf', 34); });   // parts washer
-  for (const [x, y] of [[SH_W - 3, 330], [SH_W - 3, 560], [3, 520], [3, 650]]) add(x, y, () => { vcyl(x + Math.sign(SH_W / 2 - x) * 4, y, 3, 30, 46, '#d62828'); box(x, y, 1, 16, 20, '#e8e8e8', '#e8e8e8', 50); });
+  for (const [x, y] of [[SH_W - 3, 330], [SH_W - 3, 560], [3, 520], [3, 590]]) add(x, y, () => { vcyl(x + Math.sign(SH_W / 2 - x) * 4, y, 3, 30, 46, '#d62828'); box(x, y, 1, 16, 20, '#e8e8e8', '#e8e8e8', 50); });
   // portal frames on the side walls carrying the overhead crane runway
   for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#a3abb1', '#bcc3c8'); });
   for (const x of [9, SH_W - 9]) for (let y = 65; y < SH_D; y += 130) add(x, y, () => box(x, y, 8, 130, 8, safety, '#f6d64a', SH_H - 48));
@@ -1323,7 +1334,7 @@ function drawWorkshopFoot() {
   const atCab = cribReached && shopAtCab();
   rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - THIRD PERSON', W / 2, 26, 19, '#ffe568');
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
-  text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: BAY 1 SIDE DOOR, THEN THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
+  text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
   const atOff = nearWsOffice(); if (atOff) text('PRESS E TO GO INTO THE WORKSHOP OFFICE', W / 2, 160, 14, '#83f5a3');
   if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : 'ENTER CAB', false); }
