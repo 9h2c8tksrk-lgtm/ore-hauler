@@ -3034,14 +3034,16 @@ function drawWsOffice() {
 // Each room has local coordinates: x across, y from the back wall (y0) to the wall with the door (y1), door at x = door.
 // Facing in from the door, -x is on your left. The toilet layout is drawn once and mirrored (m = -1) for the male side.
 const SHR = {
-  crib: { title: 'CRIB ROOM', bld: 0, B: { x0: -120, x1: 120, y0: -55, y1: 55 }, door: 0, floor: '#a9b4b9', wall: '#dfe3e5', hint: 'Tables and the footy on the left, fridges, sink and ice machine on the right.' },
-  female: { title: 'FEMALE TOILETS', bld: 2, label: 'FEMALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: 8, m: 1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Two cubicles and two basins.' },
-  male: { title: 'MALE TOILETS', bld: 2, label: 'MALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: -8, m: -1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Two cubicles, a urinal and two basins.' } };
+  crib: { title: 'CRIB ROOM', bld: 0, B: { x0: -120, x1: 120, y0: -55, y1: 55 }, door: 0, floor: '#a9b4b9', wall: '#dfe3e5', hint: 'Crib room: tables and the footy on the left, fridges, sink and ice machine on the right.' },
+  female: { title: 'FEMALE TOILETS', bld: 2, label: 'FEMALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: 8, m: 1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Female toilets: two cubicles and two basins.' },
+  ops: { title: 'OPERATIONS & HSEC OFFICE', bld: 3, B: { x0: -130, x1: 130, y0: -50, y1: 50 }, door: 0, floor: '#7f8d99', wall: '#e3e6e8', hint: 'Operations and HSEC: two planners at their desks, shelving down the end, the superintendent\'s office on your left.' },
+  male: { title: 'MALE TOILETS', bld: 2, label: 'MALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: -8, m: -1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Male toilets: two cubicles, a urinal and two basins.' } };
 let shRoom = 'crib';
 const shRoomDoor = k => { const r = SHR[k], b = SH_BLDGS[r.bld], ds = shDoors(b); return ds.find(d => d.label === r.label) || ds[0]; };
 const nearShRoom = () => { if (state !== 'workshopfoot') return null;
   for (const k in SHR) { const d = shRoomDoor(k), n = shDoorN(SH_BLDGS[SHR[k].bld]); if (Math.hypot(workshopFoot.x - d.x - n.x * 14, workshopFoot.y - d.y - n.y * 14) < 18) return k; }
   return null; };
+const OPS_PART = -62, OPS_GAP = [14, 38], OPS_DESKS = [-40, 40];   // superintendent's partition (with an open doorway), the two L-shaped desks' left ends
 const CRIB_TABLES = [-88, -52], CRIB_TY = -12, CRIB_TV_Y = -10, CRIB_FRIDGES = [56, 70, 84];
 const SHR_SPOTS = {
   crib: [{ x: -70, y: 26, r: 18, act: 'sit down for smoko', msg: 'Smoko: a sanga and a cuppa at the table. The boys are arguing about the footy.' },
@@ -3049,6 +3051,10 @@ const SHR_SPOTS = {
     { x: 70, y: -34, r: 16, act: 'grab a cold drink', msg: 'Grabbed an icy cold one from the fridge. Name\'s on the lid, no stealing.' },
     { x: 100, y: -4, r: 13, act: 'wash your dishes', msg: 'Washed your cup and plate and left them in the rack.' },
     { x: 98, y: 34, r: 11, act: 'fill your bottle with ice', msg: 'Filled your water bottle with ice for the drive.' }],
+  ops: [{ x: -84, y: -15, r: 16, act: 'talk to the superintendent', msg: 'Superintendent (on the phone): "Yep, PA233 is back on the road after smoko." He gives you a thumbs up.' },
+    { x: -22, y: -10, r: 14, act: 'talk to the planner', msg: 'Planner: "You\'re on the board for two more loads to the Skyway today."' },
+    { x: 58, y: -10, r: 14, act: 'talk to the HSEC advisor', msg: 'HSEC advisor: "Don\'t forget your take 5 before you head out. Fatigue form\'s due too."' },
+    { x: 108, y: 0, r: 16, act: 'look through the shelves', msg: 'Shelves of SOPs, MSDS binders, spare PPE and boxes of earplugs.' }],
   female: [{ x: -48, y: -8, r: 12, act: 'use the cubicle', msg: 'Cubicle 1 is engaged. Try the other one.' }, { x: -18, y: -8, r: 12, act: 'use the cubicle', msg: 'All done in cubicle 2.' },
     { x: 46, y: -14, r: 14, act: 'wash your hands', msg: 'Washed your hands. Soap, water, paper towel.' }],
   male: [{ x: -48, y: -8, r: 12, act: 'use the cubicle', msg: 'Cubicle 1 is engaged. Try the other one.' }, { x: -18, y: -8, r: 12, act: 'use the cubicle', msg: 'All done in cubicle 2.' },
@@ -3056,6 +3062,10 @@ const SHR_SPOTS = {
 const shrSpots = () => SHR_SPOTS[shRoom].map(sp => ({ ...sp, x: sp.x * (SHR[shRoom].m || 1) }));
 const shrNear = () => shrSpots().find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
 function shrSolids() {
+  if (shRoom === 'ops') return [[OPS_PART, (-50 + OPS_GAP[0]) / 2, 4, OPS_GAP[0] + 50], [OPS_PART, (OPS_GAP[1] + 50) / 2, 4, 50 - OPS_GAP[1]],   // partition either side of the doorway
+    [-98, -15, 16, 40], [-114, -15, 12, 12], [-122, 32, 12, 16],   // superintendent's desk, his chair, filing cabinet
+    ...OPS_DESKS.flatMap(x0 => [[x0 + 25, -43, 50, 14], [x0 + 45, -26, 14, 22], [x0 + 18, -26, 12, 12]]),   // each L-shaped desk and its occupied chair
+    [123, 0, 14, 84]];   // shelving down the right end wall
   if (shRoom === 'crib') return [...CRIB_TABLES.map(tx => [tx, CRIB_TY, 32, 36]), [70, -49, 44, 12], [114, -4, 12, 34], [98, 48, 16, 12], [-118, CRIB_TV_Y, 4, 22]];
   const m = SHR[shRoom].m, o = [[-48 * m, -34, 30, 32], [-18 * m, -34, 30, 32], [59 * m, -14, 10, 40]];
   if (shRoom === 'male') o.push([30 * m, -47, 12, 6]);
@@ -3067,10 +3077,10 @@ function shrBlocked(x, y) {
   if (x < B.x0 + 5 || x > B.x1 - 5 || y < B.y0 + 5) return true;
   return shrSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
 }
-function enterShRoom(k) {
+function enterShRoom(k) {   // (the hint names the room)
   shRoom = k; state = 'shroom'; kit = { x: SHR[k].door, y: SHR[k].B.y1 - 12, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
   if (k === 'crib' && !cribReached) reachCrib();
-  else flash(SHR[k].title.charAt(0) + SHR[k].title.slice(1).toLowerCase() + '. ' + SHR[k].hint);
+  else flash(SHR[k].hint);
 }
 function leaveShRoom() {
   const b = SH_BLDGS[SHR[shRoom].bld], d = shRoomDoor(shRoom), n = shDoorN(b);
@@ -3095,7 +3105,7 @@ function drawShRoom() {
   wFlat(B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0, r.floor);
   for (let x = B.x0 + 10; x < B.x1; x += 10) wFlat(x, B.y0, .4, B.y1 - B.y0, shade(r.floor, .93), .05);
   for (let y = B.y0 + 10; y < B.y1; y += 10) wFlat(B.x0, y, B.x1 - B.x0, .4, shade(r.floor, .93), .05);
-  const tiles = shRoom !== 'crib', SK = '#9aa0a4';
+  const tiles = !!r.m, SK = '#9aa0a4';
   const wallY = (x0, x1, y, cut, z0 = 0) => add((x0 + x1) / 2, y, () => { if (cut()) ctx.globalAlpha = .18; Y(x0, x1, y, z0, 44, r.wall);
     if (tiles) { for (let z = 6; z < 26; z += 6) Y(x0, x1, y, z, z + .3, '#d3d8db'); Y(x0, x1, y, 0, 26, 'rgba(160,200,215,.18)'); } if (!z0) Y(x0, x1, y, 0, 3, SK); ctx.globalAlpha = 1; }, pre);
   const wallX = (x, y0, y1, cut) => add(x, (y0 + y1) / 2, () => { if (cut()) ctx.globalAlpha = .18; X(x, y0, y1, 0, 44, r.wall);
@@ -3108,7 +3118,59 @@ function drawShRoom() {
     if (wCam.y > B.y1) ctx.globalAlpha = .18;
     Y(dx - 12, dx + 12, y, 0, 35, '#8a949b'); Y(dx - 10.5, dx + 10.5, y - .1, 0, 33.5, col); Y(dx + 6, dx + 9, y - .2, 15, 16.5, '#d8dde0');
     Y(dx - 6, dx + 6, y - .2, 37, 41, '#1f8a4c'); wText('EXIT', dx, y - .3, 39, 3.5, '#fff'); ctx.globalAlpha = 1; }, pre);
-  if (shRoom === 'crib') {
+  if (shRoom === 'ops') {
+    const P = OPS_PART, [g0, g1] = OPS_GAP, behind = (wCam.x - P) * (kit.x - P) < 0;   // the partition fades when it's between the camera and you
+    add(P, 0, () => { if (behind) ctx.globalAlpha = .22;
+      for (const [a, z] of [[-50, g0], [g1, 50]]) { wBox(P, (a + z) / 2, 3, z - a, 0, 44, '#d4d9dc', '#c3c9cd'); }
+      wBox(P, (g0 + g1) / 2, 3, g1 - g0, 36, 44, '#d4d9dc', '#c3c9cd');                                             // header over the open doorway
+      X(P + 1.6, g0 - 1, g0 + 1, 0, 36, '#9aa3aa'); X(P + 1.6, g1 - 1, g1 + 1, 0, 36, '#9aa3aa');                       // door frame
+      X(P + 1.7, g0 + 2, g1 - 2, 38, 42, '#1d5fb4'); wText('SUPERINTENDENT', P + 1.8, (g0 + g1) / 2, 39.4, 2.1, '#fff');   // sign over the doorway
+      X(P + 1.6, -40, 2, 18, 38, '#a9c7d6'); X(P + 1.65, -38, -24, 30, 36, 'rgba(255,255,255,.4)');                    // internal window
+      ctx.globalAlpha = 1; });
+    // superintendent's office: desk facing the doorway, him behind the computer on the phone, filing cabinet, visitor chair, mine plan on the wall
+    add(-98, -15, () => {
+      for (const [lx, ly] of [[-6, -18], [6, -18], [-6, 18], [6, 18]]) wBox(-98 + lx, -15 + ly, 1.4, 1.4, 0, 13, '#7e868c', '#7e868c');
+      wBox(-98, -15, 16, 40, 13, 15, '#8a6a44', '#a07c50');
+      wBox(-101, -28, 2, 13, 15, 26, '#121417', '#1d2023'); wBox(-101, -28, 4, 4, 15, 16.5, '#2b2f33', '#3a3f44');      // monitor off to one side, so you see him from the doorway
+      wBox(-97, -22, 5, 11, 15, 15.7, '#25292e', '#3a3f44'); wBox(-96, 0, 6, 8, 15, 16.2, '#f4f4f4', '#ffffff');          // keyboard, paperwork
+      wBox(-94, -30, 3, 3, 15, 22, '#1b1d20', '#2b2f33');                                                               // radio
+    });
+    add(-114, -15, () => {   // his chair, and him in it on the phone
+      wBox(-114, -15, 2, 2, 1.5, 7, '#2b2f33', '#3a3f44'); wBox(-114, -15, 11, 12, 7, 8.5, '#1d1f22', '#2a2d31'); wBox(-119.5, -15, 2.5, 12, 8.5, 24, '#1d1f22', '#2a2d31');
+      campHuman(-113, -15, true, false, { dir: 0, sit: 1, scale: .7, pose: 'phone', shirt: '#f2f2f2', stripe: null, pants: '#2b2f3a', hair: 'short', hairCol: '#9a9a9a', skin: '#d8a27b', t: wT });
+    });
+    add(-78, -15, () => { wBox(-78, -15, 10, 10, 7, 8.5, '#2f6f9f', '#3a82b8'); wBox(-73.5, -15, 1.5, 10, 8.5, 18, '#2f6f9f', '#3a82b8'); for (const [lx, ly] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) wBox(-78 + lx, -15 + ly, .8, .8, 0, 7, '#5d666d', '#5d666d'); });   // visitor chair
+    add(-122, 32, () => { wBox(-122, 32, 12, 16, 0, 30, '#8e979d', '#a3abb1'); for (const z of [8, 16, 24]) X(-115.9, 27, 37, z, z + .5, '#6f777d'); });   // filing cabinet
+    add(-96, B.y0 + 1, () => { Y(-122, -70, B.y0 + .3, 18, 40, '#f4f4f2'); Y(-120, -72, B.y0 + .2, 20, 38, '#c98a63'); Y(-110, -96, B.y0 + .15, 24, 34, '#8a5a3a'); Y(-90, -78, B.y0 + .15, 22, 30, '#6a7d8e'); wText('MINE PLAN', -96, B.y0 + .1, 38.8, 2, '#1d2023'); }, pre);
+    // the main office: two L-shaped desks along the back wall, each with two screens and a planner at it
+    OPS_DESKS.forEach((x0, i) => {
+      add(x0 + 25, -40, () => {
+        for (const [lx, ly] of [[x0 + 1, -49], [x0 + 49, -49], [x0 + 51, -16]]) wBox(lx, ly, 1.6, 1.6, 0, 13, '#9a9ea2', '#9a9ea2');
+        wBox(x0 + 25, -43, 50, 14, 13, 15, '#c9cdd0', '#e6e8ea'); wBox(x0 + 45, -26, 14, 22, 13, 15, '#c9cdd0', '#e6e8ea');   // the L
+        for (const dx of [10, 26]) { wBox(x0 + dx, -48, 2, 2, 15, 18, '#1d2023', '#2b2f33'); wBox(x0 + dx, -47.5, 14, 1.6, 18, 27, '#121417', '#1d2023'); Y(x0 + dx - 6.4, x0 + dx + 6.4, -46.6, 18.8, 26.2, i ? '#3e6f9f' : '#4f8a5a'); }   // two screens each
+        wBox(x0 + 18, -38, 14, 5, 15, 15.7, '#25292e', '#3a3f44'); wBox(x0 + 45, -28, 10, 12, 15, 16.4, '#f4f4f4', '#ffffff');   // keyboard, printouts
+        wBox(x0 + 47, -20, 3, 3, 15, 19, '#f4f4f4', i ? '#c0392b' : '#1d5fb4');                                               // mug
+      });
+      add(x0 + 18, -26, () => {
+        wBox(x0 + 18, -26, 2, 2, 1.5, 7, '#2b2f33', '#3a3f44'); wBox(x0 + 18, -25, 11, 12, 7, 8.5, '#1d1f22', '#2a2d31'); wBox(x0 + 18, -19.5, 12, 2.5, 8.5, 24, '#1d1f22', '#2a2d31');
+        campHuman(x0 + 18, -27, false, false, { dir: -Math.PI / 2, sit: 1, scale: .7, shirt: i ? '#ff8a1c' : '#e6e21a', stripe: '#e4e8e9', pants: '#2a3b5c', hair: i ? 'ponytail' : 'cap', cap: '#1d5fb4', hairCol: i ? '#2a1c14' : '#3a2a20', skin: i ? '#c58a62' : '#e2ab86', t: wT + i * 3 });
+      });
+    });
+    // shelving down the right end wall: binders, boxes, PPE
+    add(123, 0, () => {
+      for (const y of [-42, 0, 42]) wBox(124, y, 12, 1.6, 0, 46, '#3a5f86', '#4a6f96');
+      for (const z of [1, 12, 23, 34, 45]) wBox(124, 0, 12, 84, z, z + 1, '#3a5f86', '#4a6f96');
+      const cols = ['#c0392b', '#1d5fb4', '#2f7a46', '#e8a33a', '#f4f4f4', '#6b4a33'];
+      for (const [k, z] of [[0, 13], [1, 24], [2, 35]]) for (let j = 0; j < 12; j++) { const y = -38 + j * 6.4 + (j > 5 ? 3 : 0); wBox(121.5, y, 7, j % 4 === 3 ? 5.6 : 2.6, z, z + (j % 4 === 3 ? 6 : 9), cols[(j + k * 2) % cols.length], shade(cols[(j + k * 2) % cols.length], 1.15)); }
+      for (let j = 0; j < 5; j++) wBox(122, -34 + j * 16, 9, 12, 2, 10, '#c49a62', '#d8ae76');   // boxes on the bottom shelf
+      wBox(122, 26, 8, 10, 46, 52, '#ff6a00', '#ff8a2a');                                         // hi-vis on top
+    });
+    // back wall: HSEC board with the safety stats, a whiteboard of the day's loads
+    add(80, B.y0 + 1, () => { Y(70, 110, B.y0 + .3, 22, 40, '#f4f6f7'); Y(72, 108, B.y0 + .2, 36, 39, '#2f7a46'); wText('DAYS WITHOUT LTI: 214', 90, B.y0 + .1, 37.4, 1.8, '#fff');
+      for (let k = 0; k < 4; k++) Y(73 + k * 9, 80 + k * 9, B.y0 + .2, 24, 33, ['#ffe36b', '#9ad0f5', '#f4a9a9', '#b8e0b0'][k]); }, pre);
+    add(0, B.y0 + 1, () => { Y(-22, 22, B.y0 + .3, 22, 40, '#fbfbfb'); wText('LOADS TODAY', 0, B.y0 + .2, 37, 2, '#1d5fb4');
+      for (let k = 0; k < 4; k++) Y(-18, -18 + 10 + k * 7, B.y0 + .2, 33 - k * 3, 33.6 - k * 3, '#3a4047'); }, pre);
+  } else if (shRoom === 'crib') {
     // left end: the footy on the TV on the end wall, two tables with plastic chairs
     const ty = CRIB_TV_Y;
     add(B.x0 + 2, ty, () => { const x = B.x0 + .4; X(x, ty - 12, ty + 12, 22, 38, '#15171a'); X(x + .1, ty - 11, ty + 11, 23, 37, '#3f8f3a');
@@ -3590,6 +3652,7 @@ function campHuman(x,y,moustache=false,player=false,o={}) {
     if(pose==='shoot'||pose==='reach'){arm(side,5.4,1.5,26,2.6,pose==='reach'?4:2.4,40+(pose==='reach'?Math.sin(t*5+side)*1.5:0));continue;}
     if(pose==='drink'&&side===1){const k=Math.max(0,Math.sin(t*.9))**2, h0=sit?23.5:10, hr=sit?4.5:16;const p=arm(1,6,1,19,5-k*2.2,(sit?4.5:2)+k*(sit?.6:2.4),h0+k*hr);
       if(detail){const c=point(5-k*2.2,(sit?5.3:2.8)+k*(sit?.6:2.4));O(c[0],c[1],h0+2+k*hr,1.15,1.15,1.9,o.can||'#c9302c');}continue;}
+    if(pose==='phone'&&side===1){const p=arm(1,5.8,.6,21,4.4,1.2,31);if(detail)O(p[0],p[1],32.6,1.3,1.1,3.6,'#1b1d20');continue;}   // phone to the right ear
     if(sit){arm(side,6,1.5,19,4.6,5.2,23.5);continue;}   // hands resting on the table
     if(pose==='dribble'&&side===1){arm(1,6.4,1.5,18,7,3.4,10);continue;}
     if((pose==='bag')&&side===1){const p=arm(1,6.2,0,18,6.6,0,9);O(p[0],p[1],6,3.1,3.1,2.8,o.bag||'#2c4a7a');continue;}
