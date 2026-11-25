@@ -481,24 +481,29 @@ function finishTipTug() {
 }
 // the 500-hour service, in a cut-away side view of the pit: walk along under the truck and hold E at each job
 const SVC_JOBS = [
-  { x: 372, t: .8, say: 'slide the drain tray under the sump', done: 'Drain tray under the sump.' },
-  { x: 382, t: 1.4, say: 'undo the sump plug', done: 'Plug out. Let it drain.' },
-  { x: 382, t: 4, auto: 1, say: 'wait for the old oil to drain', done: 'Drained.' },
-  { x: 382, t: 1.2, say: 'refit the sump plug with a new washer', done: 'Plug back in, torqued up.' },
-  { x: 330, t: 1.2, say: 'spin off the first oil filter', done: 'First filter off.' },
-  { x: 348, t: 1.2, say: 'spin off the second oil filter', done: 'Second filter off.' },
-  { x: 339, t: 1.6, say: 'fit the new oil filters, seals oiled', done: 'New oil filters on, hand tight plus a quarter turn.' },
-  { x: 290, t: 1.6, say: 'change the fuel filter', done: 'New fuel filter on, primed.' },
-  { x: 412, t: 1.0, say: 'grease the steering kingpins', done: 'Kingpins greased.' },
-  { x: 452, t: 3, say: 'climb out and fill the engine with 40 L of new oil', done: 'Filled to the mark. Service done.' }];
+  { x: 378, t: .8, tool: 'tray', say: 'slide the drain tray under the sump', done: 'Drain tray under the sump.' },
+  { x: 384, t: 1.4, tool: 'spanner', say: 'undo the sump plug (19 mm)', done: 'Plug out. Let it drain.' },
+  { x: 384, t: 4, auto: 1, say: 'wait for the old oil to drain', done: 'Drained. Looks clean, no metal on the magnetic plug.' },
+  { x: 384, t: 1.2, tool: 'spanner', say: 'refit the sump plug with a new washer', done: 'Plug back in, torqued up.' },
+  { x: 330, t: 1.2, tool: 'wrench', say: 'spin off the first oil filter', done: 'First filter off.' },
+  { x: 348, t: 1.2, tool: 'wrench', say: 'spin off the second oil filter', done: 'Second filter off.' },
+  { x: 339, t: 1.6, tool: 'hands', say: 'fit the new oil filters, seals oiled', done: 'New oil filters on, hand tight plus a quarter turn.' },
+  { x: 292, t: 1.6, tool: 'hands', say: 'change the fuel filter and water separator', done: 'New fuel filter on, primed, no leaks.' },
+  { x: 262, t: 1.0, tool: 'torch', say: 'check the gearbox oil level', done: 'Gearbox oil at the filler plug. Good.' },
+  { x: 168, t: 1.2, tool: 'torch', say: 'check both diff oil levels', done: 'Both diffs topped up to the plug.' },
+  { x: 120, t: 1.4, tool: 'torch', say: 'check the brake linings and slack adjusters', done: 'Linings at 60 percent, slack adjusters within spec.' },
+  { x: 412, t: 1.0, tool: 'grease', say: 'grease the steering kingpins', done: 'Kingpins greased until fresh grease showed.' },
+  { x: 454, t: 3, tool: 'oil', say: 'climb out and fill the engine with 40 L of new oil', done: 'Filled to the mark on the dipstick. Service done.' }];
 let svc = null, ttDone = [0, 0, 0, 0], ttCam = -62;
-const ttActive = () => { const b = tr.findIndex(o => o.want || o.lid > .05 || o.dir || o.p > 0 || o.hold > 0); if (b >= 0) return b; const n = ttDone.findIndex(d => !d); return n >= 0 ? n : NT - 1; };   // tip and tug: which trailers have been through open, tip and close
-function startService() { state = 'service'; mStage = 9; svc = { x: 440, step: 0, prog: 0, t: 0, face: -1 }; ptrs.clear(); syncBtns(); flash('Under PA236. Walk along the pit with A/D (or the stick) and hold E at each job.'); msgT = 3.5; }
+const ttActive = () => { const b = tr.findIndex(o => o.want || o.lid > .05 || o.dir || o.p > 0 || o.hold > 0); if (b >= 0) return b; const n = ttDone.findIndex(d => !d); return n >= 0 ? n : NT - 1; };
+function startService() { state = 'service'; mStage = 9; svc = { x: 446, step: 0, prog: 0, t: 0, face: -1, drips: [] }; ptrs.clear(); syncBtns(); flash('Under PA236. Walk along the pit with A/D (or the stick) and hold E at each job.'); msgT = 3.5; }
 const SVC_BTN = [340, 600, 132, 56];
 const svcHold = () => keys.KeyE || keys.Space || [...ptrs.values()].some(q => inR(q, SVC_BTN));
 function updateService(dt) {
   msgT -= dt; svc.t += dt;
-  const ax = steerAxis(); if (ax) { svc.x = Math.max(48, Math.min(456, svc.x + ax * 90 * dt)); svc.face = Math.sign(ax); }
+  const ax = steerAxis(); if (ax) { svc.x = Math.max(56, Math.min(458, svc.x + ax * 90 * dt)); svc.face = Math.sign(ax); }
+  for (const d of svc.drips) { d.y += d.v * dt; d.v += 300 * dt; } svc.drips = svc.drips.filter(d => d.y < 330);
+  if ((svc.step === 5 || svc.step === 6) && Math.random() < dt * 3) svc.drips.push({ x: 330 + Math.random() * 18, y: 306, v: 0 });   // filters weep a bit of oil
   const job = SVC_JOBS[svc.step]; if (!job) return;
   const near = Math.abs(svc.x - job.x) < 16;
   if (job.auto) svc.prog += dt; else if (near && svcHold()) svc.prog += dt; else svc.prog = Math.max(0, svc.prog - dt * 2);
@@ -507,46 +512,91 @@ function updateService(dt) {
       flash(`RADIO: "Workshop, PA219. Blown an airbag on trailer 2, in the park bay on the Marble Bar Highway." Supervisor: "${playerName}, take the service ute."`); msgT = 7; } }
 }
 function drawService() {
-  const G = 330, PB = 448, P0 = 40, P1 = 470, t = svc.t, job = SVC_JOBS[svc.step] || null, k = svc.step;
+  const G = 330, PB = 448, P0 = 40, P1 = 476, t = svc.t, job = SVC_JOBS[svc.step] || null, k = svc.step;
+  const poly = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); };
+  const circ = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+  // ----- the workshop behind: cladding, a portal column, crane beam, lights, tool board, whiteboard, bulk oil
   rect(0, 0, W, H, '#c3c9cd');
-  for (let x = 0; x < W; x += 24) rect(x, 70, 2, G - 70, '#b3babf');                                         // shed wall cladding
-  rect(0, G, W, H - G, '#8d9296'); rect(P0, G, P1 - P0, PB - G, '#e3e8eb'); rect(P0, PB, P1 - P0, 14, '#2b3035');   // slab, pit walls, checker plate
-  for (let x = P0 + 40; x < P1 - 40; x += 80) rect(x, G + 22, 44, 5, '#fbfeff');                           // LED strips
-  rect(P0 - 6, G - 3, 6, 6, '#dfa818'); rect(P1, G - 3, 6, 6, '#dfa818');                                     // kerb
-  for (let st = 0; st < 6; st++) rect(P1 - 20 - st * 4, G + 18 + st * 17, 20 + st * 4, 5, st % 2 ? '#d9a514' : '#2d3338');   // stairs up at the front end
-  // PA236 over the pit, facing right: drive tandem, chassis, cab with the bonnet up, components hanging under it
-  const wheel = (x, r) => { ctx.fillStyle = '#18191b'; ctx.beginPath(); ctx.arc(x, G - r, r, 0, 7); ctx.fill(); ctx.fillStyle = '#c9ced2'; ctx.beginPath(); ctx.arc(x, G - r, r * .5, 0, 7); ctx.fill(); ctx.fillStyle = '#6f777d'; ctx.beginPath(); ctx.arc(x, G - r, r * .15, 0, 7); ctx.fill(); };
-  rect(-10, 236, 120, 50, '#c93a8a'); rect(-10, 228, 120, 8, '#e766b0');                                       // the first trailer's bin, behind
-  rect(0, 268, 470, 12, '#25282b');                                                                            // chassis rails
-  for (const x of [120, 186]) wheel(x, 34); wheel(410, 32);
-  rect(250, 150, 120, 118, '#f062a4'); rect(262, 162, 52, 40, '#26404f'); rect(322, 160, 40, 70, '#d94a8c');   // sleeper and cab
-  ctx.save(); ctx.translate(372, 210); ctx.rotate(-1.05); rect(0, -8, 96, 16, '#f062a4'); ctx.restore();       // bonnet tilted up
-  rect(372, 214, 90, 52, '#3a3f44'); rect(380, 200, 60, 16, '#5e6468');                                       // engine block, rocker cover
-  rect(462, 226, 10, 46, '#cfd5da');                                                                           // bull bar
-  rect(232, 278, 74, 20, '#3a3f44'); rect(300, 282, 30, 10, '#5e6468');                                       // gearbox, tail shaft
-  rect(130, 279, 170, 6, '#4a5056');                                                                           // drive shaft
-  ctx.fillStyle = '#2b2f33'; ctx.beginPath(); ctx.moveTo(366, 280); ctx.lineTo(404, 280); ctx.lineTo(398, 304); ctx.lineTo(370, 304); ctx.fill();   // sump
-  rect(380, 304, 5, 4, k === 1 || k === 2 ? '#8a6a20' : '#c9a227');                                         // drain plug
-  for (const [fx, i0] of [[330, 4], [348, 5]]) if (!(k > i0 && k <= 6)) rect(fx - 6, 282, 12, 22, k > 6 ? '#2f6fb8' : '#1d2023');   // oil filters (new ones blue)
-  rect(284, 282, 12, 20, k > 7 ? '#d6a51c' : '#8a7a3a');                                                    // fuel filter
-  rect(404, 286, 16, 8, '#5e6468'); rect(410, 294, 4, 6, k > 8 ? '#e8b100' : '#3a3f44');                   // front axle and kingpin
-  // the drain tray riding on the pit rails, and the oil pouring into it
-  if (k >= 1) { rect(352, G - 6, 56, 10, '#202326'); rect(352, G - 6, 56, 3, '#3c4248'); }
-  if (k === 2) { const sway = Math.sin(t * 9) * 1.2; ctx.fillStyle = '#2a1a08'; ctx.beginPath(); ctx.moveTo(380, 308); ctx.quadraticCurveTo(381 + sway, 318, 382, G - 6); ctx.lineTo(386, G - 6); ctx.quadraticCurveTo(385 + sway, 318, 385, 308); ctx.fill(); }
-  // you, down in the pit (up top by the oil drum for the last job)
-  const up = k === 9 && svc.x > 440, fy = up ? G : PB, mx = svc.x, reach = job && Math.abs(svc.x - job.x) < 16 && !job.auto && svcHold();
-  rect(mx - 6, fy - 46, 5, 46, '#2a3b5c'); rect(mx + 1, fy - 46, 5, 46, '#2a3b5c');                         // legs
-  rect(mx - 9, fy - 82, 18, 38, '#ff8a1c'); rect(mx - 9, fy - 66, 18, 3, '#e4e8e9');                         // hi-vis shirt
-  ctx.fillStyle = '#d8a27b'; ctx.beginPath(); ctx.arc(mx, fy - 92, 9, 0, 7); ctx.fill(); rect(mx - 10, fy - 102, 20, 6, '#1d5fb4');   // head, cap
-  if (reach && !up) { rect(mx + svc.face * 2, fy - 130, 4, 50, '#ff8a1c'); rect(mx + svc.face * 2 - 1, fy - 135, 6, 6, '#d8a27b'); }   // arm up to the job
-  else rect(mx + svc.face * 8, fy - 78, 4, 28, '#ff8a1c');
-  if (k === 9) { rect(452, G - 40, 16, 40, '#d8d000'); rect(456, G - 52, 3, 12, '#2b2f33'); }               // bulk oil drum and pump up top
+  for (let x = 0; x < W; x += 22) rect(x, 64, 2, G - 64, '#b3babf');
+  rect(0, 64, W, 18, '#d8a90e'); rect(0, 80, W, 3, '#b18a08'); rect(196, 83, 3, 40, '#2b2f33'); rect(190, 122, 15, 8, '#e8c21c');   // overhead crane beam and hook
+  for (const x of [70, 250, 420]) { rect(x - 18, 64, 36, 5, '#fffbe6'); ctx.fillStyle = 'rgba(255,250,220,.10)'; ctx.beginPath(); ctx.moveTo(x - 18, 69); ctx.lineTo(x + 18, 69); ctx.lineTo(x + 60, G); ctx.lineTo(x - 60, G); ctx.fill(); }
+  rect(452, 64, 14, G - 64, '#a3abb1'); rect(455, 64, 3, G - 64, '#bcc3c8');                                    // portal column
+  rect(14, 110, 120, 84, '#3a4a55'); for (const [x, y, w2, h2] of [[22, 120, 6, 40], [34, 118, 8, 30], [50, 122, 30, 6], [50, 134, 26, 6], [88, 120, 10, 44], [104, 126, 22, 22], [22, 168, 40, 6], [70, 170, 16, 16]]) { rect(x, y, w2, h2, '#e8eef2'); rect(x + 1, y + 1, w2 - 2, h2 - 2, ['#c62828', '#9aa3aa', '#1d5fb4', '#e8c21c'][(x + y) % 4]); }   // shadow board of tools
+  rect(150, 104, 96, 74, '#f8f9f9'); rect(150, 104, 96, 12, '#1d5fb4'); ctx.font = 'bold 8px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText('PA236  500 HR SERVICE', 198, 113);
+  for (let i = 0; i < 6; i++) { rect(156, 122 + i * 9, 6, 6, i < Math.floor(k / 2) ? '#2f7a46' : '#c9ced2'); rect(166, 124 + i * 9, 60 - (i * 7) % 24, 2, '#7a8892'); }
+  for (const [x, c] of [[262, '#d8d000'], [286, '#d8d000'], [310, '#2f7a46']]) { rect(x, 268, 22, 34, c); rect(x, 274, 22, 2, shade(c, .8)); rect(x, 290, 22, 2, shade(c, .8)); rect(x + 4, 264, 5, 4, '#555'); }   // 205 L drums of oil and coolant
+  rect(258, 302, 78, 6, '#1d4f8c');                                                                                 // spill pallet
+  circ(360, 160, 16, '#c62828'); circ(360, 160, 6, '#2b2f33'); rect(359, 176, 2, 80, '#1d1f22');                    // hose reel
+  ctx.font = 'bold 7px system-ui'; ctx.fillStyle = '#c62828'; ctx.fillText('15W-40', 360, 140);
+  // ----- floor, pit walls with LED strips, kerb, checker plate and the steel stairs at the front end
+  rect(0, G, W, H - G, '#8d9296'); rect(0, G, W, 3, '#7f8589');
+  rect(P0, G, P1 - P0, PB - G, '#e3e8eb'); for (let x = P0 + 60; x < P1; x += 60) rect(x, G, 1, PB - G, '#c9d0d4');
+  for (let x = P0 + 30; x < P1 - 60; x += 110) { rect(x, G + 20, 46, 4, '#fbfeff'); ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x - 6, G + 14, 58, 16); }
+  rect(P0, PB, P1 - P0, 14, '#2b3035'); for (let x = P0; x < P1; x += 6) rect(x, PB + 2, 3, 1, '#3a4047');
+  rect(P0 - 8, G - 4, 8, 7, '#dfa818'); rect(P1, G - 4, 8, 7, '#dfa818'); for (let x = P0 + 6; x < P1; x += 22) rect(x, G - 1, 2, 2, '#5b4a1c');
+  for (let st = 0; st < 7; st++) { const sy = G + 14 + st * 16; rect(P1 - 22 - st * 5, sy, 22 + st * 5, 4, '#2d3338'); rect(P1 - 22 - st * 5, sy, 22 + st * 5, 2, '#d9a514'); }
+  ctx.strokeStyle = '#e8c21c'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(P1 - 24, G - 26); ctx.lineTo(P1 - 60, PB - 30); ctx.stroke(); ctx.beginPath(); ctx.moveTo(P1 - 24, G - 26); ctx.lineTo(P1 - 24, G); ctx.stroke();   // stair handrail
+  rect(200, PB - 10, 26, 10, '#3d3026'); for (let x = 202; x < 224; x += 3) rect(x, PB - 9, 1, 8, '#8a735a');      // drain grate
+  rect(70, PB - 30, 30, 30, '#c62828'); rect(70, PB - 30, 30, 4, '#2b2f33'); rect(74, PB - 22, 22, 2, '#e8e8e8'); rect(74, PB - 14, 22, 2, '#e8e8e8');   // tool trolley in the pit
+  // ----- PA236 over the pit, facing right
+  const wheel = (x, r) => { circ(x, G - r, r, '#18191b'); circ(x, G - r, r * .62, '#2b2d30'); circ(x, G - r, r * .5, '#c9ced2'); for (let a = 0; a < 6; a++) circ(x + Math.cos(a) * r * .32, G - r + Math.sin(a) * r * .32, 1.6, '#8a9196'); circ(x, G - r, r * .14, '#6f777d'); };
+  rect(-10, 222, 128, 54, '#c93a8a'); rect(-10, 214, 128, 9, '#e766b0'); for (let x = 2; x < 118; x += 14) rect(x, 224, 3, 50, '#8f1a5e'); rect(-10, 210, 128, 5, '#cfd4d8');   // first trailer's bin, ribs, lid
+  rect(0, 266, 476, 12, '#25282b'); for (let x = 30; x < 460; x += 46) rect(x, 266, 4, 14, '#1d1f22');            // chassis rails, crossmembers
+  for (const x of [120, 186]) { wheel(x, 34); rect(x - 22, 276, 44, 6, '#3a3f44'); } rect(150, 272, 8, 14, '#5e6468'); rect(140, 270, 30, 12, '#4a5056');   // drive tandem, diff housings
+  for (const x of [120, 186]) { rect(x - 16, 256, 32, 10, '#1b1d20'); }                                             // airbags
+  rect(96, 244, 6, 30, '#1b1d20');                                                                                  // mudflap
+  wheel(412, 32); rect(398, 278, 30, 6, '#3a3f44'); rect(392, 262, 42, 5, '#5e6468');                              // steer axle and springs
+  rect(214, 226, 50, 40, '#c9ced2'); rect(214, 232, 50, 2, '#a3abb1'); rect(214, 252, 50, 2, '#a3abb1'); rect(226, 222, 4, 46, '#7a8287'); rect(250, 222, 4, 46, '#7a8287');   // fuel tank and straps
+  rect(244, 140, 130, 128, '#f062a4'); rect(244, 140, 74, 128, '#e55a9a'); for (let y = 150; y < 260; y += 12) rect(250, y, 20, 3, '#c94a88');   // sleeper with vents
+  rect(318, 150, 56, 118, '#f062a4'); rect(326, 158, 40, 44, '#26404f'); rect(330, 162, 12, 36, 'rgba(255,255,255,.12)');   // cab and door window
+  rect(332, 230, 22, 4, '#cfd5da'); rect(330, 244, 26, 4, '#cfd5da'); rect(334, 256, 20, 4, '#cfd5da');            // cab steps
+  rect(372, 150, 4, 60, '#2b2f33'); rect(376, 164, 10, 22, '#1d1f22');                                              // mirror arm and mirror
+  rect(302, 60, 7, 120, '#e1e6ea'); rect(300, 120, 11, 38, '#b8bfc4'); rect(302, 60, 7, 4, '#888');                 // chrome exhaust stack and heat shield
+  ctx.font = 'bold 12px system-ui'; ctx.fillStyle = '#fff'; ctx.fillText('PA236', 346, 222);
+  ctx.save(); ctx.translate(374, 214); ctx.rotate(-1.05); rect(0, -9, 100, 18, '#f062a4'); rect(84, -9, 16, 18, '#d94a8c'); rect(10, -2, 70, 3, '#ffffff'); ctx.restore();   // bonnet tilted up
+  rect(374, 208, 90, 58, '#3a3f44'); rect(382, 194, 64, 16, '#5e6468'); rect(386, 190, 56, 4, '#6f777d');           // engine block, rocker cover
+  circ(400, 222, 10, '#8a9196'); circ(400, 222, 4, '#5e6468'); rect(420, 196, 18, 22, '#2b2f33');                  // turbo, air cleaner
+  rect(462, 198, 6, 68, '#1d1f22');                                                                                  // radiator
+  rect(468, 214, 10, 56, '#cfd5da'); for (const y of [222, 240, 258]) rect(466, y, 14, 3, '#aab2b8'); circ(474, 206, 5, '#fff6c0');   // bull bar and spotlight
+  // ----- underneath: gearbox, tail shaft, sump and plug, oil filters, fuel filter, kingpin
+  rect(232, 278, 74, 22, '#3a3f44'); rect(240, 298, 8, 4, '#c9a227'); rect(300, 282, 30, 10, '#5e6468');             // gearbox, its filler plug, bell housing
+  rect(126, 280, 176, 6, '#4a5056'); for (const x of [126, 214, 300]) rect(x - 3, 278, 6, 10, '#2b2f33');            // tail shaft and uni joints
+  poly([[366, 278], [406, 278], [400, 304], [372, 304]], '#2b2f33'); rect(372, 280, 30, 2, '#3a3f44');               // sump
+  rect(382, 304, 6, 4, k === 1 || k === 2 ? '#8a6a20' : '#c9a227');                                                // drain plug
+  for (const [fx, i0] of [[330, 4], [348, 5]]) if (!(k > i0 && k <= 6)) { rect(fx - 7, 282, 14, 24, k > 6 ? '#2f6fb8' : '#1d2023'); rect(fx - 7, 286, 14, 2, k > 6 ? '#5f9fd8' : '#3a3f44'); }   // oil filters (new ones blue)
+  rect(286, 282, 12, 22, k > 7 ? '#d6a51c' : '#8a7a3a'); rect(286, 302, 12, 4, '#cfd5da');                          // fuel filter and water bowl
+  rect(404, 286, 16, 8, '#5e6468'); rect(410, 294, 4, 6, k > 11 ? '#e8b100' : '#3a3f44');                          // kingpin
+  if (k >= 1) { rect(352, G - 7, 64, 11, '#202326'); rect(352, G - 7, 64, 3, '#3c4248'); const lvl = Math.min(1, (k - 1 + (k === 2 ? svc.prog / 4 : 0)) / 2); rect(356, G - 4, 56, 3 * lvl, '#2a1a08'); ctx.font = 'bold 6px system-ui'; ctx.fillStyle = '#1d5fb4'; ctx.fillText('DRAIN TRAY', 384, G + 2); }
+  if (k === 2) { const sway = Math.sin(t * 9) * 1.2; ctx.fillStyle = '#2a1a08'; ctx.beginPath(); ctx.moveTo(382, 308); ctx.quadraticCurveTo(383 + sway, 318, 384, G - 6); ctx.lineTo(388, G - 6); ctx.quadraticCurveTo(387 + sway, 318, 387, 308); ctx.fill(); }
+  for (const d of svc.drips) circ(d.x, d.y, 1.4, '#2a1a08');
+  // labels on whatever is near you
+  ctx.font = 'bold 8px system-ui'; ctx.textAlign = 'left';
+  for (const [lx, ly, nm] of [[384, 310, 'SUMP PLUG'], [339, 312, 'OIL FILTERS'], [292, 312, 'FUEL FILTER'], [262, 304, 'GEARBOX'], [168, 290, 'DIFFS'], [120, 296, 'BRAKES'], [412, 302, 'KINGPIN']]) if (Math.abs(svc.x - lx) < 40) { ctx.fillStyle = 'rgba(16,35,55,.85)'; ctx.fillRect(lx - 2, ly + 2, nm.length * 5.2 + 4, 11); ctx.fillStyle = '#fff'; ctx.fillText(nm, lx, ly + 10); }
+  ctx.textAlign = 'center';
+  // ----- you, down in the pit (up top by the bulk oil for the last job), holding the right tool
+  const up = k === 12 && svc.x > 440, fy = up ? G : PB, mx = svc.x, f = svc.face, reach = job && Math.abs(svc.x - job.x) < 16 && !job.auto && svcHold();
+  if (!up && job && Math.abs(svc.x - job.x) < 40) { ctx.fillStyle = 'rgba(255,250,200,.14)'; ctx.beginPath(); ctx.moveTo(mx, fy - 92); ctx.lineTo(job.x - 18, 290); ctx.lineTo(job.x + 18, 290); ctx.fill(); }   // head torch
+  rect(mx - 7, fy - 5, 7, 5, '#1d1f22'); rect(mx + 1, fy - 5, 7, 5, '#1d1f22');                                    // boots
+  rect(mx - 6, fy - 46, 5, 42, '#2a3b5c'); rect(mx + 1, fy - 46, 5, 42, '#2a3b5c');                                // trousers
+  rect(mx - 9, fy - 84, 18, 40, '#ff8a1c'); rect(mx - 9, fy - 66, 18, 3, '#e4e8e9'); rect(mx - 9, fy - 56, 18, 3, '#e4e8e9');   // hi-vis with tape
+  circ(mx, fy - 94, 9, '#d8a27b'); rect(mx - 10, fy - 104, 20, 6, '#1d5fb4'); rect(mx + f * 3 - 4, fy - 97, 8, 3, '#2b2f33');   // head, cap, safety glasses
+  circ(mx + f * 2, fy - 101, 2, '#fff6c0');                                                                         // head torch
+  const tool = job && job.tool;
+  if (reach && !up) {
+    const hx = mx + f * 3, hy = fy - 134; rect(hx - 2, hy + 4, 4, 50, '#ff8a1c'); rect(hx - 3, hy, 6, 6, '#2f7a46');   // arm up, green glove
+    if (tool === 'spanner') { rect(hx - 1, hy - 14, 2, 14, '#c9ced2'); rect(hx - 4, hy - 16, 8, 3, '#c9ced2'); }
+    if (tool === 'wrench') { rect(hx - 8, hy - 6, 16, 3, '#c62828'); }
+    if (tool === 'grease') { rect(hx - 3, hy - 4, 6, 22, '#c62828'); rect(hx - 1, hy - 12, 2, 8, '#2b2f33'); }
+    if (tool === 'torch') { rect(hx - 2, hy - 8, 4, 10, '#e8c21c'); ctx.fillStyle = 'rgba(255,250,200,.25)'; ctx.beginPath(); ctx.moveTo(hx, hy - 8); ctx.lineTo(hx - 16, hy - 40); ctx.lineTo(hx + 16, hy - 40); ctx.fill(); }
+    if (tool === 'tray') { rect(hx - 1, hy, 2, 60, '#5e6468'); }
+  } else rect(mx + f * 8, fy - 80, 4, 28, '#ff8a1c');
+  if (k === 12) { rect(440, G - 36, 6, 36, '#5e6c77'); circ(443, G - 40, 6, '#c62828'); if (up && reach) { ctx.strokeStyle = '#1d1f22'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(443, G - 40); ctx.quadraticCurveTo(452, G - 120, 432, 196); ctx.stroke(); text(`${Math.round(svc.prog / 3 * 40)} L`, 420, 186, 12, '#1d5fb4'); } }   // oil bowser and nozzle into the engine
   // job marker
   if (job) { const jx = job.x, jy = job.x > 440 ? G - 60 : 316, on = Math.sin(t * 6) > 0; ctx.strokeStyle = on ? '#ffe040' : 'rgba(255,224,64,.4)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(jx, jy, 14, 0, 7); ctx.stroke(); }
-  // HUD: the job list and the hold prompt
+  // ----- HUD: the job list and the hold prompt
   rect(0, 0, W, 64, '#142536e8'); text('500-HOUR SERVICE: PA236', W / 2, 26, 20, '#ffea69'); text(isTouch ? 'Stick: walk along the pit   HOLD: do the job' : 'A/D walk along the pit   hold E at the job', W / 2, 50, 12, '#fff');
   rect(0, 470, W, H - 470, '#142536ee');
-  SVC_JOBS.forEach((j, i) => text((i < k ? '✓ ' : i === k ? '› ' : '  ') + j.say, 24, 492 + i * 18, 12, i < k ? '#7fdf7f' : i === k ? '#ffea69' : '#9fb0bf', 'left'));
+  SVC_JOBS.forEach((j, i) => text((i < k ? '✓ ' : i === k ? '› ' : '  ') + j.say, 20, 486 + i * 14.4, 11, i < k ? '#7fdf7f' : i === k ? '#ffea69' : '#9fb0bf', 'left'));
   if (job) { const near = Math.abs(svc.x - job.x) < 16; text(job.auto ? 'Draining...' : near ? `Hold E: ${job.say}` : 'Walk to the flashing ring', W / 2, 682, 14, '#fff'); bar(60, 696, W - 120, 8, svc.prog / job.t, '#7fdf7f'); }
   if (isTouch) { drawStick(); drawBtn(SVC_BTN, 'HOLD', false); }
   if (msgT > 0) text(msg, W / 2, 96, 14, '#ffef79');
@@ -574,7 +624,7 @@ function drawMechDayEnd() {
   text('KNOCK-OFF', W / 2, 160, 38, '#7fdf7f');
   text(`${playerName}: Workshop Mechanic, day done`, W / 2, 205, 17, '#fff');
   ['Breakfast and crib packed at camp', 'Hiace past the bush, the cattle and the gold mine', 'Crib in the fridge, breatho 0.000, prestart', 'Tip and tug on PA236: all four lids and bins cycled',
-    '500-hour service: oil, filters, fuel filter, grease', 'Breakdown callout: new airbag on PA219', 'Hiace back to camp at sunset'].forEach((tx, i) => text('✓ ' + tx, W / 2, 262 + i * 30, 14, '#cfe'));
+    '500-hour service: oil, filters, fuel, gearbox, diffs, brakes, grease', 'Breakdown callout: new airbag on PA219', 'Hiace back to camp at sunset'].forEach((tx, i) => text('✓ ' + tx, W / 2, 262 + i * 30, 14, '#cfe'));
   text('Good shift. See you tomorrow.', W / 2, 500, 16, '#ffea69');
   text(isTouch ? 'Tap for the menu' : 'Space: back to the menu', W / 2, 580, 15, '#fff');
 }
@@ -3763,8 +3813,9 @@ function updateParkHandover(dt){
   const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-(keys.KeyS||keys.ArrowDown||keys.TB?.65:0);
   const nx=handPos.x+Math.cos(handPos.dir)*38*fwd*dt;
   const ny=handPos.y+Math.sin(handPos.dir)*38*fwd*dt;
-  if(nx>-115&&nx<55&&!(nx>0&&ny>-150&&ny<15))handPos.x=nx;
-  if(ny>-190&&ny<135)handPos.y=ny;
+  const rigHit=(x,y)=>Math.abs(x-28)<24&&y>-164&&y<250;   // PA219 / the changeover truck
+  if(nx>-115&&nx<55&&!rigHit(nx,handPos.y))handPos.x=nx;
+  if(ny>-190&&ny<135&&!rigHit(handPos.x,ny))handPos.y=ny;
 }
 function drawParkHandover(){
   const hx=Math.cos(handPos.dir),hy=Math.sin(handPos.dir);
@@ -3784,28 +3835,54 @@ function drawParkHandover(){
     inner.push([edge-(BAY_D-5)*Math.cos(a),(BAY_L/2-5)*Math.sin(a),.2]);
   }
   wPoly(inner.concat([[edge,-BAY_L/2+5,.2],[edge,BAY_L/2-5,.2]]),'#5e5a54');
+  // the Marble Bar Highway beside the bay: edge lines, the centre line, traffic going past
   wFlat(88,-350,140,700,'#45433f');
-  // Full four-trailer pink road train at rest in the bay.
-  wBox(28,-110,35,85,0,34,'#b8237a','#e778b1');
-  for(let i=0;i<4;i++){
-    const y=-40+i*70;
-    wBox(28,y,36,58,0,34,'#b8237a','#e778b1');
-    for(const side of [-1,1])for(const off of [-19,0,19])wBox(28+side*20,y+off,7,9,0,12,'#171717','#222');
-  }
-  // Outgoing driver and player use the same animated 3D human model.
+  for(const x of [92,224])wFlat(x-1,-350,2,700,'#ececec',.03);
+  for(let y=-350;y<350;y+=40)wFlat(157,y,2,22,'#f2d24a',.03);
+  const ents=[],add=(x,y,fn)=>ents.push({f:(x-wCam.x)*hx+(y-wCam.y)*hy,fn});
+  for(const [lane,dir,len,col,ph,spd] of [[123,-1,60,'#f4f4f4',0,180],[193,1,150,'#f062a4',.4,110],[123,-1,34,'#c62828',.7,200]]){   // a car, a road train, a 4WD with a van
+    const y=((wT*spd*dir+ph*1400)%1400+1400)%1400-700;
+    add(lane,y,()=>{wBox(lane,y,22,len,4,22,col,shade(col,1.1));wBox(lane,y-dir*len*.35,20,len*.2,22,34,col,'#26404f');for(const k of [-.35,.35])for(const s2 of [-1,1])wBox(lane+s2*11,y+k*len,4,8,0,8,'#151617','#202224');});}
+  // PA219: prime mover nose-down the bay (front at -y), four side-tipper trailers with dollies
+  const X=28,pink='#e0479a',bin='#c93a8a',lidc='#cfd4d8';
+  add(X,-120,()=>{
+    wBox(X,-118,16,92,4,9,'#25282b','#2b2f33');                                                   // chassis
+    for(const s2 of [-1,1]){wBox(X+s2*18,-146,6,13,0,12,'#151617','#202224');for(const y2 of [-80,-66])wBox(X+s2*18,y2,7,12,0,12,'#151617','#202224');}   // steer and drive wheels
+    wBox(X,-158,36,4,4,18,'#cfd5da','#e3e7ea');                                                   // bull bar
+    wBox(X,-142,30,28,9,28,pink,shade(pink,1.1));wBox(X,-156.2,22,1,12,26,'#c9ced2','#c9ced2');   // bonnet, grille
+    for(const s2 of [-1,1])wBox(X+s2*12,-156.6,5,1,20,24,'#fff6c0','#fff6c0');                     // headlights
+    wBox(X,-116,34,24,10,46,pink,shade(pink,1.1));wPoly([[X-16,-128.2,30],[X+16,-128.2,30],[X+16,-128.2,43],[X-16,-128.2,43]],'#26404f');   // cab and windscreen
+    wBox(X,-93,34,22,10,50,shade(pink,.92),'#e9ecee');                                             // sleeper
+    for(const s2 of [-1,1]){wBox(X+s2*17,-104,2.4,2.4,30,64,'#e1e6ea','#f4f6f8');wBox(X+s2*19,-114,6,20,6,16,'#c9ced2','#dfe3e6');}   // stacks, fuel tanks
+    wBox(X,-116,10,2,47,49,'#ff8a00','#ffb04a');                                                  // beacon
+  });
+  for(let i=0;i<4;i++){const y=-40+i*70;
+    add(X,y,()=>{
+      wBox(X,y,10,60,6,10,'#25282b','#2b2f33');                                                   // trailer chassis
+      if(i)wBox(X,y-34,6,10,6,9,'#e8b100','#f6d64a');                                             // dolly drawbar
+      for(const s2 of [-1,1]){for(const o of [10,18,26])wBox(X+s2*18,y+o,7,7,0,11,'#151617','#202224');if(i)for(const o of [-24,-17])wBox(X+s2*18,y+o,7,6,0,11,'#151617','#202224');}
+      const sag=role==='mech'&&i===1&&!(brk&&brk.step>=2)?3:0;   // trailer 2 sits down on the blown side
+      wBox(X,y,34,56,12-sag,36-sag,bin,shade(bin,1.1));for(let k=-2;k<=2;k++)for(const s2 of [-1,1])wBox(X+s2*17.4,y+k*11,1,1.6,13-sag,36-sag,'#8f1a5e','#8f1a5e');
+      wBox(X,y,35,57,36-sag,37.4-sag,lidc,'#e3e7ea');                                              // lid
+      wBox(X-19,y+40,1,8,4,18,'#1d1f22','#1d1f22');                                                // mudflap
+    });}
   if(role==='mech'){
-    campHuman(BRK_DRIVER.x,BRK_DRIVER.y,false,false,{dir:Math.PI/2});
-    const fixed=brk&&brk.step>=2;wBox(7,30,5,12,fixed?2:0,fixed?10:4,fixed?'#2b2f33':'#151617',fixed?'#3a3f44':'#202224');   // trailer 2's left airbag: flat until it's swapped
-    if(brk&&brk.step===1){const on=Math.sin(wT*6)>0;wBox(BRK_BAG.x,BRK_BAG.y,2,2,0,40,on?'#ffe040':'#9a8a30',on?'#ffe040':'#9a8a30');}
-    wBox(-60,140,30,60,0,22,'#f2f3f4','#e6e8ea');wBox(-60,122,28,24,22,34,'#f2f3f4','#26404f');wBox(-60,152,4,4,30,34,'#ff8a00','#ffb04a');   // your service ute
-  } else campHuman(-15,35,false,false);
-  const oldWp=wp;
-  wp={x:handPos.x,y:handPos.y,dir:handPos.dir,ph:wT*10};
-  campHuman(handPos.x,handPos.y,false,true);
-  wp=oldWp;
-  wBox(-105,80,2,2,0,33,'#ddd','#ddd');
-  wBox(-105,80,32,2,33,45,'#1d5fb4','#1d5fb4');
-  wText('P',-105,80,39,9,'#fff');
+    const st=brk?brk.step:0,fixed=st>=2;
+    add(9,30,()=>{wBox(9,30,6,12,fixed?2:0,fixed?10:3,fixed?'#2b2f33':'#151617',fixed?'#3a3f44':'#202224');   // trailer 2's left airbag: flat until it's swapped
+      if(st>=1){for(const o of [8,30])wBox(4,30+o,4,3,0,4,'#e8c21c','#f2d24a');wBox(2,30,6,6,0,6+(brk.prog>0?4:0),'#c62828','#d44');}   // wheel chocks and the jack
+      if(fixed){wBox(-14,14,8,10,0,3,'#151617','#202224');}                                         // the old airbag on the ground
+      if(st===1){const on=Math.sin(wT*6)>0;wBox(BRK_BAG.x,BRK_BAG.y,2,2,0,40,on?'#ffe040':'#9a8a30',on?'#ffe040':'#9a8a30');}});
+    for(const ty of [300,340])add(30,ty,()=>{wPoly([[24,ty,0],[36,ty,0],[30,ty,11]],'#e8401c');wPoly([[26.5,ty-.1,2],[33.5,ty-.1,2],[30,ty-.1,8]],'#f4f4f4');});   // warning triangles behind the truck
+    add(-60,140,()=>{   // your service ute: white tray-back, ROPS, beacon, flag, toolboxes, compressor
+      wBox(-60,140,30,64,4,16,'#f2f3f4','#e6e8ea');wBox(-60,120,28,24,16,30,'#f2f3f4','#26404f');
+      for(const [wx,wy] of [[-75,118],[-45,118],[-75,160],[-45,160]])wBox(wx,wy,4,12,0,10,'#151617','#202224');
+      wBox(-60,152,30,34,16,18,'#4a5056','#5e6468');wBox(-70,152,8,30,18,26,'#c9ced2','#dfe3e6');wBox(-50,158,8,14,18,24,'#c62828','#d44');   // tray, toolbox, compressor
+      wBox(-60,134,30,2,16,36,'#2b2f33','#3a3f44');const on=Math.sin(wT*9)>0;wBox(-60,134,4,4,36,39,on?'#ff8a00':'#a05800','#ffb04a');wBox(-75,134,1,1,16,52,'#d62828','#d62828');});
+    add(BRK_DRIVER.x,BRK_DRIVER.y,()=>campHuman(BRK_DRIVER.x,BRK_DRIVER.y,false,false,{dir:Math.PI/2,shirt:'#ff8a1c',hair:'cap',cap:'#1b1d20',hairCol:'#3a2a20',skin:'#c58a62'}));
+  } else add(-15,35,()=>campHuman(-15,35,false,false));
+  add(-105,80,()=>{wBox(-105,80,2,2,0,33,'#ddd','#ddd');wBox(-105,80,32,2,33,45,'#1d5fb4','#1d5fb4');wText('P',-105,80,39,9,'#fff');});
+  add(handPos.x,handPos.y,()=>{const oldWp=wp;wp={x:handPos.x,y:handPos.y,dir:handPos.dir,ph:wT*10};campHuman(handPos.x,handPos.y,false,true);wp=oldWp;});
+  ents.sort((p,q)=>q.f-p.f);for(const e of ents)if(e.f>-20)e.fn();
   rect(10,10,W-20,110,'#142536e8');
   text(role==='mech'?'BREAKDOWN: PA219 IN THE PARK BAY':'3D HIGHWAY BAY - DRIVER CHANGEOVER',W/2,42,17,'#ffe568');
   text(role==='mech'?'Blown airbag on trailer 2':handoverLoaded?'LOADED: SKYWAY RUN':'EMPTY: RETURN TO ROM',W/2,71,15,'#fff');
