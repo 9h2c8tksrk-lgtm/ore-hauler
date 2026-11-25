@@ -1271,10 +1271,6 @@ function drawWorkshopFoot() {
   add(SH_W - 24, 620, () => { box(SH_W - 24, 620, 30, 40, 44, '#b52d2d', '#d44739'); for (let z = 6; z < 42; z += 6) box(SH_W - 39.5, 620, 1, 34, 1, '#e0e4e7', '#e0e4e7', z); });
   add(SH_W - 42, 172, () => { for (const [x, y, c] of [[-14, -14, '#1f4fa0'], [14, -14, '#1f4fa0'], [-14, 14, '#2b7a3d'], [14, 14, '#d9a400']]) vcyl(SH_W - 42 + x, 172 + y, 11, 0, 34, c); });   // 205 L oil drums
   add(SH_W - 26, 700, () => { box(SH_W - 26, 700, 34, 40, 34, '#2f6f9f', '#3a82b8'); box(SH_W - 26, 700, 30, 36, 2, '#9aa3aa', '#c3cacf', 34); });   // parts washer
-  for (let i = 1; i < 6; i++) add(i * SB, 60, () => {   // hose reel post between the bays: air, oil and grease
-    box(i * SB, 60, 8, 8, 120, '#5e6c77', '#7a8892');
-    for (const [z, c] of [[100, '#d62828'], [84, '#1f4fa0'], [68, '#2fa84a']]) { box(i * SB, 64, 14, 4, 14, c, shade(c, 1.2), z); }
-  });
   for (const [x, y] of [[SH_W - 3, 330], [SH_W - 3, 560], [3, 520], [3, 650]]) add(x, y, () => { vcyl(x + Math.sign(SH_W / 2 - x) * 4, y, 3, 30, 46, '#d62828'); box(x, y, 1, 16, 20, '#e8e8e8', '#e8e8e8', 50); });
   // portal frames on the side walls carrying the overhead crane runway
   for (const x of [5, SH_W - 5]) for (let y = 0; y <= SH_D; y += 130) add(x, y, () => { box(x, y, 9, 9, SH_H, '#a3abb1', '#bcc3c8'); });
