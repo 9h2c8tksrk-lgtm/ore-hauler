@@ -471,13 +471,13 @@ function mechAct() {
     10: 'The service ute is in the car park behind the crib room.', 12: 'The Hiace is waiting in the car park behind the crib room.' }[mStage] || '');
 }
 function startTipTug() {
-  state = 'tiptug'; mStage = 7; fills = Array(NT).fill(TRAILER_CAP * .15);   // a bit of carryback stuck in each bin tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];
-  ptrs.clear(); syncBtns(); flash('Carryback in every bin. Trailer 1 first: open its lid.'); msgT = 3;
+  state = 'tiptug'; mStage = 7; fills = Array(NT).fill(0); ttDone = [0, 0, 0, 0];   // empty bins: the tip and tug just cycles each lid and bin tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];
+  ptrs.clear(); syncBtns(); flash('Bins are empty. Trailer 1 first: open its lid.'); msgT = 3;
 }
 function finishTipTug() {
   mStage = 8; state = 'workshopfoot'; shopL = shopLayout(); shopCrewInit();
   workshopFoot = { x: SVC_STAIRS.x - 46, y: SVC_STAIRS.y + 6 }; footFacing = 0; footCamH = 0; ptrs.clear(); syncBtns();
-  flash('Bins tipped clean. PA236 has gone round and pulled into bay 5 over the pit. Down the pit stairs for the service.'); msgT = 5;
+  flash('Tip and tug done. PA236 has gone round and pulled into bay 5 over the pit. Down the pit stairs for the service.'); msgT = 5;
 }
 // the 500-hour service, in a cut-away side view of the pit: walk along under the truck and hold E at each job
 const SVC_JOBS = [
@@ -491,7 +491,7 @@ const SVC_JOBS = [
   { x: 290, t: 1.6, say: 'change the fuel filter', done: 'New fuel filter on, primed.' },
   { x: 412, t: 1.0, say: 'grease the steering kingpins', done: 'Kingpins greased.' },
   { x: 452, t: 3, say: 'climb out and fill the engine with 40 L of new oil', done: 'Filled to the mark. Service done.' }];
-let svc = null;
+let svc = null, ttDone = [0, 0, 0, 0];   // tip and tug: which trailers have been through open, tip and close
 function startService() { state = 'service'; mStage = 9; svc = { x: 440, step: 0, prog: 0, t: 0, face: -1 }; ptrs.clear(); syncBtns(); flash('Under PA236. Walk along the pit with A/D (or the stick) and hold E at each job.'); msgT = 3.5; }
 const SVC_BTN = [340, 600, 132, 56];
 const svcHold = () => keys.KeyE || keys.Space || [...ptrs.values()].some(q => inR(q, SVC_BTN));
@@ -572,7 +572,7 @@ function drawMechDayEnd() {
   rect(0, 0, W, H, '#142536');
   text('KNOCK-OFF', W / 2, 160, 38, '#7fdf7f');
   text(`${playerName}: Workshop Mechanic, day done`, W / 2, 205, 17, '#fff');
-  ['Breakfast and crib packed at camp', 'Hiace past the bush, the cattle and the gold mine', 'Crib in the fridge, breatho 0.000, prestart', 'Tip and tug on PA236: four bins tipped clean',
+  ['Breakfast and crib packed at camp', 'Hiace past the bush, the cattle and the gold mine', 'Crib in the fridge, breatho 0.000, prestart', 'Tip and tug on PA236: all four lids and bins cycled',
     '500-hour service: oil, filters, fuel filter, grease', 'Breakdown callout: new airbag on PA219', 'Hiace back to camp at sunset'].forEach((tx, i) => text('✓ ' + tx, W / 2, 262 + i * 30, 14, '#cfe'));
   text('Good shift. See you tomorrow.', W / 2, 500, 16, '#ffea69');
   text(isTouch ? 'Tap for the menu' : 'Space: back to the menu', W / 2, 580, 15, '#fff');
@@ -703,7 +703,8 @@ function toggleLid(i) { const t = tr[i]; if (t.dir || t.p > 0 || t.hold > 0) { i
 function tipTrailer(i) {
   const t = tr[i]; if (t.dir || t.p > 0 || t.hold > 0) return;
   if (t.lid < .95) flash(`Open trailer ${i + 1}'s lid first`);
-  else if (fills[i] <= 0) flash(`Trailer ${i + 1} is empty`);
+  else if (state === 'tiptug' && ttDone[i]) flash(`Trailer ${i + 1} is done: close its lid`);
+  else if (state !== 'tiptug' && fills[i] <= 0) flash(`Trailer ${i + 1} is empty`);
   else t.dir = 1;
 }
 const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 3 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 3;
@@ -848,13 +849,13 @@ function updateSkyway(dt) {
       t.p += dt / 1.2;
       if (fills[i] > 0 && t.p > .25) for (let k = 0; k < 3; k++) { const th = t.p * SKW_TIP, lx = SKW_X + 12 + 22 * Math.sin(th), lz = 14 + 22 * Math.cos(th);   // ore spilling off the tub lip
         rocks.push({ x: lx, y: SKW_TY(i) + (Math.random() - .5) * 64, z: lz, vx: 25 + Math.random() * 40, vy: (Math.random() - .5) * 8, vz: -Math.random() * 15, l: 3, c: ['#8a5a44', '#a8705a', '#6e4434', '#b8805e'][Math.floor(Math.random() * 4)] }); }
-      if (t.p >= 1) { t.p = 1; t.dir = 0; t.hold = .7; fills[i] = 0; }
+      if (t.p >= 1) { t.p = 1; t.dir = 0; t.hold = .7; fills[i] = 0; if (state === 'tiptug') ttDone[i] = 1; }
     } else if (t.hold > 0) { t.hold -= dt; if (t.hold <= 0) t.dir = -1; }
     else if (t.dir === -1) { t.p -= dt / 1.2; if (t.p <= 0) { t.p = 0; t.dir = 0; } }
   }
   for (const r of rocks) { r.x += r.vx * dt; r.y += r.vy * dt; r.z = (r.z || 0) + (r.vz || 0) * dt; r.vz = (r.vz || 0) - 320 * dt; r.l -= dt; }
   rocks = rocks.filter(r => r.l > 0 && r.z > (state === 'tiptug' ? 0 : SKW_PILE_Z(r.x, r.y))); msgT -= dt;
-  if (state === 'tiptug' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0 && !t.want && t.lid < .02)) { finishTipTug(); return; }
+  if (state === 'tiptug' && ttDone.every(Boolean) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0 && !t.want && t.lid < .02)) { finishTipTug(); return; }
   if (state === 'skyway' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0)) {
     startReturn();
   }
@@ -4821,7 +4822,8 @@ function drawSkyway() {
   rect(0, H - 200, W, 200, 'rgba(10,18,28,.8)');
   for (let i = 0; i < NT; i++) {
     const [bx] = lidBtn(i);
-    text(`TRAILER ${i + 1}` + (fills[i] > 0 ? '' : ' ✓'), bx + 56, H - 178, 13, fills[i] > 0 ? '#ffd23a' : '#7fdf7f');
+    const ok = state === 'tiptug' ? ttDone[i] && tr[i].lid < .02 : fills[i] <= 0;
+    text(`TRAILER ${i + 1}` + (ok ? ' ✓' : ''), bx + 56, H - 178, 13, ok ? '#7fdf7f' : '#ffd23a');
     drawBtn(lidBtn(i), lidBtn(i)[4], tr[i].want); drawBtn(tipBtn(i), tipBtn(i)[4], tr[i].dir !== 0 || tr[i].hold > 0);
   }
   if (tug) { rect(0, 0, W, 64, '#142536e8'); text('TIP & TUG: PA236', W / 2, 26, 20, '#ffea69'); text('One trailer at a time: open the lid, tip the bin, close the lid', W / 2, 50, 12, '#fff');
