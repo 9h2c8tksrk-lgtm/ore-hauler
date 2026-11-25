@@ -3697,6 +3697,7 @@ function drawWalk() {
       wPoly([[x - 6, 914.6, 11], [x + 6, 914.6, 11], [x + 6, 914.6, 15], [x - 6, 914.6, 15]], '#1b1d20'); wPoly([[x - 1, 914.6, 15], [x + 1, 914.6, 15], [x + 1, 914.6, 24], [x - 1, 914.6, 24]], '#3a3f44'); } });
   // Dining room entrance: glass double doors on the kitchen's west face, under an awning
   add(KITCHEN_DOOR.x - 3, KITCHEN_DOOR.y, () => {
+    if (wCam.x > KITCHEN_DOOR.x - 16) ctx.globalAlpha = .28;   // camera behind the doors (e.g. just after walking out): fade them like the building
     const x = KITCHEN_DOOR.x - .4, y = KITCHEN_DOOR.y, F = (y0, y1, z0, z1, c, dx = 0) => wPoly([[x - dx, y0, z0], [x - dx, y1, z0], [x - dx, y1, z1], [x - dx, y0, z1]], c);
     wBox(x - 6, y, 12, 46, 0, 2.2, '#bdb7a8', '#cfc9ba'); wBox(x - 3, y, 5, 34, 0, 1.2, '#2f3437', '#3d4347');
     F(y - 15, y + 15, 0, 36, nearKitchen() ? '#ffe040' : '#9aa3a8');
@@ -3705,6 +3706,7 @@ function drawWalk() {
     F(y - .8, y + .8, 0, 34, '#7e888e', .25); F(y - 15, y + 15, 33, 36, '#7e888e', .25);
     wBox(x - 8, y, 16, 46, 37, 39.5, '#6f7d3c', '#808e4a'); F(y - 23, y + 23, 39.5, 46, '#6f7d3c', .2);
     wText('DINING ROOM', x - 1, y, 42.8, 5, '#fff');
+    ctx.globalAlpha = 1;
   });
   const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? (shiftStart ? YOUR_UTE : CAMP_DOORS[wRoom]) : null;
   if (goal) add(goal.x + goal.nx * 12, goal.y + goal.ny * 12, () => {   // glowing beacon over the target door
