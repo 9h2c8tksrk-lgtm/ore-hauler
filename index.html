@@ -133,17 +133,18 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'kitcheninside' && inR(p, [340, 558, 132, 52])) { kitchenInteract(); return; }
   if (state === 'shopinside' && inR(p, [340, 558, 132, 52])) { shopInteract(); return; }
   if (state === 'wsoffice' && inR(p, [340, 558, 132, 52])) { wsoInteract(); return; }
+  if (state === 'shroom' && inR(p, [340, 558, 132, 52])) { shrInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && inR(p, [340, 558, 132, 52])) { if (officeStep === 1) officeTouchHeld = true; else officeInteract(); return; }
   if (state === 'drive' && bayReady) {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'shroom' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if(state==='workshop'&&inR(p,[340,570,132,52])&&workshopParked()){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
-  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if (state === 'drive' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'shroom' || state === 'workshopfoot') { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'load') {
     if (ore() >= MIN_ORE && inR(p, GO)) start();
     else if (inR(p, ACT)) action();
@@ -261,6 +262,7 @@ function onKey(code) {
   if (state === 'kitcheninside' && code === 'KeyE') { kitchenInteract(); return; }
   if (state === 'shopinside' && code === 'KeyE') { shopInteract(); return; }
   if (state === 'wsoffice' && code === 'KeyE') { wsoInteract(); return; }
+  if (state === 'shroom' && code === 'KeyE') { shrInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
@@ -269,6 +271,7 @@ function onKey(code) {
   }
     if (state==='workshopfoot' && code==='KeyE') {
       if (nearWsOffice()) { enterWsOffice(); return; }
+      { const rm = nearShRoom(); if (rm) { enterShRoom(rm); return; } }
       if(!cribReached){flash('Head out the Bay 1 side door to the crib room first.');return;}
       if(!shopAtCab()){flash('Walk back to your cab door (driver side) to climb in.');return;}
       workshopOnFoot=false;state='workshop';wk.done=true;wk.auto=false;wk.v=0;
@@ -885,6 +888,10 @@ function enterWorkshopFoot() {
   shopCrewInit(); wk.v = 0; ptrs.clear(); syncBtns();
   flash('Walk to the crib room: out a Bay 1 PA door, or out the big bay doors and round the side.');
 }
+function reachCrib(atDoor) {
+  cribReached = true; wk.done = true; wk.fixed = wk.fixed.map(() => 1); hp = 100;
+  flash(atDoor ? 'CRIB ROOM REACHED! Press E to go in for smoko, or walk back to your cab door.' : 'CRIB ROOM REACHED! Have a smoko, then walk back to your cab door and press E.');
+}
 function updateWorkshopFoot(dt) {
   time += dt; msgT -= dt; footTime += dt;
   footFacing += steerAxis() * 2.0 * dt;
@@ -904,10 +911,7 @@ function updateWorkshopFoot(dt) {
     const step = Math.min(d, (m.mullet ? 34 : 28) * dt);
     m.heading = Math.atan2(dy, dx); m.x += dx / d * step; m.y += dy / d * step; m.walk = true;
   }
-  if (!cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x - shDoorN(SH_BLDGS[0]).x * 12, workshopFoot.y - SH_CRIB_DOOR.y - shDoorN(SH_BLDGS[0]).y * 12) < 24) {
-    cribReached = true; wk.done = true; wk.fixed = wk.fixed.map(() => 1); hp = 100;
-    flash('CRIB ROOM REACHED! Smoko done - walk back to your cab door and press E.');
-  }
+  if (!cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x - shDoorN(SH_BLDGS[0]).x * 12, workshopFoot.y - SH_CRIB_DOOR.y - shDoorN(SH_BLDGS[0]).y * 12) < 24) reachCrib(true);
 }
 function drawWorkshopFoot() {
   // third-person: the camera trails 90 units behind and 85 up, swinging round after you; it never leaves the side of the wall you're on
@@ -1360,7 +1364,7 @@ function drawWorkshopFoot() {
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
   text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
-  const atOff = nearWsOffice(); if (atOff) text('PRESS E TO GO INTO THE WORKSHOP OFFICE', W / 2, 160, 14, '#83f5a3');
+  const rm = nearShRoom(), atOff = nearWsOffice() || !!rm; if (atOff) text('PRESS E TO GO INTO THE ' + (rm ? SHR[rm].title : 'WORKSHOP OFFICE'), W / 2, 160, 14, '#83f5a3');
   if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : 'ENTER CAB', false); }
 }
 function updateWorkshop(dt) {
@@ -1462,6 +1466,7 @@ function update(dt) {
   if (state === 'kitcheninside') return updateKitchen(dt);
   if (state === 'shopinside') return updateShop(dt);
   if (state === 'wsoffice') return updateWsOffice(dt);
+  if (state === 'shroom') return updateShRoom(dt);
   if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
@@ -3025,6 +3030,145 @@ function drawWsOffice() {
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
 }
+// ---------- walk-in courtyard rooms: the crib room and the female and male toilets ----------
+// Each room has local coordinates: x across, y from the back wall (y0) to the wall with the door (y1), door at x = door.
+// Facing in from the door, -x is on your left. The toilet layout is drawn once and mirrored (m = -1) for the male side.
+const SHR = {
+  crib: { title: 'CRIB ROOM', bld: 0, B: { x0: -120, x1: 120, y0: -55, y1: 55 }, door: 0, floor: '#a9b4b9', wall: '#dfe3e5', hint: 'Tables and the footy on the left, fridges, sink and ice machine on the right.' },
+  female: { title: 'FEMALE TOILETS', bld: 2, label: 'FEMALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: 8, m: 1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Two cubicles and two basins.' },
+  male: { title: 'MALE TOILETS', bld: 2, label: 'MALE', B: { x0: -65, x1: 65, y0: -50, y1: 50 }, door: -8, m: -1, floor: '#b9c3c8', wall: '#eef1f2', hint: 'Two cubicles, a urinal and two basins.' } };
+let shRoom = 'crib';
+const shRoomDoor = k => { const r = SHR[k], b = SH_BLDGS[r.bld], ds = shDoors(b); return ds.find(d => d.label === r.label) || ds[0]; };
+const nearShRoom = () => { if (state !== 'workshopfoot') return null;
+  for (const k in SHR) { const d = shRoomDoor(k), n = shDoorN(SH_BLDGS[SHR[k].bld]); if (Math.hypot(workshopFoot.x - d.x - n.x * 14, workshopFoot.y - d.y - n.y * 14) < 18) return k; }
+  return null; };
+const CRIB_TABLES = [-88, -52], CRIB_TY = -12, CRIB_TV_Y = -10, CRIB_FRIDGES = [56, 70, 84];
+const SHR_SPOTS = {
+  crib: [{ x: -70, y: 26, r: 18, act: 'sit down for smoko', msg: 'Smoko: a sanga and a cuppa at the table. The boys are arguing about the footy.' },
+    { x: -100, y: 30, r: 14, act: 'check the footy score', msg: 'Third quarter, scores level. Someone turns it up.' },
+    { x: 70, y: -34, r: 16, act: 'grab a cold drink', msg: 'Grabbed an icy cold one from the fridge. Name\'s on the lid, no stealing.' },
+    { x: 100, y: -4, r: 13, act: 'wash your dishes', msg: 'Washed your cup and plate and left them in the rack.' },
+    { x: 98, y: 34, r: 11, act: 'fill your bottle with ice', msg: 'Filled your water bottle with ice for the drive.' }],
+  female: [{ x: -48, y: -8, r: 12, act: 'use the cubicle', msg: 'Cubicle 1 is engaged. Try the other one.' }, { x: -18, y: -8, r: 12, act: 'use the cubicle', msg: 'All done in cubicle 2.' },
+    { x: 46, y: -14, r: 14, act: 'wash your hands', msg: 'Washed your hands. Soap, water, paper towel.' }],
+  male: [{ x: -48, y: -8, r: 12, act: 'use the cubicle', msg: 'Cubicle 1 is engaged. Try the other one.' }, { x: -18, y: -8, r: 12, act: 'use the cubicle', msg: 'All done in cubicle 2.' },
+    { x: 28, y: -34, r: 10, act: 'use the urinal', msg: 'Used the urinal. It flushes itself.' }, { x: 46, y: -12, r: 11, act: 'wash your hands', msg: 'Washed your hands. Soap, water, paper towel.' }] };
+const shrSpots = () => SHR_SPOTS[shRoom].map(sp => ({ ...sp, x: sp.x * (SHR[shRoom].m || 1) }));
+const shrNear = () => shrSpots().find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
+function shrSolids() {
+  if (shRoom === 'crib') return [...CRIB_TABLES.map(tx => [tx, CRIB_TY, 32, 36]), [70, -49, 44, 12], [114, -4, 12, 34], [98, 48, 16, 12], [-118, CRIB_TV_Y, 4, 22]];
+  const m = SHR[shRoom].m, o = [[-48 * m, -34, 30, 32], [-18 * m, -34, 30, 32], [59 * m, -14, 10, 40]];
+  if (shRoom === 'male') o.push([30 * m, -47, 12, 6]);
+  return o;
+}
+function shrBlocked(x, y) {
+  const r = SHR[shRoom], B = r.B;
+  if (y > B.y1 - 5) return Math.abs(x - r.door) > 10;
+  if (x < B.x0 + 5 || x > B.x1 - 5 || y < B.y0 + 5) return true;
+  return shrSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
+}
+function enterShRoom(k) {
+  shRoom = k; state = 'shroom'; kit = { x: SHR[k].door, y: SHR[k].B.y1 - 12, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
+  if (k === 'crib' && !cribReached) reachCrib();
+  else flash(SHR[k].title.charAt(0) + SHR[k].title.slice(1).toLowerCase() + '. ' + SHR[k].hint);
+}
+function leaveShRoom() {
+  const b = SH_BLDGS[SHR[shRoom].bld], d = shRoomDoor(shRoom), n = shDoorN(b);
+  state = 'workshopfoot'; workshopFoot.x = d.x + n.x * 18; workshopFoot.y = d.y + n.y * 18; footFacing = Math.atan2(n.y, n.x); footCamH = footFacing; ptrs.clear(); syncBtns();
+  flash(cribReached ? 'Back outside. Walk back to your cab door.' : 'Back outside. The crib room is across the courtyard.');
+}
+function shrInteract() { const sp = shrNear(); if (!sp) { flash('Walk up to something and press E. ' + SHR[shRoom].hint); return; } flash(sp.msg); }
+function updateShRoom(dt) {
+  wT += dt; msgT -= dt; footTime += dt;
+  const fwd = (keys.ArrowUp || keys.KeyW || keys.TG ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB ? .65 : 0);
+  kit.dir += steerAxis() * 2.3 * dt;
+  if (fwd) { const nx = kit.x + Math.cos(kit.dir) * 40 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 40 * fwd * dt;
+    if (!shrBlocked(nx, kit.y)) kit.x = nx; if (!shrBlocked(kit.x, ny)) kit.y = ny; }
+  if (kit.y > SHR[shRoom].B.y1 - 1) leaveShRoom();
+}
+function drawShRoom() {
+  const r = SHR[shRoom], B = r.B, m = r.m || 1, { hx, hy } = roomCam(kit, { ...B, x0: B.x0 - 30, x1: B.x1 + 30, y1: B.y1 + 45 }, 64);   // the camera may sit behind the door wall or an end wall; that wall fades out
+  rect(0, 0, W, H, '#c3c8cb');
+  const ents = [], pre = [], add = (x, y, fn, list = ents) => list.push({ f: (x - wCam.x) * hx + (y - wCam.y) * hy, fn });
+  const Y = (x0, x1, y, z0, z1, c) => wPoly([[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], c);
+  const X = (x, y0, y1, z0, z1, c) => wPoly([[x, y0, z0], [x, y1, z0], [x, y1, z1], [x, y0, z1]], c);
+  wFlat(B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0, r.floor);
+  for (let x = B.x0 + 10; x < B.x1; x += 10) wFlat(x, B.y0, .4, B.y1 - B.y0, shade(r.floor, .93), .05);
+  for (let y = B.y0 + 10; y < B.y1; y += 10) wFlat(B.x0, y, B.x1 - B.x0, .4, shade(r.floor, .93), .05);
+  const tiles = shRoom !== 'crib', SK = '#9aa0a4';
+  const wallY = (x0, x1, y, cut, z0 = 0) => add((x0 + x1) / 2, y, () => { if (cut()) ctx.globalAlpha = .18; Y(x0, x1, y, z0, 44, r.wall);
+    if (tiles) { for (let z = 6; z < 26; z += 6) Y(x0, x1, y, z, z + .3, '#d3d8db'); Y(x0, x1, y, 0, 26, 'rgba(160,200,215,.18)'); } if (!z0) Y(x0, x1, y, 0, 3, SK); ctx.globalAlpha = 1; }, pre);
+  const wallX = (x, y0, y1, cut) => add(x, (y0 + y1) / 2, () => { if (cut()) ctx.globalAlpha = .18; X(x, y0, y1, 0, 44, r.wall);
+    if (tiles) { for (let z = 6; z < 26; z += 6) X(x, y0, y1, z, z + .3, '#d3d8db'); X(x, y0, y1, 0, 26, 'rgba(160,200,215,.18)'); } X(x, y0, y1, 0, 3, SK); ctx.globalAlpha = 1; }, pre);
+  wallY(B.x0, B.x1, B.y0, () => wCam.y < B.y0);
+  wallX(B.x0, B.y0, B.y1, () => wCam.x < B.x0);
+  wallX(B.x1, B.y0, B.y1, () => wCam.x > B.x1);
+  wallY(B.x0, r.door - 11, B.y1, () => wCam.y > B.y1); wallY(r.door + 11, B.x1, B.y1, () => wCam.y > B.y1); wallY(r.door - 11, r.door + 11, B.y1, () => wCam.y > B.y1, 35);
+  add(r.door, B.y1, () => { const y = B.y1 - .2, dx = r.door, col = SH_BLDGS[r.bld].col;   // the door back out, with an exit sign; faded like its wall when the camera is behind it
+    if (wCam.y > B.y1) ctx.globalAlpha = .18;
+    Y(dx - 12, dx + 12, y, 0, 35, '#8a949b'); Y(dx - 10.5, dx + 10.5, y - .1, 0, 33.5, col); Y(dx + 6, dx + 9, y - .2, 15, 16.5, '#d8dde0');
+    Y(dx - 6, dx + 6, y - .2, 37, 41, '#1f8a4c'); wText('EXIT', dx, y - .3, 39, 3.5, '#fff'); ctx.globalAlpha = 1; }, pre);
+  if (shRoom === 'crib') {
+    // left end: the footy on the TV on the end wall, two tables with plastic chairs
+    const ty = CRIB_TV_Y;
+    add(B.x0 + 2, ty, () => { const x = B.x0 + .4; X(x, ty - 12, ty + 12, 22, 38, '#15171a'); X(x + .1, ty - 11, ty + 11, 23, 37, '#3f8f3a');
+      X(x + .15, ty - .2, ty + .2, 23, 37, '#e8f0e4'); for (let k = 0; k < 6; k++) { const yy = ty - 9 + ((k * 3.7 + wT * (k % 2 ? 2 : -1.6)) % 19 + 19) % 19, zz = 25 + (k * 2.3) % 10; X(x + .2, yy, yy + 1.1, zz, zz + 1.6, k % 2 ? '#1d5fb4' : '#f2c21c'); }
+      X(x + .2, ty + 8, ty + 10.5, 35, 36.6, '#fff'); wBox(B.x0 + 2, ty, 4, 4, 18, 22, '#2b2f33', '#3a3f44'); }, pre);
+    for (const tx of CRIB_TABLES) { const cy0 = CRIB_TY; add(tx, cy0, () => {
+      for (const [ox, oy] of [[-7, -12], [7, -12], [-7, 12], [7, 12]]) { const cy = cy0 + oy, back = oy < 0 ? -3 : 3;   // blue plastic chairs either side
+        for (const [lx, ly] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) wBox(tx + ox + lx, cy + ly, .8, .8, 0, 8, '#5d666d', '#5d666d');
+        wBox(tx + ox, cy, 8, 8, 8, 9, '#2f6f9f', '#3a82b8'); wBox(tx + ox, cy + back, 8, 1.2, 9, 17, '#2f6f9f', '#3a82b8'); }
+      for (const [lx, ly] of [[-11, -6], [11, -6], [-11, 6], [11, 6]]) wBox(tx + lx, cy0 + ly, 1.2, 1.2, 0, 13, '#7e868c', '#7e868c');
+      wBox(tx, cy0, 26, 15, 13, 14.4, '#e9e4d8', '#f4f0e6');
+      wBox(tx - 5, cy0 - 2, 3, 3, 14.4, 17.5, '#f4f4f4', '#7a4a2a'); wBox(tx + 6, cy0 + 2, 6, 6, 14.4, 14.9, '#f4f4f4', '#ffffff');   // a mug and a plate
+    }); }
+    // right end: three fridges on the back wall, sink bench on the end wall, ice machine by the door
+    const fy = B.y0 + 6, ff = fy + 6.1;
+    add(70, fy, () => { CRIB_FRIDGES.forEach((fx, k) => {
+      wBox(fx, fy, 13, 12, 0, 40, '#dfe3e6', '#eef1f3'); Y(fx - 6.5, fx + 6.5, ff, 21, 21.4, '#b5bcc1');
+      Y(fx + 4.4, fx + 5.4, ff + .1, 24, 34, '#9aa3aa'); Y(fx + 4.4, fx + 5.4, ff + .1, 8, 18, '#9aa3aa');
+      if (k === 1) { Y(fx - 5, fx + 3.5, ff + .05, 3, 19, '#5f8fa6'); for (let z = 6; z < 19; z += 4.4) for (let q = 0; q < 3; q++) Y(fx - 4.4 + q * 2.8, fx - 2.6 + q * 2.8, ff + .1, z, z + 3.4, ['#c0392b', '#2a6d2a', '#d8b24a'][(q + Math.round(z)) % 3]); }   // glass-door drinks fridge
+      Y(fx - 5, fx + 1, ff + .05, 30, 33, '#fff7a8'); }); });                                                                                                 // name notes
+    add(114, -4, () => { wBox(114, -4, 12, 34, 0, 14, '#c7a06c', '#d9dde0'); wBox(114, -8, 8, 12, 12.5, 14.05, '#9aa3aa', '#7d868c');   // bench with a stainless sink
+      wBox(118, -8, 1.5, 1.5, 14, 22, '#c9ced2', '#c9ced2'); wBox(115.5, -8, 5, 1.2, 21, 22.2, '#c9ced2', '#c9ced2');                  // tap
+      for (let k = 0; k < 4; k++) wBox(114, 4 + k * 2, 6, .6, 14, 20, '#f4f4f4', '#ffffff');                                            // plates in the rack
+      wBox(114, -16, 5, 5, 14, 22, '#c0392b', '#d44b3d'); X(B.x1 - .3, -18, 10, 28, 36, '#7a8a6a'); });                                 // urn, window
+    add(98, 48, () => { wBox(98, 48, 14, 12, 0, 34, '#b6bdc2', '#cfd5d9'); wBox(98, 41.9, 10, .4, 18, 30, '#8e979d', '#8e979d');      // ice machine
+      Y(93, 103, 41.6, 30, 33, '#1d5fb4'); wText('ICE', 98, 41.5, 31, 2.6, '#fff'); wBox(98, 41, 6, 1.5, 4, 8, '#2b2f33', '#3a3f44'); });
+    add(0, B.y0 + 1, () => { Y(-24, 8, B.y0 + .3, 18, 36, '#c69b5e'); for (const [px, pz, c] of [[-20, 30, '#fff'], [-12, 24, '#ffe36b'], [-3, 31, '#9ad0f5'], [2, 22, '#fff']]) Y(px, px + 6, B.y0 + .2, pz, pz + 6, c);
+      wText('SAFETY SHARE', -8, B.y0 + .1, 37.5, 2.6, '#1d2023'); }, pre);   // notice board
+  } else {
+    // two cubicles along the back wall: partitions, doors (cubicle 1 engaged), toilets with cisterns, roll holders
+    const bw = B.y0, fr = bw + 32;   // back wall, cubicle fronts
+    for (const [k, ux] of [[0, -48], [1, -18]]) { const cx = ux * m;
+      add(cx, bw + 16, () => {
+        wBox(cx, bw + 4, 9, 6, 0, 8, '#f6f7f7', '#ffffff'); wBox(cx, bw + 8, 9, 8, 0, 7, '#f6f7f7', '#ffffff'); wBox(cx, bw + 9, 9, 7, 7, 7.8, '#e9ecee', '#f4f6f7');   // pan and seat
+        wBox(cx, bw + 1.6, 12, 3, 8, 17, '#f6f7f7', '#ffffff'); wBox(cx + 9, bw + 1.4, 3, 2, 12, 15, '#e0e0e0', '#ffffff');                                     // cistern, toilet roll
+        for (const ex of [cx - 15, cx + 15]) wBox(ex, bw + 16, 1.2, 32, 2, 34, '#5f7a8a', '#6f8c9c');                                                           // side partitions
+        const dl = cx - 15, dr = cx + 15; Y(dl, dl + 6, fr, 2, 34, '#5f7a8a'); Y(dr - 4, dr, fr, 2, 34, '#5f7a8a');
+        if (k === 0) { Y(dl + 6, dr - 4, fr, 2, 34, '#6f8c9c'); Y(dl + 15, dl + 18, fr + .1, 18, 20, '#c0392b'); }                                            // engaged: door shut, red indicator
+        else wPoly([[dl + 6, fr, 2], [dl + 9, fr + 17, 2], [dl + 9, fr + 17, 34], [dl + 6, fr, 34]], '#6f8c9c');                                              // vacant: door swung open
+      }); }
+    // basins on the side wall with a long mirror, soap, paper towels and a bin
+    const wx = B.x1 * m, bx = 59 * m;
+    add(bx, -14, () => { wBox(bx, -14, 10, 40, 0, 15, '#7f8890', '#d9dde0');
+      for (const by of [-26, -4]) { wBox(bx, by, 7, 9, 13.5, 15.05, '#f4f6f7', '#c9d3d8'); wBox(wx - 2 * m, by, 1.5, 1.5, 15, 21, '#c9ced2', '#c9ced2'); wBox(wx - 4 * m, by, 4, 1.2, 20, 21.2, '#c9ced2', '#c9ced2'); }
+      X(wx - .3 * m, -32, 4, 22, 38, '#a9c7d6'); X(wx - .35 * m, -30, -20, 30, 36, 'rgba(255,255,255,.45)');                          // mirror
+      wBox(wx - 1.5 * m, -36, 3, 6, 18, 24, '#f4f4f4', '#ffffff'); wBox(wx - 2 * m, 14, 4, 7, 20, 32, '#e8e8e8', '#f4f4f4'); wBox(bx, 14, 7, 7, 0, 10, '#5e6c77', '#7a8892'); });
+    if (shRoom === 'male') add(30 * m, bw + 3, () => { const ux = 30 * m;   // wall-hung urinal with a privacy screen beside it
+      wBox(ux, bw + 2.5, 10, 5, 8, 26, '#f6f7f7', '#ffffff'); wBox(ux, bw + 5, 8, 1, 10, 22, '#e3e8ea', '#e3e8ea'); wBox(ux, bw + .6, 2, 2, 26, 34, '#c9ced2', '#c9ced2');
+      wBox(ux - 9 * m, bw + 8, 1.2, 14, 6, 34, '#5f7a8a', '#6f8c9c'); });
+    if (shRoom === 'female') add((B.x0 + 6) * m, 30, () => wBox((B.x0 + 6) * m, 30, 6, 6, 0, 10, '#d08bb0', '#e2a5c4'));               // sanitary bin
+    add(0, B.y0 + 1, () => { const sx = 46 * m; Y(sx - 6, sx + 6, B.y0 + .3, 26, 36, '#fff'); wText('WASH YOUR', sx, B.y0 + .2, 33, 1.7, '#1d5fb4'); wText('HANDS', sx, B.y0 + .2, 30, 1.7, '#1d5fb4'); }, pre);
+  }
+  add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
+  for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
+  rect(0, 0, W, 80, '#142536dd'); text(r.title, W / 2, 27, 22, '#ffea69');
+  text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
+  const sp = shrNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + sp.act, W / 2, 560, 14, '#fff'); }
+  if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
+  if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
+}
 // ---------- camp dining room (inside the kitchen building) ----------
 // Local coordinates: x across (-150..150), y from the back wall (-110) to the double doors (+110). Bain-marie along the back,
 // fresh food and crib bag benches on the east wall, dish return and two coffee machines on the west wall, TV in the north-east
@@ -3418,7 +3562,7 @@ let ovalSink=null;   // when set, campOval queues its faces so a whole figure ca
 // shirt, stripe (reflective tape, null for none), pants, shorts, skin, shoes, hair ('short' | 'buzz' | 'mullet' | 'long' |
 // 'ponytail' | 'bald' | 'cap' | 'hardhat'), hairCol, cap, beard, sunnies, pose ('drink' | 'dribble' | 'shoot' | 'bag' | 'pack'), can, bag
 function campHuman(x,y,moustache=false,player=false,o={}) {
-  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'||state==='wsoffice'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
+  const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'||state==='wsoffice'||state==='shroom'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
   const keysWalk=keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB;
   const walking=player?keysWalk:!!o.walk, ph=player?wT*10:(o.ph||0), t=o.t!==undefined?o.t:wT;
   const moving=walking?Math.sin(ph)*2.1:(player?0:Math.sin(wT*3+x)*.25);
@@ -4978,6 +5122,7 @@ function render() {
   else if (state === 'kitcheninside') drawKitchen();
   else if (state === 'shopinside') drawShop();
   else if (state === 'wsoffice') drawWsOffice();
+  else if (state === 'shroom') drawShRoom();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
