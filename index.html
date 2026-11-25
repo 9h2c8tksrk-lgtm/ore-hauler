@@ -163,7 +163,7 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'menu' && inR(p, MECH_BTN)) { startMechanic(); return; }
   if (state === 'busride') { if (bus && bus.home) { mStage = 14; state = 'mechend'; bus = null; } else arriveWorkshopMech(); return; }
   if (state === 'mechend') { reset(); state = 'menu'; return; }
-  if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
+  if (state === 'menu') { if (inR(p, LOAD_BTN)) { startLoad(); return; } for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; } nameIn.blur(); return; }   // no tap-anywhere start
   onKey('Space');
 });
 cv.addEventListener('pointerup', () => { officeTouchHeld = false; });
@@ -272,7 +272,7 @@ function onKey(code) {
   if (state === 'menu' && code === 'KeyM') { startMechanic(); return; }
   if (state === 'busride' && (code === 'Space' || code === 'Enter')) { if (bus && bus.home) { mStage = 14; state = 'mechend'; bus = null; } else arriveWorkshopMech(); return; }
   if (state === 'mechend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
-  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
+  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { startLoad(); return; }
   if (state==='workshop' && code==='KeyE') {
     enterWorkshopFoot(); return;
   }
@@ -299,17 +299,24 @@ function onKey(code) {
   }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-const SKIP_BTN = [110, 564, 260, 30, 'SKIP LOADING (L)'], CAMP_BTN = [110, 598, 260, 30, 'TRUCK DRIVER: START AT CAMP (C)'], MECH_BTN = [110, 632, 260, 30, 'WORKSHOP MECHANIC (M)'];
+const LOAD_BTN = [110, 560, 260, 28, 'TRUCK DRIVER: LOAD (ENTER)'], SKIP_BTN = [110, 592, 260, 28, 'SKIP LOADING (L)'], CAMP_BTN = [110, 624, 260, 28, 'TRUCK DRIVER: START AT CAMP (C)'], MECH_BTN = [110, 656, 260, 28, 'WORKSHOP MECHANIC (M)'];
+let nameErrT = 0;   // a name is required before any storyline starts
+function takeName() {
+  const n = nameIn.value.trim().slice(0, 12);
+  if (!n) { nameErrT = 2.5; setTimeout(() => nameIn.focus()); return false; }   // deferred, or the shortcut key gets typed in as the name
+  playerName = n; localStorage.oreName = playerName; nameIn.blur(); reset(); return true;
+}
+function startLoad() { if (!takeName()) return; homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); }
 let role = 'driver', mStage = 0, mBreath = 0, prestartLine = -1;   // which storyline, and how far through the mechanic's day
 // begin the shift at your room: on foot to the Schedule Office, then your ute to the truck park, then into the truck
 function startAtCamp() {
-  playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
+  if (!takeName()) return;
   homeRoom = -1; shiftStart = true; toWalk(); homeRoom = wRoom;
 }
 // the Workshop Mechanic's day: room -> dining room (feed + crib) -> Hiace at the bus stop -> ride to the workshop ->
 // crib room (lunch in the fridge, breatho) -> prestart with the workshop supervisor
 function startMechanic() {
-  playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
+  if (!takeName()) return;
   role = 'mech'; mStage = 0; kitDone = {}; homeRoom = -1; shiftStart = true; toWalk(); homeRoom = wRoom; wStage = 5;   // wStage 5: none of the driver's camp steps apply
   flash(`Room ${CAMP_DOORS[wRoom].name}: morning! Head to the dining room for a feed and pack your crib.`);
 }
@@ -651,7 +658,7 @@ function drawMechEnd() {
 }
 // skip the yard: begin the run already loaded, parked in the first left-hand parking bay
 function skipLoad() {
-  playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
+  if (!takeName()) return;
   fills = [TRAILER_CAP, TRAILER_CAP, TRAILER_CAP, TRAILER_CAP];
   scroll = bayStarts[1] + 460; dist = scroll / 4; qx = ROAD_L - 13 - 40; speed = 0; steeringSpeed = 0;
   jts = straightChain(qx, qy, 1); cabAngle = 0; state = 'drive'; ptrs.clear(); syncBtns();
@@ -1857,6 +1864,7 @@ function update(dt) {
   if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } }
   if (state !== 'drive' && state !== 'workshop' && state !== 'ute') shake = Math.max(0, shake - dt);   // those three decay it themselves; load/skyway/end screens never did, so a bump kept the screen shaking
   if (state === 'menu') scroll += 70 * dt;
+  if (nameErrT > 0) nameErrT -= dt;
   if (state === 'load') return updateLoad(dt);
   if (state === 'skyway' || state === 'tiptug') return updateSkyway(dt);
   if (state === 'service') return updateService(dt);
@@ -5730,11 +5738,13 @@ function render() {
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
     text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
     text('Two storylines: Truck Driver or Workshop Mechanic', W / 2, 200, 14, '#ff6');
+    drawBtn(LOAD_BTN, isTouch ? 'TRUCK DRIVER: LOAD AT ROM' : LOAD_BTN[4], false);
     drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
     drawBtn(CAMP_BTN, isTouch ? 'TRUCK DRIVER: START AT CAMP' : CAMP_BTN[4], false);
     drawBtn(MECH_BTN, isTouch ? 'WORKSHOP MECHANIC' : MECH_BTN[4], false);
-    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 686, 13, '#ccc');
-    text(`Best: ${best}`, W / 2, 708, 14, '#ccc');
+    if (nameErrT > 0) text('Enter your name to start', W / 2, 236, 16, '#f44');
+    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 700, 12, '#ccc');
+    text(`Best: ${best}`, W / 2, 716, 13, '#ccc');
   } else {
     if (state === 'skyway') drawSkyway();
     else {
@@ -5778,6 +5788,7 @@ let last = performance.now();
 function placeName() {
   const show = state === 'menu', r = cv.getBoundingClientRect(), k = r.width / W;
   nameIn.style.display = show ? 'block' : 'none';
+  nameIn.style.borderColor = show && nameErrT > 0 ? '#f44' : '#fff';
   if (!show) return;
   Object.assign(nameIn.style, { left: r.left + (W / 2 - 120) * k + 'px', top: r.top + 262 * k + 'px', width: 240 * k + 'px', height: 38 * k + 'px', fontSize: 18 * k + 'px' });
 }
