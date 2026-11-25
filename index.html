@@ -808,13 +808,15 @@ const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { 
 const SH_OUT = { x0: -420, y0: -90, y1: SH_D + 90 };   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
 // Four transportables in a pinwheel round a courtyard beside Bay 1, laid out like the yard's aerial map. Each has its door
 // on the courtyard side (face N/S/E/W); the crib room is the one you head for.
-const SH_BLDGS = [
-  { x0: -283, x1: -94, y0: 198, y1: 269, name: 'CRIB ROOM', face: 'S', col: '#1d5fb4' },
-  { x0: -165, x1: -94, y0: 310, y1: 499, name: 'WORKSHOP OFFICE', face: 'W', col: '#1d5fb4' },
-  { x0: -378, x1: -189, y0: 428, y1: 499, name: 'ABLUTIONS', face: 'N', col: '#2f7a46' },
-  { x0: -378, x1: -307, y0: 198, y1: 387, name: 'FIRST AID', face: 'E', col: '#c62828' }];
+const SH_BLDGS = [   // laid out on the editable courtyard map: four transportables closing in round a paved courtyard, every door opening onto it
+  { x0: -384, x1: -313, y0: 252, y1: 441, name: 'CRIB ROOM', face: 'E', col: '#1d5fb4' },
+  { x0: -140, x1: -69, y0: 254, y1: 443, name: 'WORKSHOP OFFICE', face: 'W', col: '#1d5fb4' },
+  { x0: -338, x1: -149, y0: 168, y1: 239, name: 'ABLUTIONS', face: 'S', col: '#2f7a46', doors: [{ off: .28, label: 'FEMALE' }, { off: -.28, label: 'MALE' }] },   // female end nearest the workshop
+  { x0: -346, x1: -157, y0: 456, y1: 527, name: 'OPERATIONS & HSEC', face: 'N', col: '#c62828' }]
 const shDoorPt = b => b.face === 'S' ? { x: (b.x0 + b.x1) / 2, y: b.y1 } : b.face === 'N' ? { x: (b.x0 + b.x1) / 2, y: b.y0 } : b.face === 'E' ? { x: b.x1, y: (b.y0 + b.y1) / 2 } : { x: b.x0, y: (b.y0 + b.y1) / 2 };
-const SH_CRIB_DOOR = shDoorPt(SH_BLDGS[0]), SH_TANK = { x: -40, y: 470, r: 16 };
+const shDoorN = b => ({ x: b.face === 'E' ? 1 : b.face === 'W' ? -1 : 0, y: b.face === 'S' ? 1 : b.face === 'N' ? -1 : 0 });   // outward normal of the door face
+const shDoors = b => { const d = shDoorPt(b), ns = b.face === 'N' || b.face === 'S'; return (b.doors || [{ off: 0 }]).map(o => ({ x: d.x + (ns ? o.off * (b.x1 - b.x0) : 0), y: d.y + (ns ? 0 : o.off * (b.y1 - b.y0)), label: o.label })); };
+const SH_CRIB_DOOR = shDoorPt(SH_BLDGS[0]), SH_TANK = { x: -170, y: 724, r: 16 }, SH_BLD_PAD = 2;   // transportables keep a slim collision margin so the gaps between them stay walkable
 const TY_RACKS = [265, 340, 415], TY_MACHINE = { x: SB, y: 190 };   // tyre racks and the tyre changer on the line between Bay 1 and Bay 2
 const shopPit = i => ({ x: sbx(i), y0: 180, y1: SH_D - 70, w: 30 });
 let shopL = null;   // vehicle layout for this visit
@@ -853,7 +855,7 @@ function shopBlocked(x, y) {
   for (const [bay, T0] of [[L.bay, L.T0], ...L.pms.map(pm => [pm.bay, pm.F - 230])]) if (Math.abs(x - sbx(bay)) < 42 && y < T0 - 290) return true;
   if (x < 0) {   // the courtyard side: transportables and the tank
     if (Math.hypot(x - SH_TANK.x, y - SH_TANK.y) < SH_TANK.r + 5) return true;
-    return SH_BLDGS.some(b => x > b.x0 - 5 && x < b.x1 + 5 && y > b.y0 - 5 && y < b.y1 + 5);
+    return SH_BLDGS.some(b => x > b.x0 - SH_BLD_PAD && x < b.x1 + SH_BLD_PAD && y > b.y0 - SH_BLD_PAD && y < b.y1 + SH_BLD_PAD);
   }
   if (shopSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 5 && Math.abs(y - cy) < l / 2 + 5)) return true;
   if (!inLen) return false;   // out on the front or back apron
@@ -902,7 +904,7 @@ function updateWorkshopFoot(dt) {
     const step = Math.min(d, (m.mullet ? 34 : 28) * dt);
     m.heading = Math.atan2(dy, dx); m.x += dx / d * step; m.y += dy / d * step; m.walk = true;
   }
-  if (!cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x, workshopFoot.y - SH_CRIB_DOOR.y - 12) < 24) {
+  if (!cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x - shDoorN(SH_BLDGS[0]).x * 12, workshopFoot.y - SH_CRIB_DOOR.y - shDoorN(SH_BLDGS[0]).y * 12) < 24) {
     cribReached = true; wk.done = true; wk.fixed = wk.fixed.map(() => 1); hp = 100;
     flash('CRIB ROOM REACHED! Smoko done - walk back to your cab door and press E.');
   }
@@ -1096,21 +1098,29 @@ function drawWorkshopFoot() {
         box(bx + tx * 18, by + ty * 18, nx ? 6 : 16, ny ? 6 : 16, 12, '#eef0f1', '#f7f8f8', 1);
         box(cx - nx * (w / 2 + .8) - tx * 14, cy - ny * (l / 2 + .8) - ty * 14, nx ? 2 : 9, ny ? 2 : 9, 10, '#e8641c', '#f07a34', 26); } }
       if ((CX - dp.x) * nx + (CY - dp.y) * ny <= 0) return;   // door side only seen from the courtyard
-      const fx0 = dp.x + nx * .6, fy0 = dp.y + ny * .6;
-      box(fx0, fy0, nx ? 1 : 24, ny ? 1 : 24, 38, '#aab2b8', '#aab2b8', 10);                       // door frame
-      box(fx0 + nx * .3, fy0 + ny * .3, nx ? 1 : 20, ny ? 1 : 20, 35, bd.col, bd.col, 10);        // door
-      box(fx0 + nx * .6 + tx * 6, fy0 + ny * .6 + ty * 6, nx ? 1 : 2, ny ? 1 : 2, 2, '#d8dde0', '#d8dde0', 27);   // handle
-      for (const k of [-1, 1]) box(fx0 + tx * k * len * .3, fy0 + ty * k * len * .3, nx ? 1 : 22, ny ? 1 : 22, 14, '#2a4554', '#2a4554', 32);   // windows
-      box(dp.x + nx * 10, dp.y + ny * 10, nx ? 20 : 28, ny ? 20 : 28, 9, '#8d9297', '#a3a8ad'); box(dp.x + nx * 6, dp.y + ny * 6, nx ? 12 : 28, ny ? 12 : 28, 4, '#8d9297', '#a3a8ad', 9);   // steps
-      box(dp.x + nx * 1, dp.y + ny * 1, nx ? 1 : 64, ny ? 1 : 64, 7, bd.col, bd.col, 50);         // sign board
+      const doors = shDoors(bd), along = p => (p.x - dp.x) * tx + (p.y - dp.y) * ty;
+      for (const k of [-.42, -.3, -.14, .14, .3, .42]) { const wx = dp.x + tx * k * len, wy = dp.y + ty * k * len;   // windows, clear of every door
+        if (doors.some(d => Math.abs(along(d) - k * len) < 26) || (!bd.doors && Math.abs(Math.abs(k) - .3) > .01)) continue;
+        box(wx + nx * .6, wy + ny * .6, nx ? 1 : 22, ny ? 1 : 22, 14, '#2a4554', '#2a4554', 32); }
+      for (const d of doors) {
+        const fx0 = d.x + nx * .6, fy0 = d.y + ny * .6;
+        box(fx0, fy0, nx ? 1 : 24, ny ? 1 : 24, 38, '#aab2b8', '#aab2b8', 10);                       // door frame
+        box(fx0 + nx * .3, fy0 + ny * .3, nx ? 1 : 20, ny ? 1 : 20, 35, bd.col, bd.col, 10);        // door
+        box(fx0 + nx * .6 + tx * 6, fy0 + ny * .6 + ty * 6, nx ? 1 : 2, ny ? 1 : 2, 2, '#d8dde0', '#d8dde0', 27);   // handle
+        box(d.x + nx * 10, d.y + ny * 10, nx ? 20 : 28, ny ? 20 : 28, 9, '#8d9297', '#a3a8ad'); box(d.x + nx * 6, d.y + ny * 6, nx ? 12 : 28, ny ? 12 : 28, 4, '#8d9297', '#a3a8ad', 9);   // steps
+        if (d.label) { box(d.x + nx * 1, d.y + ny * 1, nx ? 1 : 26, ny ? 1 : 26, 5, '#f4f4f4', '#f4f4f4', 40); label(d.x + nx * 1.6, d.y + ny * 1.6, 41.2, d.label, 3.6, bd.col); }   // MALE / FEMALE plate over the door
+      }
+      const sw = Math.min(len - 10, bd.name.length * 4.6 + 14);
+      box(dp.x + nx * 1, dp.y + ny * 1, nx ? 1 : sw, ny ? 1 : sw, 7, bd.col, bd.col, 50);         // sign board
       label(dp.x + nx * 1.5, dp.y + ny * 1.5, 52, bd.name, 6.5, '#fff');
     }, outside);
   }
   add(SH_TANK.x, SH_TANK.y, () => vcyl(SH_TANK.x, SH_TANK.y, SH_TANK.r, 0, 64, '#5e7f5a', '#4e6b4b'), outside);   // rainwater tank
-  flat(-307, 269, -165, 428, .04, '#b7a58f');   // courtyard pavers
+  flat(-305, 247, -148, 448, .04, '#b7a58f');   // courtyard pavers, between all four doors
   const [pa1, pa2] = SH_DOORS.map(d => (d.y0 + d.y1) / 2);
-  for (const [x0, y0, x1, y1] of [[-80, pa1 - 8, 0, pa1 + 8], [-80, pa2 - 8, 0, pa2 + 8], [-80, pa1 - 8, -64, pa2 + 8],   // paths from both PA doors
-    [-80, -60, -64, pa1], [-80, -60, SH_W, -44], [-80, pa2, -64, SH_D + 60], [-80, SH_D + 44, SH_W, SH_D + 60], [-165, 280, -64, 296]])   // round from the bay doors, and into the courtyard
+  for (const [x0, y0, x1, y1] of [[-56, pa1 - 8, 0, pa1 + 8], [-56, pa2 - 8, 0, pa2 + 8], [-56, -60, -40, SH_D + 60],   // path from both PA doors, along the shed
+    [-56, -60, SH_W, -44], [-56, SH_D + 44, SH_W, SH_D + 60],   // round from the open back and the big bay doors
+    [-148, 241, -40, 252], [-148, 444, -40, 455]])   // into the courtyard, either side of the workshop office
     flat(x0, y0, x1, y1, .03, '#b39b80');
 
   // ----- inspection pit, as on site: yellow steel kerb with bolt holes, white lined walls with LED strip lights, checker-plate
