@@ -815,6 +815,7 @@ const SH_BLDGS = [
   { x0: -378, x1: -307, y0: 198, y1: 387, name: 'FIRST AID', face: 'E', col: '#c62828' }];
 const shDoorPt = b => b.face === 'S' ? { x: (b.x0 + b.x1) / 2, y: b.y1 } : b.face === 'N' ? { x: (b.x0 + b.x1) / 2, y: b.y0 } : b.face === 'E' ? { x: b.x1, y: (b.y0 + b.y1) / 2 } : { x: b.x0, y: (b.y0 + b.y1) / 2 };
 const SH_CRIB_DOOR = shDoorPt(SH_BLDGS[0]), SH_TANK = { x: -40, y: 470, r: 16 };
+const TY_RACKS = [265, 340, 415], TY_MACHINE = { x: SB, y: 190 };   // tyre racks and the tyre changer on the line between Bay 1 and Bay 2
 const shopPit = i => ({ x: sbx(i), y0: 180, y1: SH_D - 70, w: 30 });
 let shopL = null;   // vehicle layout for this visit
 const FORK = { x: sbx(5) - 16, y: 236 };   // the yard forklift, parked at the back of Bay 6 clear of the LV
@@ -834,6 +835,8 @@ function shopSolids() {
   { const pm0 = L.pms[0] || { bay: L.bay, F: L.F }; o.push([sbx(pm0.bay) - 56, pm0.F - 152, 44, 48]); }   // mobile work platform
   if (L.lv) o.push([sbx(L.lv.bay), L.lv.F - 69, 60, 146]);
   o.push([40, 60, 46, 38]);                                        // tyre inflation cage (back corner)
+  o.push([SB, (TY_RACKS[0] + TY_RACKS[2]) / 2, 26, TY_RACKS[2] - TY_RACKS[0] + 72]);   // tyre racks between Bay 1 and Bay 2
+  o.push([TY_MACHINE.x, TY_MACHINE.y, 28, 28]);                   // tyre changer
   for (const y of [260, 380, 500]) o.push([SH_W - 24, y, 32, 62]); // workbenches
   for (const y of [320, 440]) o.push([SH_W - 22, y, 24, 22]);     // roll-around tool cabinets
   o.push([FORK.x, FORK.y + 2, 30, 60]);                             // forklift
@@ -1258,11 +1261,22 @@ function drawWorkshopFoot() {
     }
     for (const y of [ya, yb]) add(p.x, y, () => { for (const z of [14.5, 28.5]) box(p.x, y, 2 * off - 4, 2.6, 2.6, railY, railT, z); box(p.x, y, 2.6, 2.6, 30, railY, railT); });   // gates over the stairs
   }
-  // tyre bay gear: rack of new tyres up on the Bay 1 wall, inflation cage, wheel dolly
-  add(22, 290, () => {   // galvanised two-tier rack of new tyres on polished alloy rims, bracketed to the Bay 1 wall above head height so the aisle under it stays clear
-    for (const y of [217, 290, 363]) { box(3, y, 3, 3, 130, '#aeb6bc', '#c9d0d4', 2); for (const z of [64, 95]) box(20, y, 34, 3, 2.5, '#aeb6bc', '#c9d0d4', z - 3); }   // wall posts and brackets
-    for (const z of [64, 95]) for (const x of [10, 34]) box(x, 290, 2.5, 150, 2.5, '#d62828', '#e04444', z);
-    for (let k = 0; k < 4; k++) for (const z of [64, 95.5]) tyre(22, 235 + k * 34, 13.5, 12, '#e3e8eb', z + 2);
+  // tyre bay gear: tyre racks and the tyre changer between Bay 1 and Bay 2, inflation cage
+  // tyre racks on the line between Bay 1 (tyre bay) and Bay 2: three galvanised three-tier units, two rows deep, full of tyres
+  for (const ry of TY_RACKS) add(SB, ry, () => {
+    for (const dx of [-11, 11]) for (const dy of [-34, 34]) box(SB + dx, ry + dy, 2.5, 2.5, 96, '#aeb6bc', '#c9d0d4');   // uprights
+    for (const z of [3, 35, 67]) { for (const dx of [-11, 11]) box(SB + dx, ry, 2.5, 70, 2.5, '#d62828', '#e04444', z); box(SB, ry, 22, 68, .8, '#8d969c', '#9aa3a9', z + 1.2); }   // beams and mesh decks
+    for (const z of [5, 37, 69]) for (const dx of [-5.5, 5.5]) for (const dy of [-17, 17]) tyre(SB + dx, ry + dy, 13.5, 9, '#e3e8eb', z);
+  });
+  add(TY_MACHINE.x, TY_MACHINE.y, () => {   // truck tyre changer: base, column with the clamping chuck, a wheel on it, the tool arm and the control pedestal
+    const x = TY_MACHINE.x, y = TY_MACHINE.y;
+    box(x, y, 26, 26, 7, '#c62828', '#d84040');
+    box(x - 9, y, 7, 10, 52, '#c62828', '#d84040', 7);
+    box(x - 3, y, 6, 8, 6, '#2b2f33', '#3a3f44', 26);               // chuck
+    tyre(x + 3, y, 19, 10, '#c9ced2', 10);                          // wheel clamped upright
+    box(x + 2, y - 10, 22, 4, 4, '#3a3f44', '#4a5056', 56); box(x + 11, y - 10, 3, 3, 14, '#3a3f44', '#4a5056', 42);   // tool arm over the bead
+    box(x + 10, y + 16, 6, 6, 30, '#2b2f33', '#3a3f44'); box(x + 10, y + 16, 9, 7, 4, '#c62828', '#d84040', 30);      // control pedestal
+    label(x, y + 13.5, 6, 'TYRE CHANGER', 3.5, '#fff');
   });
   for (const [y, c] of [[320, '#c62828'], [440, '#1f4fa0']]) add(SH_W - 22, y, () => {   // roll-around tool cabinets
     box(SH_W - 22, y, 22, 20, 34, c, shade(c, 1.15), 3); box(SH_W - 22, y, 23, 21, 1.2, '#1d2023', '#2b2f33', 37);
