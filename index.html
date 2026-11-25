@@ -160,6 +160,9 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'menu' && inR(p, SKIP_BTN)) { homeRoom = -1; skipLoad(); return; }
 
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
+  if (state === 'menu' && inR(p, MECH_BTN)) { startMechanic(); return; }
+  if (state === 'busride') { arriveWorkshopMech(); return; }
+  if (state === 'mechend') { reset(); state = 'menu'; return; }
   if (state === 'menu') for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; }
   onKey('Space');
 });
@@ -241,7 +244,7 @@ function drawBoard(y0, n, hi) {
 const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
 
 function reset() {
-  bayReady = 0; bf = null; shiftStart = false;
+  bayReady = 0; bf = null; shiftStart = false; role = 'driver'; mStage = 0; mBreath = 0; prestartLine = -1;
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
@@ -265,6 +268,9 @@ function onKey(code) {
   if (state === 'shroom' && code === 'KeyE') { shrInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
   if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
+  if (state === 'menu' && code === 'KeyM') { startMechanic(); return; }
+  if (state === 'busride' && (code === 'Space' || code === 'Enter')) { arriveWorkshopMech(); return; }
+  if (state === 'mechend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'menu' && (code === 'Space' || code === 'Enter')) { playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset(); homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); return; }
   if (state==='workshop' && code==='KeyE') {
     enterWorkshopFoot(); return;
@@ -272,6 +278,7 @@ function onKey(code) {
     if (state==='workshopfoot' && code==='KeyE') {
       if (nearWsOffice()) { enterWsOffice(); return; }
       { const rm = nearShRoom(); if (rm) { enterShRoom(rm); return; } }
+      if (role === 'mech') { if (nearPrestart()) prestartNext(); else flash(mStage === 5 ? 'Prestart is in the back of bay 6, by the supervisor\'s whiteboard.' : 'Into the crib room: crib in the fridge, then your breatho.'); return; }
       if(!cribReached){flash('Head out the Bay 1 side door to the crib room first.');return;}
       if(!shopAtCab()){flash('Walk back to your cab door (driver side) to climb in.');return;}
       workshopOnFoot=false;state='workshop';wk.done=true;wk.auto=false;wk.v=0;
@@ -291,11 +298,165 @@ function onKey(code) {
   }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-const SKIP_BTN = [130, 590, 220, 30, 'SKIP LOADING (L)'], CAMP_BTN = [130, 624, 220, 30, 'START AT CAMP (C)'];
+const SKIP_BTN = [110, 564, 260, 30, 'SKIP LOADING (L)'], CAMP_BTN = [110, 598, 260, 30, 'TRUCK DRIVER: START AT CAMP (C)'], MECH_BTN = [110, 632, 260, 30, 'WORKSHOP MECHANIC (M)'];
+let role = 'driver', mStage = 0, mBreath = 0, prestartLine = -1;   // which storyline, and how far through the mechanic's day
 // begin the shift at your room: on foot to the Schedule Office, then your ute to the truck park, then into the truck
 function startAtCamp() {
   playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
   homeRoom = -1; shiftStart = true; toWalk(); homeRoom = wRoom;
+}
+// the Workshop Mechanic's day: room -> dining room (feed + crib) -> Hiace at the bus stop -> ride to the workshop ->
+// crib room (lunch in the fridge, breatho) -> prestart with the workshop supervisor
+function startMechanic() {
+  playerName = nameIn.value.trim().slice(0, 12) || 'Player'; localStorage.oreName = playerName; nameIn.blur(); reset();
+  role = 'mech'; mStage = 0; kitDone = {}; homeRoom = -1; shiftStart = true; toWalk(); homeRoom = wRoom; wStage = 5;   // wStage 5: none of the driver's camp steps apply
+  flash(`Room ${CAMP_DOORS[wRoom].name}: morning! Head to the dining room for a feed and pack your crib.`);
+}
+const MECH_BUS_WAIT = { x: 899, y: 1214 };   // where the Hiace picks up at the camp bus stop
+const nearBusStop = () => Math.hypot(wp.x - MECH_BUS_WAIT.x, wp.y - MECH_BUS_WAIT.y) < 26;
+// ---------- the Hiace ride to the workshop, out the left-hand window ----------
+// Everything is placed by distance along the road; layers further from the road slide past slower. Forward is to the right.
+const BUS_STOPS = [{ d: 9400, wait: 6.5 }, { d: 11900, wait: 1.8 }], BUS_SIGHTS = [[0, 'Leaving camp'], [900, 'Pilbara bush: spinifex and snappy gums'], [2100, 'Cattle on the station'],
+  [4300, 'Bush again: mulga and termite mounds'], [5000, 'Neighbouring gold mine: waste dumps and the deep pits'], [6800, 'Gold processing plant'], [8300, 'Haul road ahead: give way to the road trains'],
+  [9800, 'Across the haul road and into the workshop yard'], [11300, 'Pulling into the car park behind the crib room']];
+let bus = null;
+function boardBus() { state = 'busride'; mStage = 2; bus = { d: 0, v: 0, t: 0, si: 0, w: 0 }; ptrs.clear(); syncBtns(); flash('On the Hiace. Sit back and watch the Pilbara go by.'); }
+function updateBus(dt) {
+  bus.t += dt; msgT -= dt;
+  if (bus.w > 0) { bus.w -= dt; if (bus.w <= 0) { if (bus.si === BUS_STOPS.length - 1) { arriveWorkshopMech(); return; } bus.si++; } return; }
+  const st = BUS_STOPS[bus.si], gap = st.d - bus.d;
+  bus.v = Math.min(Math.sqrt(2 * 110 * Math.max(0, gap)), 300, bus.v + 80 * dt);
+  bus.d += bus.v * dt;
+  if (gap < 3) { bus.d = st.d; bus.v = 0; bus.w = st.wait; }
+}
+const busRnd = (k, r) => { const v = Math.sin(k * 127.1 + r * 311.7) * 43758.5453; return v - Math.floor(v); };
+function drawBus() {
+  const X0 = 22, X1 = W - 22, Y0 = 150, Y1 = 470, HOR_Y = 300, D = bus.d, sx = (d, f) => W / 2 + (d - D) * f;
+  const rr = (x0, y0, x1, y1, r) => { ctx.beginPath(); ctx.moveTo(x0 + r, y0); ctx.arcTo(x1, y0, x1, y1, r); ctx.arcTo(x1, y1, x0, y1, r); ctx.arcTo(x0, y1, x0, y0, r); ctx.arcTo(x0, y0, x1, y0, r); ctx.closePath(); };
+  const poly = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); };
+  const ell = (x, y, rx, ry, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), 0, 0, 7); ctx.fill(); };
+  // bus interior
+  rect(0, 0, W, H, '#2a3038');
+  rect(0, 0, W, 96, '#1d2329'); rect(0, 96, W, 6, '#3a424b');
+  ctx.save(); rr(X0, Y0, X1, Y1, 26); ctx.clip();
+  // sky, sun and the far ranges
+  const sky = ctx.createLinearGradient(0, Y0, 0, HOR_Y); sky.addColorStop(0, '#4f86c6'); sky.addColorStop(1, '#dce8f1'); ctx.fillStyle = sky; ctx.fillRect(X0, Y0, X1 - X0, HOR_Y - Y0);
+  ell(380, 190, 16, 16, '#fff6d8');
+  for (const [col, base, amp, k, f] of [['#9b7a95', 22, 20, .012, .03], ['#a95f3f', 10, 14, .03, .07]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(X0, HOR_Y + 1);
+    for (let x = X0; x <= X1; x += 6) { const u = x + D * f; ctx.lineTo(x, HOR_Y - base - amp * (Math.max(0, Math.sin(u * k)) * .7 + Math.sin(u * k * 2.3 + 1) * .3 + .3)); }
+    ctx.lineTo(X1, HOR_Y + 1); ctx.fill(); }
+  const gr = ctx.createLinearGradient(0, HOR_Y, 0, Y1); gr.addColorStop(0, '#c98d5c'); gr.addColorStop(.35, '#b9693f'); gr.addColorStop(1, '#9c4f2c'); ctx.fillStyle = gr; ctx.fillRect(X0, HOR_Y, X1 - X0, Y1 - HOR_Y);
+  // mid distance (f = .22): the gold mine's waste dumps and pits, its processing plant, then the workshop
+  const fm = .22, my = HOR_Y + 6;
+  { const x = sx(5300, fm); if (x > -200 && x < W + 200) { for (let b = 0; b < 4; b++) poly([[x - 140 + b * 22, my - b * 9], [x + 140 - b * 22, my - b * 9], [x + 128 - b * 22, my - (b + 1) * 9], [x - 128 + b * 22, my - (b + 1) * 9]], ['#a35d3b', '#97553a', '#a8643f', '#8f5036'][b]); } }
+  { const x = sx(6150, fm); if (x > -260 && x < W + 260) {   // the open pit: terraced far wall seen over the rim, haul trucks on the ramp
+    poly([[x - 190, my + 2], [x + 190, my + 2], [x + 150, my + 40], [x - 150, my + 40]], '#6e4a37');
+    for (let b = 0; b < 6; b++) { const t = b / 6, w = 190 - b * 26; poly([[x - w, my + 2 + b * 6], [x + w, my + 2 + b * 6], [x + w - 6, my + 7 + b * 6], [x - w + 6, my + 7 + b * 6]], b % 2 ? '#b07a52' : '#8c5c40'); }
+    ell(x, my + 40, 60, 5, '#3f6f7a');                                                  // pit lake at the bottom
+    for (let k = 0; k < 3; k++) { const u = ((bus.t * .05 + k / 3) % 1), tx = x - 150 + u * 300, ty = my + 4 + Math.abs(Math.sin(u * 9)) * 26; rect(tx - 3, ty - 3, 6, 3, '#e8c21c'); }
+    poly([[x - 260, my + 1], [x - 190, my + 1], [x - 200, my - 14], [x - 240, my - 12]], '#a25c3a'); } }   // spoil on the rim
+  { const x = sx(7400, fm); if (x > -160 && x < W + 160) {   // processing plant: mill shed, CIL tanks, conveyor, ore stockpile, stack
+    rect(x - 60, my - 46, 52, 46, '#8d99a3'); poly([[x - 64, my - 46], [x - 4, my - 46], [x - 12, my - 56], [x - 56, my - 56]], '#6f7b85');
+    for (let k = 0; k < 4; k++) { rect(x + 4 + k * 16, my - 20, 13, 20, '#c3c9ce'); ell(x + 10.5 + k * 16, my - 20, 6.5, 2, '#dfe4e8'); }
+    ctx.strokeStyle = '#5a646c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 110, my); ctx.lineTo(x - 58, my - 40); ctx.stroke();
+    poly([[x - 140, my], [x - 100, my], [x - 120, my - 22]], '#7a4b33');
+    rect(x + 72, my - 62, 6, 62, '#9aa3aa'); for (let k = 0; k < 3; k++) ell(x + 75 + k * 6 + Math.sin(bus.t + k) * 2, my - 68 - k * 9, 5 + k * 2, 4 + k, 'rgba(240,240,240,.7)');
+    ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText('GOLD PLANT', x - 34, my - 30); } }
+  { const x = sx(11500, fm); if (x > -200 && x < W + 200) { rect(x - 110, my - 40, 220, 40, '#b8c1c7'); poly([[x - 116, my - 40], [x + 116, my - 40], [x + 100, my - 52], [x - 100, my - 52]], '#8f9aa1');
+    for (let k = 0; k < 6; k++) rect(x - 102 + k * 36, my - 30, 26, 30, '#4a545c'); } }
+  // nearer rows: bush along the road, cattle in the paddock, the haul road crossing, the workshop yard
+  const inCows = d => d > 2000 && d < 4100, inYard = d => d > 9900;
+  const rows = [{ f: .5, y: HOR_Y + 34, s: .5, sp: 46 }, { f: 1, y: HOR_Y + 96, s: 1, sp: 64 }];
+  for (const row of rows) {
+    const d0 = D - (W / 2 + 80) / row.f, d1 = D + (W / 2 + 80) / row.f;
+    for (let k = Math.floor(d0 / row.sp); k <= Math.ceil(d1 / row.sp); k++) {
+      const d = k * row.sp + busRnd(k, row.f) * row.sp * .6, x = sx(d, row.f), y = row.y + (busRnd(k, 9) - .5) * 24 * row.s, s2 = row.s * (.8 + busRnd(k, 3) * .5), r = busRnd(k, 5);
+      if (d > 9430 && d < 9650) continue;                                              // the haul road itself
+      if (inYard(d)) { if (row.f === 1 && k % 2 === 0) { rect(x - 1, y - 30 * s2, 2, 30 * s2, '#8a949b'); } continue; }   // yard fence posts
+      if (inCows(d)) {
+        if (row.f === 1 && k % 1 === 0) { rect(x - 1.5, y - 22, 3, 22, '#6b4a33'); }  // fence posts
+        if (r < (row.f === 1 ? .62 : .45)) { const cc = ['#5a3826', '#2b2420', '#8a5a3a', '#e8e2d6'][Math.floor(busRnd(k, 7) * 4)], dir = busRnd(k, 8) < .5 ? 1 : -1, cs = s2 * (row.f === 1 ? 2.3 : 1.3), cy = y - 4 * cs, gz = busRnd(k, 11) < .6;
+          for (const lx of [-9, -5, 5, 9]) rect(x + lx * cs - 1.2 * cs, cy + 4 * cs, 2.4 * cs, 9 * cs, shade(cc, .8));   // legs
+          ell(x, cy, 13 * cs, 7 * cs, cc); ell(x + dir * 15 * cs, cy + (gz ? 8 : -3) * cs, 5 * cs, 4 * cs, cc);              // body, head (down if grazing)
+          rect(x - dir * 13 * cs, cy - 1 * cs + Math.sin(bus.t * 3 + k) * cs, 1.2 * cs, 8 * cs, shade(cc, .7));               // tail
+          if (cc === '#e8e2d6') ell(x - 3 * cs, cy - 2 * cs, 4 * cs, 3 * cs, '#2b2420'); }
+        continue; }
+      if (r < .5) { ell(x, y - 5 * s2, 16 * s2, 7 * s2, '#a99b4e'); ell(x - 5 * s2, y - 9 * s2, 9 * s2, 5 * s2, '#c4b566'); }   // spinifex
+      else if (r < .7) { rect(x - 1, y - 18 * s2, 2 * s2, 18 * s2, '#4a3b2e'); ell(x, y - 22 * s2, 16 * s2, 9 * s2, '#7d8662'); }   // mulga
+      else if (r < .84) { ctx.strokeStyle = '#ece6d8'; ctx.lineWidth = 3 * s2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 3 * s2, y - 40 * s2); ctx.lineTo(x - 6 * s2, y - 64 * s2); ctx.moveTo(x + 3 * s2, y - 40 * s2); ctx.lineTo(x + 12 * s2, y - 58 * s2); ctx.stroke();
+        ell(x - 6 * s2, y - 66 * s2, 14 * s2, 8 * s2, '#7f9160'); ell(x + 13 * s2, y - 60 * s2, 11 * s2, 7 * s2, '#738655'); }   // snappy gum
+      else if (r < .93) poly([[x - 7 * s2, y], [x + 7 * s2, y], [x + 3 * s2, y - 26 * s2], [x - 2 * s2, y - 30 * s2]], '#b0582e');   // termite mound
+      else ell(x, y - 2 * s2, 7 * s2, 4 * s2, '#8e3f22');                                                                          // rock
+    }
+  }
+  // the haul road crossing: a broad strip running away from the window, windrows either side, a road train coming down it
+  { const xa = sx(9430, 1), xb = sx(9650, 1), xm = (xa + xb) / 2;
+    if (xb > X0 - 40 && xa < X1 + 40) {
+      poly([[xa, Y1], [xb, Y1], [xm + 6, HOR_Y], [xm - 6, HOR_Y]], '#b88a64');
+      for (const e of [xa, xb]) poly([[e - 10, Y1], [e + 10, Y1], [xm + (e - xm) * .03 + 1, HOR_Y], [xm + (e - xm) * .03 - 1, HOR_Y]], '#9c5a35');
+      for (let k = 0; k < 8; k++) { const t = ((k / 8 + bus.t * .02) % 1) ** 2, y = HOR_Y + (Y1 - HOR_Y) * t; rect(xm - 1, y, 2, 1 + t * 6, 'rgba(255,255,255,.25)'); }
+      if (bus.si === 0 && bus.w > 0) {   // while we wait, a quad road train comes down the haul road and roars past in front of us
+        const p = Math.min(1, (BUS_STOPS[0].wait - bus.w) / (BUS_STOPS[0].wait - 1)), t = p * p, y = HOR_Y + (Y1 + 120 - HOR_Y) * t, sc = .08 + t * 1.6, tx = xm + (xb - xm) * .25 * t;
+        ell(tx, y + 4 * sc, 60 * sc, 10 * sc, 'rgba(160,110,70,.45)');
+        rect(tx - 30 * sc, y - 70 * sc, 60 * sc, 70 * sc, '#f062a4'); rect(tx - 24 * sc, y - 64 * sc, 48 * sc, 22 * sc, '#26404f');   // cab and windscreen
+        rect(tx - 26 * sc, y - 36 * sc, 52 * sc, 24 * sc, '#c9cdd0'); for (let g2 = 0; g2 < 5; g2++) rect(tx - 22 * sc, y - 33 * sc + g2 * 4.4 * sc, 44 * sc, 2 * sc, '#5e6468');   // grille
+        rect(tx - 34 * sc, y - 12 * sc, 68 * sc, 10 * sc, '#cfd5da'); for (const s3 of [-1, 1]) ell(tx + s3 * 22 * sc, y - 40 * sc, 5 * sc, 5 * sc, '#fff6c0');   // bull bar, lights
+        for (const s3 of [-1, 1]) rect(tx + s3 * 34 * sc - 4 * sc, y - 95 * sc, 8 * sc, 30 * sc, '#cfd5da');                                      // stacks
+        ell(tx - 40 * sc - t * 40, y - 6 * sc, 30 * sc, 14 * sc, 'rgba(190,130,80,.35)'); } }
+    const sxg = sx(9395, 1); if (sxg > X0 - 30 && sxg < X1 + 30) { rect(sxg - 2, HOR_Y + 40, 4, 60, '#8a949b'); ctx.fillStyle = '#c62828'; ctx.beginPath(); for (let k = 0; k < 8; k++) { const a = Math.PI / 8 + k * Math.PI / 4; ctx.lineTo(sxg + Math.cos(a) * 16, HOR_Y + 30 + Math.sin(a) * 16); } ctx.fill();
+      ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText('STOP', sxg, HOR_Y + 33); } }
+  // the workshop yard: truck wash and the crib buildings as we pull in
+  { const x = sx(11900, 1); if (x > -300 && x < W + 300) {
+    rect(x - 150, HOR_Y + 20, 300, 76, '#b9b4aa'); for (const c of [-150, -50, 50, 146]) rect(x + c, HOR_Y - 60, 6, 80, '#5f7a8a');
+    poly([[x - 160, HOR_Y - 60], [x + 160, HOR_Y - 60], [x + 150, HOR_Y - 72], [x - 150, HOR_Y - 72]], '#8f9aa1');
+    rect(x - 40, HOR_Y - 58, 80, 14, '#1d5fb4'); ctx.font = 'bold 11px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText('TRUCK WASH', x, HOR_Y - 47);
+    for (let k = 0; k < 14; k++) { const u = (bus.t * 1.7 + k * .37) % 1; ell(x - 120 + k * 18, HOR_Y - 30 + u * 60, 1.5, 3, 'rgba(200,230,255,.6)'); } } }
+  // guide posts racing past right by the window
+  for (let k = Math.floor((D - 400) / 180); k <= Math.ceil((D + 400) / 180); k++) { const x = sx(k * 180, 2.1); if (x < X0 - 10 || x > X1 + 10 || (k * 180 > 9410 && k * 180 < 9670)) continue; rect(x - 3, HOR_Y + 120, 6, 60, '#f4f4f4'); rect(x - 3, HOR_Y + 126, 6, 6, '#d62828'); }
+  // dust and the glass
+  const dust = ctx.createLinearGradient(0, HOR_Y + 80, 0, Y1); dust.addColorStop(0, 'rgba(200,140,90,0)'); dust.addColorStop(1, `rgba(200,140,90,${Math.min(.35, bus.v / 900)})`); ctx.fillStyle = dust; ctx.fillRect(X0, HOR_Y, X1 - X0, Y1 - HOR_Y);
+  ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.moveTo(X0 + 40, Y0); ctx.lineTo(X0 + 120, Y0); ctx.lineTo(X0 + 20, Y1); ctx.lineTo(X0 - 60, Y1); ctx.fill();
+  ctx.restore();
+  // window rubber, the seat in front, a grab handle
+  ctx.lineWidth = 8; ctx.strokeStyle = '#15191d'; rr(X0, Y0, X1, Y1, 26); ctx.stroke();
+  ctx.fillStyle = '#23466e'; rr(40, Y1 + 40, 300, H + 40, 30); ctx.fill(); ctx.fillStyle = '#2d5683'; rr(52, Y1 + 52, 288, H + 40, 24); ctx.fill();
+  rect(330, 108, 90, 10, '#9aa3aa'); rect(336, 118, 6, 22, '#9aa3aa'); rect(408, 118, 6, 22, '#9aa3aa');
+  // HUD
+  rect(0, 0, W, 80, '#142536dd'); text('HIACE TO THE WORKSHOP', W / 2, 27, 22, '#ffea69');
+  text(isTouch ? 'Tap to skip the ride' : 'Space: skip the ride', W / 2, 55, 13, '#fff');
+  const sight = BUS_SIGHTS.filter(([d]) => D >= d).pop(); rect(18, 520, W - 36, 64, '#102337ee'); text(sight[1], W / 2, 557, 15, '#fff');
+  bar(60, 600, W - 120, 10, Math.min(1, D / BUS_STOPS[1].d), '#7fdf7f');
+}
+function arriveWorkshopMech() {
+  state = 'workshopfoot'; workshopOnFoot = true; footTime = 0; cribReached = false; mStage = 3; bus = null;
+  wk = wkFresh(); marks = []; yard = makeYard(); particles = []; wk.auto = true; wk.bay = 2; wk.v = 0; shopL = shopLayout(); shopCrewInit();
+  workshopFoot = { x: MECH_BUS_PARK.x + 34, y: MECH_BUS_PARK.y }; footFacing = 0; footCamH = 0; ptrs.clear(); syncBtns();
+  flash('Out of the bus. Put your crib in the crib room fridge and do your breatho.');
+}
+const MECH_BUS_PARK = { x: -470, y: 300 };   // the Hiace's spot in the small car park behind the crib room
+function mechObjective() {
+  return mStage === 3 ? 'OBJECTIVE: PUT YOUR CRIB IN THE CRIB ROOM FRIDGE' : mStage === 4 ? 'OBJECTIVE: BREATHO ON THE CRIB ROOM WALL' : mStage === 5 ? 'OBJECTIVE: PRESTART IN THE WORKSHOP (BAY 6)' : 'PRESTART DONE';
+}
+const PRESTART = { x: 840, y: 478 };   // gathered in the back of Bay 6, by the supervisor's whiteboard
+const nearPrestart = () => role === 'mech' && state === 'workshopfoot' && workshopFoot.x > 0 && Math.hypot(workshopFoot.x - PRESTART.x, workshopFoot.y - PRESTART.y) < 46;
+const PRESTART_LINES = () => ["Supervisor: Morning all. Take 5s done? Good. Keep the walkways clear, there's a forklift working in bay 6.",
+  "Supervisor: Tyre bay's flat out. Bay 2 and 4 rigs are on PMs, and the sparky's on the beacon in bay 2.",
+  `Supervisor: ${playerName}, PA236 is lined up out the front. Tip and tug first, then pull it over the pit for a 500-hour service.`,
+  "Supervisor: Radio's on channel 5 if a breakdown comes in on the highway. Right, let's get into it. Stay safe."];
+function prestartNext() {
+  if (mStage < 5) { flash(mStage === 3 ? 'Put your crib in the fridge and do your breatho first.' : 'Do your breatho in the crib room first.'); return; }
+  const L = PRESTART_LINES(); prestartLine++;
+  if (prestartLine < L.length) { flash(L[prestartLine]); msgT = 6; return; }
+  mStage = 6; state = 'mechend'; ptrs.clear(); syncBtns();
+}
+function drawMechEnd() {
+  rect(0, 0, W, H, '#142536');
+  text('PRESTART DONE', W / 2, 200, 34, '#7fdf7f');
+  text(`${playerName}: Workshop Mechanic, day 1`, W / 2, 250, 17, '#fff');
+  for (const [i, t] of ['Breakfast and crib packed at camp', 'Hiace past the bush, the cattle and the gold mine', 'Crib in the fridge, breatho 0.000', 'Prestart: PA236 for a tip and tug and a 500-hour service'].entries()) text('✓ ' + t, W / 2, 310 + i * 30, 14, '#cfe');
+  text('Next in the mechanic\'s story: the tip and tug,', W / 2, 470, 15, '#ffea69'); text('the pit service and the breakdown callout.', W / 2, 494, 15, '#ffea69');
+  text(isTouch ? 'Tap for the menu' : 'Space: back to the menu', W / 2, 580, 15, '#fff');
 }
 // skip the yard: begin the run already loaded, parked in the first left-hand parking bay
 function skipLoad() {
@@ -808,7 +969,9 @@ const SB = 156, SH_W = SB * 6, SH_D = 780, SH_H = 230, sbx = i => SB / 2 + i * S
 const SH_DOORS = [{ y0: 150, y1: 186 }, { y0: 664, y1: 700 }];   // clear of the wall's portal frame columns (every 130)   // two PA doors in the left (Bay 1, tyre bay) wall, one at each end, opening towards the crib room
 const shInDoor = (y, pad = 0) => SH_DOORS.some(d => y > d.y0 - pad && y < d.y1 + pad);
 const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { o.push([a, d.y0]); a = d.y1; } o.push([a, SH_D]); return o; };   // solid stretches of the Bay 1 wall
-const SH_OUT = { x0: -420, y0: -90, y1: SH_D + 90 };   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
+const SH_OUT = { x0: -650, y0: -90, y1: SH_D + 90 };   // x0: out past the small car park to the truck lane beside the truck wash
+const SH_CARPARK = { x0: -540, x1: -404, y0: 236, y1: 470 }, SH_TRUCKLANE = { x0: -650, x1: -545 }, SH_WASH = { x0: -800, x1: -668, y0: 120, y1: 600 };   // behind (west of) the crib room
+// SH_OUT   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
 // Four transportables in a pinwheel round a courtyard beside Bay 1, laid out like the yard's aerial map. Each has its door
 // on the courtyard side (face N/S/E/W); the crib room is the one you head for.
 const SH_BLDGS = [   // laid out on the editable courtyard map: four transportables closing in round a paved courtyard, every door opening onto it
@@ -856,7 +1019,9 @@ function shopBlocked(x, y) {
   for (let i = 0; i <= 6; i++) if (Math.abs(x - i * SB) < 12 && (Math.abs(y - 6) < 12 || Math.abs(y + 6) < 9)) return true;   // back columns and bollards
   const L = shopL;   // the rest of each rig's trailers run out the open back of its bay
   for (const [bay, T0] of [[L.bay, L.T0], ...L.pms.map(pm => [pm.bay, pm.F - 230])]) if (Math.abs(x - sbx(bay)) < 42 && y < T0 - 290) return true;
-  if (x < 0) {   // the courtyard side: transportables and the tank
+  if (x < 0) {   // the courtyard side: transportables and the tank, and the vehicles in the car park behind the crib room
+    if (role === 'mech' && Math.abs(x - MECH_BUS_PARK.x) < 27 && Math.abs(y - MECH_BUS_PARK.y) < 60) return true;
+    if (x > -495 && x < -445 && y > 360 && y < 464) return true;
     if (Math.hypot(x - SH_TANK.x, y - SH_TANK.y) < SH_TANK.r + 5) return true;
     return SH_BLDGS.some(b => x > b.x0 - SH_BLD_PAD && x < b.x1 + SH_BLD_PAD && y > b.y0 - SH_BLD_PAD && y < b.y1 + SH_BLD_PAD);
   }
@@ -911,14 +1076,14 @@ function updateWorkshopFoot(dt) {
     const step = Math.min(d, (m.mullet ? 34 : 28) * dt);
     m.heading = Math.atan2(dy, dx); m.x += dx / d * step; m.y += dy / d * step; m.walk = true;
   }
-  if (!cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x - shDoorN(SH_BLDGS[0]).x * 12, workshopFoot.y - SH_CRIB_DOOR.y - shDoorN(SH_BLDGS[0]).y * 12) < 24) reachCrib(true);
+  if (role !== 'mech' && !cribReached && Math.hypot(workshopFoot.x - SH_CRIB_DOOR.x - shDoorN(SH_BLDGS[0]).x * 12, workshopFoot.y - SH_CRIB_DOOR.y - shDoorN(SH_BLDGS[0]).y * 12) < 24) reachCrib(true);
 }
 function drawWorkshopFoot() {
   // third-person: the camera trails 90 units behind and 85 up, swinging round after you; it never leaves the side of the wall you're on
   const fx = Math.cos(footCamH), fy = Math.sin(footCamH), rx = -fy, ry = fx, me = workshopFoot;
   // pull the camera in if a truck, column or wall is behind you, so it never ends up inside something
   const sol = [...shopSolids().filter(([, cy, w]) => !(w === 14 && cy > SH_D - 10)),   // columns only clip a sliver, so they don't pull the camera in
-    ...SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]),
+    ...SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]), [-470, 412, 50, 104], ...(role === 'mech' ? [[MECH_BUS_PARK.x, MECH_BUS_PARK.y, 54, 120]] : []),
     ...[[shopL.bay, shopL.T0], ...shopL.pms.map(pm => [pm.bay, pm.F - 230])].map(([bay, T0]) => [sbx(bay), T0 - 290 - 600, 80, 1200])];   // trailers out the back of each bay
   const camBlocked = (x, y) => x < SH_OUT.x0 + 5 || x > SH_W - 6 || y < SH_OUT.y0 - 60 || y > SH_OUT.y1 + 60 || (Math.abs(x) < 6 && y > 0 && y < SH_D && (!shInDoor(y) || Math.abs(me.x) > 8)) || sol.some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
   let dist = 90; for (let t = 8; t <= 90; t += 3) if (camBlocked(me.x - fx * t, me.y - fy * t)) { dist = Math.max(22, t - 6); break; }
@@ -1088,7 +1253,14 @@ function drawWorkshopFoot() {
 
   // ----- outside: sky, red-dirt yard, crib room
   rect(0, 0, W, horizon, '#a7c3d9'); rect(0, horizon - 14, W, 14, '#8b9d7a'); rect(0, horizon, W, H - horizon, '#9c5634');
-  flat(-600, -400, SH_W + 600, SH_D + 900, -.05, '#a35a36');
+  flat(-1300, -400, SH_W + 600, SH_D + 900, -.05, '#a35a36');
+  // behind the crib room: the small car park, the truck lane past it and the drive-through truck wash beyond
+  flat(SH_CARPARK.x0, SH_CARPARK.y0, SH_CARPARK.x1, SH_CARPARK.y1, .02, '#4c5156');
+  for (let y = SH_CARPARK.y0 + 6; y < SH_CARPARK.y1; y += 58) flat(SH_CARPARK.x0 + 70, y, SH_CARPARK.x1 - 4, y + 2, .03, '#e8e8e8');   // bay lines
+  flat(SH_CARPARK.x0 + 66, SH_CARPARK.y0 + 4, SH_CARPARK.x0 + 68, SH_CARPARK.y1 - 4, .03, '#e8e8e8');
+  flat(SH_TRUCKLANE.x0, -400, SH_TRUCKLANE.x1, SH_D + 400, .015, '#b07a52');
+  for (const x of [SH_TRUCKLANE.x0 + 22, SH_TRUCKLANE.x1 - 22]) flat(x - 6, -400, x + 6, SH_D + 400, .02, '#9c6745');   // wheel ruts
+  flat(SH_WASH.x0, SH_WASH.y0 - 60, SH_WASH.x1, SH_WASH.y1 + 60, .02, '#b9b4aa');                                       // wash pad
   for (const bd of SH_BLDGS) {   // transportable on skids: walls, roof trim, courtyard door with a sign, windows, steps, AC
     const cx = (bd.x0 + bd.x1) / 2, cy = (bd.y0 + bd.y1) / 2, w = bd.x1 - bd.x0, l = bd.y1 - bd.y0, dp = shDoorPt(bd);
     const nx = bd.face === 'E' ? 1 : bd.face === 'W' ? -1 : 0, ny = bd.face === 'S' ? 1 : bd.face === 'N' ? -1 : 0, tx = -ny, ty = nx, len = nx ? l : w;
@@ -1119,6 +1291,22 @@ function drawWorkshopFoot() {
       label(dp.x + nx * 1.5, dp.y + ny * 1.5, 52, bd.name, 6.5, '#fff');
     }, outside);
   }
+  const viaCamp = fn => { const keep = [wCam, WF, WCY, WCH, wCos, wSin]; wCam = { x: CX, y: CY, hx: fx, hy: fy, rx, ry }; WF = focus; WCY = horizon; WCH = eye; wCos = cp; wSin = sp; try { fn(); } finally { [wCam, WF, WCY, WCH, wCos, wSin] = keep; } };
+  if (role === 'mech') add(MECH_BUS_PARK.x, MECH_BUS_PARK.y, () => viaCamp(() => hiaceModel(MECH_BUS_PARK.x, MECH_BUS_PARK.y, -Math.PI / 2, '#1d5fb4', 1.9)), outside);   // the bus you came in on
+  add(-470, 412, () => {   // a mine-spec ute in the next bay: white tray-back, ROPS, beacon, flag
+    box(-470, 412, 44, 100, 16, '#f2f3f4', '#e6e8ea', 10); box(-470, 384, 42, 40, 18, '#f2f3f4', '#26404f', 26); box(-470, 440, 44, 44, 4, '#4a5056', '#5e6468', 22);
+    for (const [wx, wy] of [[-492, 382], [-448, 382], [-492, 444], [-448, 444]]) box(wx, wy, 6, 20, 20, '#151617', '#2a2d30');
+    box(-470, 418, 40, 3, 30, '#2b2f33', '#3a3f44', 26); box(-470, 418, 5, 5, 5, '#ff8a00', '#ffb04a', 56); box(-488, 418, 1, 1, 50, '#d62828', '#d62828', 26);
+  }, outside);
+  for (const y of [264, 322, 380, 438]) add(SH_CARPARK.x0 + 74, y + 8, () => box(SH_CARPARK.x0 + 74, y + 8, 6, 26, 4, '#d8d2c4', '#e8e2d4'), outside);   // wheel stops
+  add((SH_WASH.x0 + SH_WASH.x1) / 2, (SH_WASH.y0 + SH_WASH.y1) / 2, () => {   // truck wash: steel portal frames, a roof, the gantry, sign, spray
+    const x0 = SH_WASH.x0, x1 = SH_WASH.x1, y0 = SH_WASH.y0, y1 = SH_WASH.y1;
+    for (let y = y0; y <= y1; y += (y1 - y0) / 4) for (const x of [x0, x1]) box(x, y, 6, 6, 120, '#5f7a8a', '#6f8c9c');
+    for (const x of [x0 + 6, x1 - 6]) box(x, (y0 + y1) / 2, 4, y1 - y0, 8, '#c7ced3', '#d9dee1', 0);   // wash walls, low
+    box((x0 + x1) / 2, (y0 + y1) / 2, x1 - x0 + 10, y1 - y0 + 10, 3, '#8f9aa1', '#9aa5ac', 120);
+    const gy = (y0 + y1) / 2 + Math.sin(footTime * .6) * 120; box((x0 + x1) / 2, gy, x1 - x0 - 16, 6, 6, '#e8c21c', '#f2d24a', 86); for (const x of [x0 + 10, x1 - 10]) box(x, gy, 4, 6, 80, '#e8c21c', '#f2d24a', 6);
+    box(x1 + 1, y1 - 30, 1, 70, 14, '#1d5fb4', '#1d5fb4', 96); label(x1 + 2, y1 - 30, 100, 'TRUCK WASH', 7, '#fff');
+  }, outside);
   add(SH_TANK.x, SH_TANK.y, () => vcyl(SH_TANK.x, SH_TANK.y, SH_TANK.r, 0, 64, '#5e7f5a', '#4e6b4b'), outside);   // rainwater tank
   flat(-305, 247, -148, 448, .04, '#b7a58f');   // courtyard pavers, between all four doors
   const [pa1, pa2] = SH_DOORS.map(d => (d.y0 + d.y1) / 2);
@@ -1354,18 +1542,26 @@ function drawWorkshopFoot() {
   if (inside) { outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
   shell();
   const walking = keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.TG || keys.TB;
-  add(me.x, me.y, () => human({ role: 'YOU', x: me.x, y: me.y, col: '#e7e900', phase: footTime, walk: walking, heading: footFacing }));   // you
+  add(me.x, me.y, () => human({ role: 'YOU', x: me.x, y: me.y, col: '#e7e900', phase: footTime, walk: walking, heading: footFacing }), me.x < 0 && !inside ? outside : objs);   // you
+  if (role === 'mech') {   // prestart: the workshop supervisor at his whiteboard in the back of bay 6, two of the crew listening
+    add(PRESTART.x + 44, PRESTART.y, () => { box(PRESTART.x + 46, PRESTART.y, 4, 44, 30, '#f4f6f7', '#f4f6f7', 20); box(PRESTART.x + 46, PRESTART.y, 3, 46, 2, '#9aa3aa', '#9aa3aa', 50);
+      for (const dy of [-18, 18]) box(PRESTART.x + 48, PRESTART.y + dy, 2, 2, 20, '#9aa3aa', '#9aa3aa');
+      label(PRESTART.x + 43.8, PRESTART.y, 44, 'PRESTART', 4, '#1d5fb4'); });
+    add(PRESTART.x + 28, PRESTART.y, () => human({ role: 'LEADING HAND', x: PRESTART.x + 28, y: PRESTART.y, col: '#f4f4f4', phase: footTime, heading: Math.PI }));
+    for (const [dx, dy] of [[-34, -38], [-34, 38]]) add(PRESTART.x + dx, PRESTART.y + dy, () => human({ role: 'MECHANIC', x: PRESTART.x + dx, y: PRESTART.y + dy, col: '#ff8a1c', phase: footTime + dy, heading: Math.atan2(-dy * .4, 58) }));
+  }
   objs.sort((a, b) => b.d - a.d); for (const o of objs) if (o.d > -10) o.fn();
   if (!inside) { leftWallOutside(); outside.sort((a, b) => b.d - a.d); for (const o of outside) if (o.d > -60) o.fn(); }
 
   // ----- HUD
-  const atCab = cribReached && shopAtCab();
+  const atCab = role !== 'mech' && cribReached && shopAtCab();
   rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - THIRD PERSON', W / 2, 26, 19, '#ffe568');
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
-  text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
+  if (role === 'mech') text(mechObjective(), W / 2, 102, 15, '#ffe568'); else text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
   const rm = nearShRoom(), atOff = nearWsOffice() || !!rm; if (atOff) text('PRESS E TO GO INTO THE ' + (rm ? SHR[rm].title : 'WORKSHOP OFFICE'), W / 2, 160, 14, '#83f5a3');
-  if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : 'ENTER CAB', false); }
+  const atPre = nearPrestart(); if (atPre && !atOff) text(mStage >= 5 ? 'PRESS E: LISTEN TO THE PRESTART' : 'PRESTART: CRIB IN THE FRIDGE AND BREATHO FIRST', W / 2, 160, 14, '#83f5a3');
+  if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff || atPre) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : atPre ? 'PRESTART' : 'ENTER CAB', false); }
 }
 function updateWorkshop(dt) {
   time += dt; msgT -= dt; shake = Math.max(0, shake - dt);
@@ -1467,6 +1663,8 @@ function update(dt) {
   if (state === 'shopinside') return updateShop(dt);
   if (state === 'wsoffice') return updateWsOffice(dt);
   if (state === 'shroom') return updateShRoom(dt);
+  if (state === 'busride') return updateBus(dt);
+  if (state === 'mechend') return;
   if (state === 'walk') return updateWalk(dt);
   if (state !== 'drive') return;
   time += dt;
@@ -2697,9 +2895,9 @@ function loopAt(pts, speed, t) {   // closed loop with pauses at some points: po
 }
 // Hiace-style crew shuttle (camp units), heading h = direction of travel. Built from faces in the van's own frame:
 // f forward, g across (+ = left side), z up; faces are depth-sorted so it reads from any angle.
-function hiaceModel(x, y, h, stripe) {
+function hiaceModel(x, y, h, stripe, k = 1) {   // k scales it up for the workshop's bigger units
   const outer = polySink; polySink = [];
-  const c = Math.cos(h), sn = Math.sin(h), Wd = (f, g, z) => [x + f * c - g * sn, y + f * sn + g * c, z];
+  const c = Math.cos(h), sn = Math.sin(h), Wd = (f, g, z) => [x + (f * c - g * sn) * k, y + (f * sn + g * c) * k, z * k];
   const Q = (pts, col) => wPoly(pts.map(p => Wd(...p)), col);
   const L = 30, R = -29, HW = 12.5, white = '#f4f5f6', glass = '#26404f', blk = '#1d1f22';
   const vx = wCam.x - x, vy = wCam.y - y, seeLeft = vx * -sn + vy * c > 0, seeFront = vx * c + vy * sn > 0;
@@ -2756,6 +2954,7 @@ const officeLines = [
   'Scheduler: Check your load and paperwork. Stay safe!'
 ];
 function officeInteract() {
+  if (state === 'walk' && role === 'mech' && nearBusStop()) { if (mStage >= 1) boardBus(); else flash('Grab a feed and pack your crib in the dining room before the bus comes.'); return; }
   if (state === 'walk' && nearShop()) { enterShop(); return; }
   if (state === 'walk' && nearKitchen() && !(shiftStart && wStage === 0 && nearOffice())) { enterKitchen(); return; }
   if (state === 'walk' && shiftStart && wStage === 0 && nearOffice()) {
@@ -3050,6 +3249,7 @@ const SHR_SPOTS = {
     { x: -100, y: 30, r: 14, act: 'check the footy score', msg: 'Third quarter, scores level. Someone turns it up.' },
     { x: 70, y: -34, r: 16, act: 'grab a cold drink', msg: 'Grabbed an icy cold one from the fridge. Name\'s on the lid, no stealing.' },
     { x: 100, y: -4, r: 13, act: 'wash your dishes', msg: 'Washed your cup and plate and left them in the rack.' },
+    { x: -26, y: 44, r: 11, act: 'do a breath test', msg: 'Breathalyser: 0.000. All good.' },
     { x: 98, y: 34, r: 11, act: 'fill your bottle with ice', msg: 'Filled your water bottle with ice for the drive.' }],
   ops: [{ x: -84, y: -15, r: 16, act: 'talk to the superintendent', msg: 'Superintendent (on the phone): "Yep, PA233 is back on the road after smoko." He gives you a thumbs up.' },
     { x: -22, y: -10, r: 14, act: 'talk to the planner', msg: 'Planner: "You\'re on the board for two more loads to the Skyway today."' },
@@ -3079,21 +3279,31 @@ function shrBlocked(x, y) {
 }
 function enterShRoom(k) {   // (the hint names the room)
   shRoom = k; state = 'shroom'; kit = { x: SHR[k].door, y: SHR[k].B.y1 - 12, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
-  if (k === 'crib' && !cribReached) reachCrib();
+  if (role === 'mech' && k === 'crib' && mStage <= 4) flash(mStage === 3 ? 'Crib room. Put your crib bag in the fridge on the right, then breatho by the door.' : 'Crib room. Do your breatho on the wall by the door.');
+  else if (role !== 'mech' && k === 'crib' && !cribReached) reachCrib();
   else flash(SHR[k].hint);
 }
 function leaveShRoom() {
   const b = SH_BLDGS[SHR[shRoom].bld], d = shRoomDoor(shRoom), n = shDoorN(b);
   state = 'workshopfoot'; workshopFoot.x = d.x + n.x * 18; workshopFoot.y = d.y + n.y * 18; footFacing = Math.atan2(n.y, n.x); footCamH = footFacing; ptrs.clear(); syncBtns();
-  flash(cribReached ? 'Back outside. Walk back to your cab door.' : 'Back outside. The crib room is across the courtyard.');
+  flash(role === 'mech' ? (mStage === 5 ? 'Prestart is in the workshop: back of bay 6. Through a PA door or the big bay doors.' : 'Back outside.') : cribReached ? 'Back outside. Walk back to your cab door.' : 'Back outside. The crib room is across the courtyard.');
 }
-function shrInteract() { const sp = shrNear(); if (!sp) { flash('Walk up to something and press E. ' + SHR[shRoom].hint); return; } flash(sp.msg); }
+const shrAct = sp => role === 'mech' && shRoom === 'crib' ? (sp.act === 'grab a cold drink' && mStage === 3 ? 'put your crib in the fridge' : sp.act === 'do a breath test' && mStage === 4 ? 'hold still and blow' : sp.act) : sp.act;
+function shrInteract() {
+  const sp = shrNear(); if (!sp) { flash('Walk up to something and press E. ' + SHR[shRoom].hint); return; }
+  if (role === 'mech' && shRoom === 'crib') {
+    if (sp.act === 'grab a cold drink' && mStage === 3) { mStage = 4; flash('Crib bag in the fridge, name on the lid. Now your breatho, on the wall by the door.'); return; }
+    if (sp.act === 'do a breath test') { if (mStage === 3) { flash('Put your crib in the fridge first, then the breatho.'); return; } if (mStage === 4) { if (!mBreath) mBreath = .001; return; } }
+  }
+  flash(sp.msg);
+}
 function updateShRoom(dt) {
   wT += dt; msgT -= dt; footTime += dt;
   const fwd = (keys.ArrowUp || keys.KeyW || keys.TG ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB ? .65 : 0);
   kit.dir += steerAxis() * 2.3 * dt;
   if (fwd) { const nx = kit.x + Math.cos(kit.dir) * 40 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 40 * fwd * dt;
     if (!shrBlocked(nx, kit.y)) kit.x = nx; if (!shrBlocked(kit.x, ny)) kit.y = ny; }
+  if (mBreath > 0) { mBreath += dt; if (mBreath >= 2.5) { mBreath = 0; mStage = 5; flash('SIMULATED breath test: 0.000. Head into the workshop for prestart, back of bay 6.'); msgT = 4; } }
   if (kit.y > SHR[shRoom].B.y1 - 1) leaveShRoom();
 }
 function drawShRoom() {
@@ -3195,6 +3405,9 @@ function drawShRoom() {
       wBox(118, -8, 1.5, 1.5, 14, 22, '#c9ced2', '#c9ced2'); wBox(115.5, -8, 5, 1.2, 21, 22.2, '#c9ced2', '#c9ced2');                  // tap
       for (let k = 0; k < 4; k++) wBox(114, 4 + k * 2, 6, .6, 14, 20, '#f4f4f4', '#ffffff');                                            // plates in the rack
       wBox(114, -16, 5, 5, 14, 22, '#c0392b', '#d44b3d'); X(B.x1 - .3, -18, 10, 28, 36, '#7a8a6a'); });                                 // urn, window
+    add(-26, B.y1 - 1, () => { if (wCam.y > B.y1) ctx.globalAlpha = .18;   // wall-mounted breathalyser by the door
+      wBox(-26, B.y1 - 1.6, 9, 3, 22, 35, '#f4f6f7', '#ffffff'); Y(-29, -23, B.y1 - 3.2, 29, 33, mBreath > 0 ? '#7fdf7f' : '#1b2a33'); wBox(-26, B.y1 - 4.2, 2, 3, 25, 26.5, '#3aa0e0', '#3aa0e0');
+      wText('BREATH TEST', -26, B.y1 - 3.3, 36.5, 1.6, '#1d2023'); ctx.globalAlpha = 1; }, pre);
     add(98, 48, () => { wBox(98, 48, 14, 12, 0, 34, '#b6bdc2', '#cfd5d9'); wBox(98, 41.9, 10, .4, 18, 30, '#8e979d', '#8e979d');      // ice machine
       Y(93, 103, 41.6, 30, 33, '#1d5fb4'); wText('ICE', 98, 41.5, 31, 2.6, '#fff'); wBox(98, 41, 6, 1.5, 4, 8, '#2b2f33', '#3a3f44'); });
     add(0, B.y0 + 1, () => { Y(-24, 8, B.y0 + .3, 18, 36, '#c69b5e'); for (const [px, pz, c] of [[-20, 30, '#fff'], [-12, 24, '#ffe36b'], [-3, 31, '#9ad0f5'], [2, 22, '#fff']]) Y(px, px + 6, B.y0 + .2, pz, pz + 6, c);
@@ -3227,7 +3440,8 @@ function drawShRoom() {
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
   rect(0, 0, W, 80, '#142536dd'); text(r.title, W / 2, 27, 22, '#ffea69');
   text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
-  const sp = shrNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + sp.act, W / 2, 560, 14, '#fff'); }
+  const sp = shrNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text(mBreath > 0 ? `Blowing... ${Math.round(mBreath / 2.5 * 100)}%` : 'Press E: ' + shrAct(sp), W / 2, 556, 14, '#fff'); if (mBreath > 0) bar(85, 572, 310, 10, mBreath / 2.5, '#7fdf7f'); }
+  if (role === 'mech' && shRoom === 'crib' && mStage <= 4) text(mStage === 3 ? 'OBJECTIVE: CRIB IN THE FRIDGE (RIGHT END)' : 'OBJECTIVE: BREATHO ON THE WALL BY THE DOOR', W / 2, 140, 14, '#ffe568');
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
 }
@@ -3258,13 +3472,14 @@ function enterKitchen() {
 }
 function leaveKitchen() {
   state = 'walk'; wp.x = KITCHEN_DOOR.x - 24; wp.y = KITCHEN_DOOR.y; wp.dir = Math.PI; wCamH = wp.dir; ptrs.clear(); syncBtns();
-  flash(shiftStart ? (wStage === 0 ? 'Back outside. The Schedule Office is just round the corner.' : 'Back outside. Head to your ute.') : 'Back outside.');
+  flash(role === 'mech' ? (mStage >= 1 ? 'Fed and crib packed. The Hiace picks up at the bus stop by the wet mess.' : 'Grab a feed from the bain-marie and pack your crib bag first.') : shiftStart ? (wStage === 0 ? 'Back outside. The Schedule Office is just round the corner.' : 'Back outside. Head to your ute.') : 'Back outside.');
 }
 const kitNear = () => KIT_SPOTS.find(s => Math.hypot(kit.x - s.x, kit.y - s.y) < s.r);
 function kitchenInteract() {
   const s = kitNear();
   if (!s) { flash('Walk up to a counter: bain-marie, fresh food, crib bag, coffee or dish return.'); return; }
   kitDone[s.name] = 1; flash(s.msg);
+  if (role === 'mech' && mStage === 0 && kitDone.bain && kitDone.crib) { mStage = 1; flash(s.msg + ' Now head out to the bus stop for the Hiace.'); }
 }
 function updateKitchen(dt) {
   wT += dt; msgT -= dt;
@@ -3962,7 +4177,7 @@ function drawWalk() {
     wText('DINING ROOM', x - 1, y, 42.8, 5, '#fff');
     ctx.globalAlpha = 1;
   });
-  const goal = wStage === 0 ? OFFICE_DOOR : wStage === 1 ? (shiftStart ? YOUR_UTE : CAMP_DOORS[wRoom]) : null;
+  const goal = role === 'mech' ? (mStage === 0 ? { x: KITCHEN_DOOR.x - 6, y: KITCHEN_DOOR.y, nx: -1, ny: 0 } : { x: MECH_BUS_WAIT.x + 12, y: MECH_BUS_WAIT.y, nx: -1, ny: 0 }) : wStage === 0 ? OFFICE_DOOR : wStage === 1 ? (shiftStart ? YOUR_UTE : CAMP_DOORS[wRoom]) : null;
   if (goal) add(goal.x + goal.nx * 12, goal.y + goal.ny * 12, () => {   // glowing beacon over the target door
     const b = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 0), t = wCamPt(goal.x + goal.nx * 12, goal.y + goal.ny * 12, 140);
     if (b[1] < WNEAR || t[1] < WNEAR) return;
@@ -4126,8 +4341,13 @@ function drawWalk() {
   const rn = CAMP_DOORS[wRoom].name;
   rect(0, 0, W, 64, '#000a');
   text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
+  if (role === 'mech') {
+    text(mStage === 0 ? 'Breakfast and pack your crib' : 'Catch the Hiace to the workshop', W - 10, 22, 16, '#ff6', 'right');
+    text(mStage === 0 ? `Dining room - ${['bain', 'crib'].filter(k => !kitDone[k]).map(k => k === 'bain' ? 'feed' : 'crib bag').join(' and ') || 'done'} to go` : 'Bus stop by the wet mess - follow the glow', W - 10, 48, 13, '#ccc', 'right');
+  } else {
   text(wStage === 0 ? (shiftStart ? 'Enter the Fleet Schedulers Office' : 'Go to the Schedule Office') : shiftStart ? 'Walk to your ute' : `Find Room ${rn}`, W - 10, 22, 16, '#ff6', 'right');
   text(wStage === 0 ? (shiftStart ? `From Room ${rn}` : 'By the tree, beside the dining room') : shiftStart ? 'In the car park - follow the glow' : `${rn[0]} block - look for the glowing door`, W - 10, 48, 13, '#ccc', 'right');
+  }
   text(isTouch ? 'Stick: turn  GAS: walk' : 'A/D turn, W/S walk', 10, 48, 12, '#ccc', 'left');
   if (shiftStart && wStage === 0 && nearOffice()) {
     rect(18, 455, W - 36, 155, '#102337ee');
@@ -4140,7 +4360,10 @@ function drawWalk() {
     text('E: interact / continue', W/2, 570, 15, '#ffe95e');
     if (isTouch) drawBtn([340, 558, 132, 52], 'INTERACT', false);
   }
-  if (state === 'walk' && nearShop()) {
+  if (state === 'walk' && role === 'mech' && nearBusStop()) {
+    rect(18, 520, W - 36, 90, '#102337ee'); text(mStage >= 1 ? 'The Hiace is pulling up: press E to hop on' : 'Bus stop: get your feed and crib bag first', W / 2, 560, 15, '#fff'); text('E: hop on the bus', W / 2, 592, 14, '#ffe95e');
+    if (isTouch) drawBtn([340, 558, 132, 52], 'HOP ON', false);
+  } else if (state === 'walk' && nearShop()) {
     rect(18, 520, W - 36, 90, '#102337ee'); text('Shop & reception: press E to walk in', W / 2, 560, 15, '#fff'); text('E: go inside', W / 2, 592, 14, '#ffe95e');
     if (isTouch) drawBtn([340, 558, 132, 52], 'GO INSIDE', false);
   } else if (state === 'walk' && nearKitchen() && !(shiftStart && wStage === 0 && nearOffice())) {
@@ -5186,6 +5409,8 @@ function render() {
   else if (state === 'shopinside') drawShop();
   else if (state === 'wsoffice') drawWsOffice();
   else if (state === 'shroom') drawShRoom();
+  else if (state === 'busride') drawBus();
+  else if (state === 'mechend') drawMechEnd();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') {
     drawWorld3D(W / 2, true);
@@ -5194,11 +5419,12 @@ function render() {
     for (let i = 0; i < DIFFS.length; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
     text("LET'S HAUL", W / 2, 130, 44, '#f60');
     text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
-    text('START AT CAMP for the full shift story', W / 2, 580, 18, '#ff6');
+    text('Two storylines: Truck Driver or Workshop Mechanic', W / 2, 200, 14, '#ff6');
     drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
-    drawBtn(CAMP_BTN, isTouch ? 'START AT CAMP' : CAMP_BTN[4], false);
-    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 676, 14, '#ccc');
-    text(`Best: ${best}`, W / 2, 702, 14, '#ccc');
+    drawBtn(CAMP_BTN, isTouch ? 'TRUCK DRIVER: START AT CAMP' : CAMP_BTN[4], false);
+    drawBtn(MECH_BTN, isTouch ? 'WORKSHOP MECHANIC' : MECH_BTN[4], false);
+    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 686, 13, '#ccc');
+    text(`Best: ${best}`, W / 2, 708, 14, '#ccc');
   } else {
     if (state === 'skyway') drawSkyway();
     else {
