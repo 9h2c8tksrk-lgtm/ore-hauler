@@ -4895,9 +4895,22 @@ function drawSkyway() {
       obox(doorT, X + 12.2, X + 13.6, Y - 37, Y + 37, 15, 36, '#b0307a', '#c93a8a');
       for (let k = -3; k <= 3; k++) obox(doorT, X + 13.6, X + 14.2, Y + k * 11 - .8, Y + k * 11 + .8, 16, 35, '#8f1a5e'); }
     else for (let k = -3; k <= 3; k++) obox(tipT, X + 12, X + 12.6, Y + k * 11 - .8, Y + k * 11 + .8, 15, 36, '#8f1a5e');   // side ribs
-    obox(tipT, X - 12, X + 12, Y - 38, Y + 38, 35, 36.6, '#e766b0', '#e766b0', false);            // top rim
-    { const inner = [[X - 10.5, Y - 36.5, 35.9], [X + 10.5, Y - 36.5, 35.9], [X + 10.5, Y + 36.5, 35.9], [X - 10.5, Y + 36.5, 35.9]].map(tipT);
-      Q.push({ d: cam(tipT([X, Y, 35]))[1] - .1, pts: inner, col: fill > .02 ? '#8a5a44' : '#5a1238' }); }   // ore (or the empty tub floor) seen through the top
+    for (const [x0, x1, y0, y1] of [[X - 12, X + 12, Y - 38, Y - 36.5], [X - 12, X + 12, Y + 36.5, Y + 38], [X - 12, X - 10.5, Y - 36.5, Y + 36.5], [X + 10.5, X + 12, Y - 36.5, Y + 36.5]])
+      obox(tipT, x0, x1, y0, y1, 35, 36.6, '#e766b0', '#e766b0', false);                          // top rim: a frame, so you can see down inside
+    { // the inside of the bin: a floor 20 units down and walls running down to it, darker the deeper they go (the load's surface instead when there's ore in it)
+      const zt = 35.9, zf = fill > .02 ? 15.5 + fill * 19 : 15.2, xa = X - 10.5, xb = X + 10.5, ya = Y - 36.5, yb = Y + 36.5;
+      const see = (c, n) => { const P = tipT(c), Pn = tipT([c[0] + n[0], c[1] + n[1], c[2] + n[2]]); return dot(sub(Pn, P), sub(C, P)) > 0; };
+      for (const [pts, c, n, col] of [
+        [[[xa, ya], [xb, ya]], [X, ya], [0, 1, 0], '#6a1a45'], [[[xa, yb], [xb, yb]], [X, yb], [0, -1, 0], '#6a1a45'],
+        [[[xa, ya], [xa, yb]], [xa, Y], [1, 0, 0], '#5c163c'], [[[xb, ya], [xb, yb]], [xb, Y], [-1, 0, 0], '#7a2050']]) {
+        if (!see([c[0], c[1], (zt + zf) / 2], n)) continue;
+        const [[x0, y0], [x1, y1]] = pts, zm = zf + (zt - zf) * .45;
+        for (const [z0, z1, k] of [[zm, zt, 1], [zf, zm, .62]]) Q.push({ d: cam(tipT([c[0], c[1], (z0 + z1) / 2]))[1] + 3, pts: [[x0, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y0, z1]].map(tipT), col: shade(col, k) });
+      }
+      const fl = [[xa, ya, zf], [xb, ya, zf], [xb, yb, zf], [xa, yb, zf]].map(tipT);
+      Q.push({ d: cam(tipT([X, Y, zf]))[1] + 6, pts: fl, col: fill > .02 ? '#8a5a44' : '#2e0a1d' });
+      if (fill <= .02) for (const yy of [-20, 4, 22]) Q.push({ d: cam(tipT([X, Y + yy, zf]))[1] + 5.9, pts: [[xa + 3, Y + yy, zf + .05], [xb - 3, Y + yy + 3, zf + .05], [xb - 3, Y + yy + 4.2, zf + .05], [xa + 3, Y + yy + 1.2, zf + .05]].map(tipT), col: '#45132c' });   // scuffs on the floor
+    }
     // lid: a cover hinged on the inner top edge that swings up and over as it opens
     { const la = tt.lid * 1.9, lt = p => { const dx = p[0] - (X - 12), dz = p[2] - 36.6; return tipT([X - 12 + dx * Math.cos(la) - dz * Math.sin(la), p[1], 36.6 + dx * Math.sin(la) + dz * Math.cos(la)]); };
       obox(lt, X - 12, X + 12, Y - 37, Y + 37, 36.6, 37.6, '#cfd4d8', '#e3e7ea'); }
