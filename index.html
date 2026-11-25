@@ -3000,7 +3000,7 @@ function kitBlocked(x, y) {
   return kitSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
 }
 function enterKitchen() {
-  state = 'kitcheninside'; kit = { x: 0, y: 50, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();
+  state = 'kitcheninside'; kit = { x: 0, y: 92, dir: -Math.PI / 2 }; ptrs.clear(); syncBtns();   // spawn just inside the double doors, clear of the tables
   flash('Dining room. Walk to a counter and press E.');
 }
 function leaveKitchen() {
@@ -3019,8 +3019,9 @@ function updateKitchen(dt) {
   kit.dir += steerAxis() * 2.3 * dt;
   if (fwd) {
     const nx = kit.x + Math.cos(kit.dir) * 48 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 48 * fwd * dt;
-    if (!kitBlocked(nx, kit.y)) kit.x = nx;
-    if (!kitBlocked(kit.x, ny)) kit.y = ny;
+    const stuck = kitBlocked(kit.x, kit.y);   // if you ever end up inside furniture, let you walk back out
+    if (stuck || !kitBlocked(nx, kit.y)) kit.x = nx;
+    if (stuck || !kitBlocked(kit.x, ny)) kit.y = ny;
   }
   if (kit.y > KIT.y1 - 2) leaveKitchen();
 }
