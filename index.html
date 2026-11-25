@@ -2631,6 +2631,22 @@ const CAR_SPOTS = [{ x: MY_BAY.x - 32, y: MY_BAY.y - 13, w: 64, h: 26, mine: tru
 const KITCHEN_DOOR = { x: 785, y: 980 };   // double doors into the dining room, on the kitchen's west face
 const nearKitchen = () => Math.hypot(wp.x - (KITCHEN_DOOR.x - 18), wp.y - KITCHEN_DOOR.y) < 34;
 const OFFICE_DOOR = { x: 670, y: 995, nx: 0, ny: 1, hw: 12 }, SHOP_DOOR = { x: 690, y: 1090, nx: 0, ny: -1, hw: 12 }, YOUR_UTE = { x: MY_BAY.x, y: MY_BAY.y, nx: 0, ny: 0 };
+// cheap foliage for the bush: one shaded ellipse on screen instead of a faceted 3D oval
+function bushBlob(x, y, z, rx, ry, rz, col) {
+  const c = wCamPt(x, y, z); if (c[1] < WNEAR) return;
+  const [sx, sy] = wProj(c), k = WF / c[1], r = Math.max(rx, ry), w = r * k, h = (rz * .92 + r * .38) * k;
+  ctx.fillStyle = ovalShade(col, .8); ctx.beginPath(); ctx.ellipse(sx, sy, w, h, 0, 0, 7); ctx.fill();
+  if (w > 2.5) { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sx - w * .12, sy - h * .14, w * .78, h * .72, 0, 0, 7); ctx.fill(); }
+}
+const campOvalFull = (...a) => campOval(...a);
+// Pilbara bush round the outside of the camp: spinifex hummocks, mulga shrubs, snappy gums, termite mounds and red rocks
+const CAMP_BUSH = (() => { let sd = 7; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647, o = [];
+  for (let i = 0; i < 2000; i++) {
+    const x = -650 + r() * (CAMP_W + 1300), y = -650 + r() * (CAMP_H + 1300), k = r(), sc = .7 + r() * .7, a = r() * 6.28;
+    if (x > -45 && x < CAMP_W + 45 && y > -45 && y < CAMP_H + 45) continue;
+    o.push({ x, y, t: k < .58 ? 0 : k < .76 ? 1 : k < .86 ? 2 : k < .93 ? 3 : 4, s: sc, a });
+  }
+  return o; })();
 const CAMP_TREES = [[670, 1040], ...CAMP_PODS.filter(p => p.tree).map(p => [p.x + POD_W / 2 + (p.dirt - .5) * 30, p.y + 38])];   // the office tree, and shade trees in some pod courtyards
 const GYM_DOOR = { x: 696, y: 914, nx: 0, ny: 1, hw: 12 };
 // Big car park behind (east of) the kitchen and dining room: three rows of nose-in bays, driveways between them,
@@ -3755,6 +3771,29 @@ function drawWalk() {
     if (p.cone) { const x = p.x + POD_SIDE + 14, y = p.y + 60; add(x, y, () => { wBox(x, y, 4, 4, 0, .8, '#e85d1a', '#e85d1a'); campOval(x, y, 4, 1.5, 1.5, 4, '#f26b1d'); }); }   // orange cone
   }
   for (const x of [172, 332, 482]) for (let y = 490; y < 1440; y += 70) add(x + 7, y, () => { if (!near2(x, y, 300)) return; wBox(x + 7, y, 1.4, 1.4, 0, 9, '#6b7278', '#d9dcde'); wBox(x + 7, y, 1.8, 1.8, 7, 8.5, '#f4f4ee', '#fff8d8'); });   // bollard lights
+  for (const [x0, y0, w, h] of [[-3000, -3000, 6922, 2955], [-3000, CAMP_H + 45, 6922, 3000], [-3000, -45, 2955, CAMP_H + 90], [CAMP_W + 45, -45, 3000, CAMP_H + 90]]) wFlat(x0, y0, w, h, '#ad6a40', .02);   // red dirt beyond the camp
+  for (const b of CAMP_BUSH) {   // the bush, only what's in view
+    const d = (b.x - wCam.x) * hx + (b.y - wCam.y) * hy, lat = (b.x - wCam.x) * -hy + (b.y - wCam.y) * hx;
+    if (d < 20 || d > 820 || Math.abs(lat) > d * .62 + 40) continue;
+    const { x, y, s: k, a } = b, far = d > 420, campOval = d < 200 ? campOvalFull : bushBlob;   // close up: faceted; further off: one shaded screen ellipse
+    add(x, y, b.t === 0 ? () => {   // spinifex: low golden-green hummocks, a ring when they're old
+      campOval(x, y, 2 * k, 9 * k, 8 * k, 4 * k, '#a99b4e');
+      if (!far) { campOval(x + 6 * k * Math.cos(a), y + 6 * k * Math.sin(a), 2 * k, 6 * k, 6 * k, 3.4 * k, '#b8a95a'); campOval(x - 3 * k, y + 2 * k, 4.5 * k, 4 * k, 4 * k, 2.6 * k, '#c7b86a'); }
+    } : b.t === 1 ? () => {   // mulga: grey-green shrub on a few dark stems
+      for (const o of [-1, 1]) wBox(x + o * 1.5 * k, y, 1, 1, 0, 9 * k, '#4a3b2e', '#4a3b2e');
+      campOval(x, y, 12 * k, 9 * k, 8 * k, 5 * k, '#7d8662'); if (!far) campOval(x + 3 * k, y - 2 * k, 15 * k, 6 * k, 6 * k, 3.5 * k, '#8b9470');
+    } : b.t === 2 ? () => {   // snappy gum: white trunk, crooked limbs, a thin open crown
+      wBox(x, y, 2.2 * k, 2.2 * k, 0, 30 * k, '#e9e4d6', '#f2eee4');
+      const c = Math.cos(a), sn = Math.sin(a);
+      wBox(x + c * 4 * k, y + sn * 4 * k, 1.4 * k, 1.4 * k, 22 * k, 38 * k, '#e9e4d6', '#f2eee4'); wBox(x - c * 4 * k, y - sn * 4 * k, 1.3 * k, 1.3 * k, 26 * k, 36 * k, '#e9e4d6', '#f2eee4');
+      campOval(x + c * 6 * k, y + sn * 6 * k, 38 * k, 9 * k, 8 * k, 4 * k, '#7f9160'); campOval(x - c * 5 * k, y - sn * 5 * k, 35 * k, 8 * k, 7 * k, 3.6 * k, '#738655');
+      if (!far) campOval(x, y, 43 * k, 6 * k, 6 * k, 3 * k, '#8a9b6a');
+    } : b.t === 3 ? () => {   // termite mound: red-earth spire
+      for (const [z0, z1, w] of [[0, 8, 9], [8, 16, 6.5], [16, 23, 4.2], [23, 27, 2.2]]) wBox(x, y, w * k, w * k * .85, z0 * k, z1 * k, '#b0582e', '#c46a3c');
+    } : () => {   // red rocks
+      wBox(x, y, 7 * k, 5 * k, 0, 3 * k, '#8e3f22', '#a04a28'); if (!far) wBox(x + 4 * k, y + 3 * k, 4 * k, 3 * k, 0, 2 * k, '#7d3720', '#94452a');
+    });
+  }
   for (const [tx, ty] of CAMP_TREES) add(tx, ty, () => {   // olive-type courtyard trees
     for (const [ox, oy] of [[-1, 0], [1, .5], [0, -1]]) wBox(tx + ox, ty + oy, 1.3, 1.3, 0, 18, '#a8673f', '#a8673f');   // multi-stemmed trunk
     for (const [ox, oy, z, r] of [[0, 0, 16, 12], [-7, 3, 20, 9], [7, -3, 22, 9], [2, 1, 28, 8]]) campOval(tx + ox, ty + oy, z + 3, r, r, 4.5, '#7d8a5e');
