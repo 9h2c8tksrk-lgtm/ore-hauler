@@ -498,7 +498,7 @@ function mechAct() {
     10: 'The service ute is in the car park behind the crib room.', 12: 'The Hiace is waiting in the car park behind the crib room.' }[mStage] || '');
 }
 function startTipTug() {
-  state = 'tiptug'; ttView = 'cab'; mStage = 7; fills = Array(NT).fill(0); ttDone = [0, 0, 0, 0]; ttCam = SKW_TY(0);   // empty bins: the tip and tug just cycles each lid and bin tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];
+  state = 'tiptug'; ttView = 'cab'; mStage = 7; fills = Array(NT).fill(0); ttDone = [0, 0, 0, 0]; ttCam = SKW_TY(0); tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];   // empty bins: the tip and tug just cycles each lid and bin
   ptrs.clear(); syncBtns(); flash('Bins are empty. Trailer 1 first: open its lid.'); msgT = 3;
 }
 function finishTipTug() {
