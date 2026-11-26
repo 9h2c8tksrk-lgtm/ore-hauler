@@ -467,11 +467,11 @@ function arriveWorkshopMech() {
 const MECH_BUS_PARK = { x: -472, y: 300.4 };   // the Hiace's bay in the car park behind the crib room (crib-side row, second bay), reversed in
 function mechObjective() {
   return { 3: 'OBJECTIVE: PUT YOUR CRIB IN THE CRIB ROOM FRIDGE', 4: 'OBJECTIVE: BREATHO ON THE CRIB ROOM WALL', 5: 'OBJECTIVE: PRESTART IN THE WORKSHOP (BAY 6)',
-    6: 'OBJECTIVE: TIP AND TUG PA236, OUT THE FRONT OF BAY 5', 8: 'OBJECTIVE: SERVICE PA236: DOWN THE PIT STAIRS, FRONT OF BAY 5', 10: 'CALLOUT: GRAB THE SERVICE UTE IN THE CAR PARK',
+    6: 'OBJECTIVE: TIP AND TUG PA236, BEHIND BAY 5', 8: 'OBJECTIVE: SERVICE PA236: DOWN THE PIT STAIRS, FRONT OF BAY 5', 10: 'CALLOUT: GRAB THE SERVICE UTE IN THE CAR PARK',
     12: 'KNOCK-OFF: HOP ON THE HIACE IN THE CAR PARK' }[mStage] || '';
 }
 // ---------- the mechanic's work after prestart ----------
-const PA236_OUT = { x: 702, F: 780 + 1540 }, TT_PANEL = { x: 702 - 76, y: 780 + 200 };   // (bay 5's centre is sbx(4) = 702; the shed is SH_D = 780 deep, defined further down)   // lined up nose-out in front of bay 5, tip-and-tug controls by its last trailer
+const PA236_OUT = { x: 702, F: -70 }, TT_PANEL = { x: 702 - 76, y: -250 };   // (bay 5's centre is sbx(4) = 702; the shed is SH_D = 780 deep, defined further down)   // lined up behind bay 5, nose to the back of the shed, tip-and-tug controls by its last trailer
 const SVC_STAIRS = { x: 702, y: 780 - 54 }, SVC_UTE = { x: -440, y: 412 };
 const nearTipTug = () => Math.hypot(workshopFoot.x - TT_PANEL.x, workshopFoot.y - TT_PANEL.y) < 34;
 const nearPitStairs = () => Math.hypot(workshopFoot.x - SVC_STAIRS.x, workshopFoot.y - SVC_STAIRS.y) < 26;
@@ -492,7 +492,7 @@ function mechAct() {
   if (mStage === 10 && nearServiceUte()) return startCallout();
   if (mStage === 12 && nearHiace()) return boardBus(true);
   flash({ 3: 'Into the crib room: crib in the fridge, then your breatho.', 4: 'Your breatho is on the crib room wall by the door.', 5: "Prestart is in the back of bay 6, by the supervisor's whiteboard.",
-    6: 'PA236 is out the front of bay 5. The tip and tug controls are by its last trailer.', 8: "The pit stairs are at the front end of bay 5's pit, under PA236's bull bar.",
+    6: 'PA236 is lined up behind bay 5. The tip and tug controls are beside its first trailer.', 8: "The pit stairs are at the front end of bay 5's pit, under PA236's bull bar.",
     10: 'The service ute is in the car park behind the crib room.', 12: 'The Hiace is waiting in the car park behind the crib room.' }[mStage] || '');
 }
 function startTipTug() {
@@ -502,7 +502,7 @@ function startTipTug() {
 function finishTipTug() {
   mStage = 8; state = 'workshopfoot'; shopL = shopLayout(); shopCrewInit();
   workshopFoot = { x: SVC_STAIRS.x - 46, y: SVC_STAIRS.y + 6 }; footFacing = 0; footCamH = 0; ptrs.clear(); syncBtns();
-  flash('Tip and tug done. PA236 has gone round and pulled into bay 5 over the pit. Down the pit stairs for the service.'); msgT = 5;
+  flash('Tip and tug done. PA236 has pulled forward into bay 5 over the pit. Down the pit stairs for the service.'); msgT = 5;
 }
 // the 500-hour service, in a cut-away side view of the pit: walk along under the truck and hold E at each job
 const SVC_JOBS = [
@@ -657,14 +657,14 @@ const PRESTART = { x: 840, y: 478 };   // gathered in the back of Bay 6, by the 
 const nearPrestart = () => role === 'mech' && state === 'workshopfoot' && workshopFoot.x > 0 && Math.hypot(workshopFoot.x - PRESTART.x, workshopFoot.y - PRESTART.y) < 46;
 const PRESTART_LINES = () => ["Supervisor: Morning all. Take 5s done? Good. Keep the walkways clear, there's a forklift working in bay 6.",
   "Supervisor: Tyre bay's flat out. Bay 2 and 4 rigs are on PMs, and the sparky's on the beacon in bay 2.",
-  `Supervisor: ${playerName}, PA236 is lined up out the front. Tip and tug first, then pull it over the pit for a 500-hour service.`,
+  `Supervisor: ${playerName}, PA236 is lined up behind the workshop. Tip and tug first, then pull it over the pit for a 500-hour service.`,
   "Supervisor: Radio's on channel 5 if a breakdown comes in on the highway. Right, let's get into it. Stay safe."];
 function prestartNext() {
   if (mStage > 5) return;
   if (mStage < 5) { flash(mStage === 3 ? 'Put your crib in the fridge and do your breatho first.' : 'Do your breatho in the crib room first.'); return; }
   const L = PRESTART_LINES(); prestartLine++;
   if (prestartLine < L.length) { flash(L[prestartLine]); msgT = 6; return; }
-  mStage = 6; prestartLine = -1; flash('Out the front of bay 5: PA236 is lined up on the wash pad for the tip and tug.'); msgT = 4;
+  mStage = 6; prestartLine = -1; flash('Out the back of bay 5: PA236 is lined up behind the workshop for the tip and tug.'); msgT = 4;
 }
 function drawMechEnd() {
   rect(0, 0, W, H, '#142536');
@@ -1380,7 +1380,7 @@ const SB = 156, SH_W = SB * 6, SH_D = 780, SH_H = 230, sbx = i => SB / 2 + i * S
 const SH_DOORS = [{ y0: 150, y1: 186 }, { y0: 664, y1: 700 }];   // clear of the wall's portal frame columns (every 130)   // two PA doors in the left (Bay 1, tyre bay) wall, one at each end, opening towards the crib room
 const shInDoor = (y, pad = 0) => SH_DOORS.some(d => y > d.y0 - pad && y < d.y1 + pad);
 const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { o.push([a, d.y0]); a = d.y1; } o.push([a, SH_D]); return o; };   // solid stretches of the Bay 1 wall
-const SH_OUT = { x0: -840, y0: -90, y1: SH_D + 300 };   // x0: out past the car park to the truck lane beside the truck wash
+const SH_OUT = { x0: -840, y0: -320, y1: SH_D + 300 };   // y0: out the back far enough to reach PA236's tip and tug controls   // x0: out past the car park to the truck lane beside the truck wash
 // 10-bay car park behind (west of) the crib room, inside a low blue metal bund: 5 bays along the crib room, the aisle down the middle
 // (open at both ends to drive in and out), 5 bays on the truck wash side. Everything reverses in, nose to the aisle.
 // Then the truck lane (room for a road train between the car park and the wash) and the drive-through truck wash.
@@ -1439,7 +1439,7 @@ function shopBlocked(x, y) {
   const inLen = y > 0 && y < SH_D;
   if (Math.abs(x) < 8 && inLen) return !shInDoor(y, -6);   // the Bay 1 wall: only through a PA door
   for (let i = 0; i <= 6; i++) if (Math.abs(x - i * SB) < 12 && (Math.abs(y - 6) < 12 || Math.abs(y + 6) < 9)) return true;   // back columns and bollards
-  if (role === 'mech' && mStage <= 7 && Math.abs(x - PA236_OUT.x) < 44 && y > SH_D + 66 && y < PA236_OUT.F + 12) return true;   // PA236 lined up out the front
+  if (role === 'mech' && mStage <= 7 && Math.abs(x - PA236_OUT.x) < 44 && y < PA236_OUT.F + 12 && y > PA236_OUT.F - 1500) return true;   // PA236 lined up behind bay 5
   if (role === 'mech' && mStage <= 7 && Math.abs(x - TT_PANEL.x) < 8 && Math.abs(y - TT_PANEL.y - 20) < 8) return true;
   const L = shopL;   // the rest of each rig's trailers run out the open back of its bay
   for (const [bay, T0] of [[L.bay, L.T0], ...L.pms.map(pm => [pm.bay, pm.F - 230])]) if (Math.abs(x - sbx(bay)) < 42 && y < T0 - 290) return true;
@@ -1676,7 +1676,7 @@ function drawWorkshopFoot() {
 
   // ----- outside: sky, red-dirt yard, crib room
   rect(0, 0, W, horizon, '#a7c3d9'); rect(0, horizon - 14, W, 14, '#8b9d7a'); rect(0, horizon, W, H - horizon, '#9c5634');
-  flat(-1300, -400, SH_W + 600, SH_D + 900, -.05, '#a35a36');
+  flat(-1300, -1900, SH_W + 600, SH_D + 900, -.05, '#a35a36');
   // behind the crib room: the 10-bay car park, the truck lane past it and the drive-through truck wash beyond
   { const C = SH_CARPARK, b = CP_BUND, A = CP_AISLE;
     flat(C.x0 + b, C.y0 + b, C.x1 - b, C.y1 - b, .02, '#4c5156');                                                  // sealed car park
@@ -1962,7 +1962,7 @@ function drawWorkshopFoot() {
       box(x - 8, y + 16.8, .6, 1.6, 60, '#d7f52a', '#d7f52a', 4);
     });
   }
-  if (role === 'mech' && mStage <= 7) {   // PA236 lined up nose-out on the wash pad in front of bay 5, and the tip-and-tug control pedestal
+  if (role === 'mech' && mStage <= 7) {   // PA236 lined up behind bay 5, nose to the back of the shed, and the tip-and-tug control pedestal
     primeMover(PA236_OUT.x, PA236_OUT.F, '#f062a4', 'PA236');
     for (let k2 = 0; k2 < NT; k2++) { const t0 = PA236_OUT.F - 230 - k2 * 312; if ((t0 - 150 - CY) * fy + (PA236_OUT.x - CX) * fx < 1400) trailer(PA236_OUT.x, t0, 0, true); }
     add(TT_PANEL.x, TT_PANEL.y + 20, () => { box(TT_PANEL.x, TT_PANEL.y + 20, 6, 6, 30, '#5e6c77', '#7a8892'); box(TT_PANEL.x, TT_PANEL.y + 20, 12, 8, 14, '#e8c21c', '#f2d24a', 30);
@@ -5318,11 +5318,11 @@ function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
   ctx.restore();
 }
 function drawSkyway() {
-  const tug = state === 'tiptug';   // the same rig on the wash pad in front of the workshop for the mechanic's tip and tug
+  const tug = state === 'tiptug';   // the same rig on the concrete apron behind the workshop for the mechanic's tip and tug
   const t = beaconClock();
   // drone-style camera out over the drop, looking back along the rig and down onto the stockpile
   let C = [330, 160, 170], T = [-40, -175, -60]; const f0 = tug ? 440 : 400, cyS = H * .44;
-  if (tug) { const ay = SKW_TY(ttActive()); ttCam += (ay - ttCam) * .06; T = [SKW_X - 2, ttCam - 14, 14]; C = [SKW_X + 150, ttCam + 160, 88]; }   // in close on the trailer you're working on
+  if (tug) { const ay = SKW_TY(ttActive()); ttCam += (ay - ttCam) * .06; T = [SKW_X - 2, ttCam + 14, 14]; C = [SKW_X + 150, ttCam - 170, 88]; }   // looking up the rig toward the back of the shed, in close on the trailer you're working on
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l); }, cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const fw = nrm(sub(T, C)), rt = nrm(cross(fw, [0, 0, 1])), up = cross(rt, fw), NEAR = 5;
@@ -5353,27 +5353,26 @@ function drawSkyway() {
   // ----- sky, ranges and the plain far below
   const sg = ctx.createLinearGradient(0, 0, 0, H * .55); sg.addColorStop(0, '#3b78bf'); sg.addColorStop(.7, '#a9c7e2'); sg.addColorStop(1, '#ecd9bd');
   ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
-  if (tug) {   // red dirt, the concrete wash pad in front of bay 5, and the workshop's open front behind the rig
+  if (tug) {   // red dirt, the concrete apron behind bay 5, and the back of the workshop beyond the cab, with other rigs' trailers out the back of their bays
     { const fl = Math.hypot(T[0] - C[0], T[1] - C[1]), hq = cam([C[0] + (T[0] - C[0]) / fl * 6000, C[1] + (T[1] - C[1]) / fl * 6000, 0]), hy = hq[1] > 5 ? scr(hq)[1] : H * .3;   // Pilbara ranges on the horizon, drawn before the ground covers their feet
       for (const [col, amp, k, base] of [['#9a7a95', 26, .012, 8], ['#a7603f', 14, .028, 1]]) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, hy + 30);
         for (let x = 0; x <= W; x += 6) ctx.lineTo(x, hy - base - amp * (Math.max(0, Math.sin(x * k + 1.3)) * .7 + Math.sin(x * k * 2.3 + 1) * .3 + .3)); ctx.lineTo(W, hy + 30); ctx.fill(); } }
     face([[-4000, -4000, -.5], [4000, -4000, -.5], [4000, 2500, -.5], [-4000, 2500, -.5]], '#a9542f');
-    face([[-260, 320, 0], [330, 320, 0], [330, -470, 0], [-260, -470, 0]], '#b7b2a8');
-    for (let y = 300; y > -470; y -= 90) face([[-260, y, .05], [330, y, .05], [330, y - 1.2, .05], [-260, y - 1.2, .05]], '#a39e94');   // slab joints
-    for (const x of [SKW_X - 34, SKW_X + 34]) face([[x - 1.5, 300, .1], [x + 1.5, 300, .1], [x + 1.5, -460, .1], [x - 1.5, -460, .1]], '#e8b100');   // lane lines
+    const FY = 300, cols = [-200, -140, -80, -20, 40, 100, 160, 220], DH = 71;   // the back of the shed, beyond the cab (about 10 units a metre)
+    face([[-260, FY, 0], [330, FY, 0], [330, -520, 0], [-260, -520, 0]], '#b7b2a8');
+    for (let y = FY - 20; y > -520; y -= 90) face([[-260, y, .05], [330, y, .05], [330, y - 1.2, .05], [-260, y - 1.2, .05]], '#a39e94');   // slab joints
+    for (const x of [SKW_X - 34, SKW_X + 34]) face([[x - 1.5, FY - 20, .1], [x + 1.5, FY - 20, .1], [x + 1.5, -500, .1], [x - 1.5, -500, .1]], '#e8b100');   // lane lines
     face([[SKW_X + 40, 120, .1], [SKW_X + 120, 120, .1], [SKW_X + 120, -440, .1], [SKW_X + 40, -440, .1]], 'rgba(60,60,60,.12)');   // wet patch where the bins get hosed out
-    const FY = -440, cols = [-200, -140, -80, -20, 40, 100, 160, 220], DH = 71;   // the shed at this scene's scale (about 10 units a metre)
-    face([[cols[0], FY, DH], [cols[7], FY, DH], [cols[7], FY, 90], [cols[0], FY, 90]], '#c7ced3');                          // header over the bays
+    face([[cols[0], FY, DH], [cols[7], FY, DH], [cols[7], FY, 90], [cols[0], FY, 90]], '#c7ced3');                          // header over the open backs of the bays
     for (let i = 0; i < cols.length - 1; i++) { const x0 = cols[i] + 2, x1 = cols[i + 1] - 2, xm = (x0 + x1) / 2;
-      face([[x0, FY - 1, 0], [x1, FY - 1, 0], [x1, FY - 1, DH], [x0, FY - 1, DH]], '#39414a');                               // dark inside the bay
-      face([[x0, FY - 60, 0], [x1, FY - 60, 0], [x1, FY - 60, 58], [x0, FY - 60, 58]], '#4a545c');                         // the back of the shed, far inside
-      face([[x0, FY + .3, DH - 6], [x1, FY + .3, DH - 6], [x1, FY + .3, DH], [x0, FY + .3, DH]], '#8a949b');               // rolled-up roller door drum
-      face([[xm - 6, FY + .4, DH + 3], [xm + 6, FY + .4, DH + 3], [xm + 6, FY + .4, DH + 9], [xm - 6, FY + .4, DH + 9]], '#1d5fb4'); }   // bay number boards
-    for (const x of cols) { box(x, FY + 1, DH / 2, 2, 2, DH / 2, '#a3abb1', '#bcc3c8'); box(x, FY + 5, 6.5, 1.5, 1.5, 6.5, '#e8b100', '#f6d64a'); }   // columns, bollards
-    box(70, FY - 22, 12, 11, 22, 12, '#f062a4', '#d94a8c'); box(70, FY - 4, 10, 10, 1, 6, '#c9ced2');                     // a pink rig nosed up in a bay
-    face([[cols[0], FY, 90], [cols[7], FY, 90], [cols[7], FY - 130, 100], [cols[0], FY - 130, 100]], '#8f9aa1');            // roof
+      face([[x0, FY + 1, 0], [x1, FY + 1, 0], [x1, FY + 1, DH], [x0, FY + 1, DH]], '#39414a');                               // dark inside the bay
+      face([[x0, FY + 60, 0], [x1, FY + 60, 0], [x1, FY + 60, 58], [x0, FY + 60, 58]], '#a9b9c4');                         // daylight through the open front, far inside
+      face([[xm - 6, FY - .4, DH + 3], [xm + 6, FY - .4, DH + 3], [xm + 6, FY - .4, DH + 9], [xm - 6, FY - .4, DH + 9]], '#1d5fb4'); }   // bay number boards
+    for (const x of cols) { box(x, FY - 1, DH / 2, 2, 2, DH / 2, '#a3abb1', '#bcc3c8'); box(x, FY - 5, 6.5, 1.5, 1.5, 6.5, '#e8b100', '#f6d64a'); }   // columns, bollards
+    for (const bx of [-110, 70]) { box(bx, FY - 40, 22, 12, 40, 10, '#c93a8a', '#e766b0'); box(bx, FY - 40, 10, 9, 38, 4, '#25282b'); for (const sx of [-1, 1]) box(bx + sx * 10, FY - 66, 5.5, 2.5, 6, 5.5, '#141516'); }   // other rigs' last trailers out the back of their bays
+    face([[cols[0], FY, 90], [cols[7], FY, 90], [cols[7], FY + 130, 100], [cols[0], FY + 130, 100]], '#8f9aa1');            // roof
     Q.sort((a2, b2) => b2.d - a2.d).forEach(f => face(f.pts, f.col)); Q.length = 0;
-    { const q = cam([10, FY + 1, 81]); if (q[1] > 5) { const [sx, sy] = scr(q), k = f0 / q[1]; rect(sx - 34 * k, sy - 5 * k, 68 * k, 10 * k, '#1d5fb4'); text('6-BAY WORKSHOP', sx, sy + 2.4 * k, 6.5 * k, '#fff'); } }
+    { const q = cam([10, FY - 1, 81]); if (q[1] > 5) { const [sx, sy] = scr(q), k = f0 / q[1]; rect(sx - 34 * k, sy - 5 * k, 68 * k, 10 * k, '#1d5fb4'); text('WORKSHOP REAR', sx, sy + 2.4 * k, 6.5 * k, '#fff'); } }
     box(150, 140, 4, 6, 11, 4, '#e0479a', '#f27bb8'); box(150, 140, 70, 1.4, 1.4, 66, '#8a8f94'); box(150, 140, 137, 11, 3, 3, '#2b2f33', '#fff6c8');   // lighting tower
     Q.sort((a2, b2) => b2.d - a2.d).forEach(f => face(f.pts, f.col)); Q.length = 0;
   } else
@@ -5437,8 +5436,8 @@ function drawSkyway() {
     for (const sx of [-1, 1]) for (const wy of [-20, -29, -38]) wheelQ(X + sx * 12, Y + wy, 5.5, 6);
     const tipT = p => { const dx = p[0] - hx, dz = p[2] - hz; return [hx + dx * Math.cos(th) + dz * Math.sin(th), p[1], hz - dx * Math.sin(th) + dz * Math.cos(th)]; };
     obox(tipT, X - 12, X + 12, Y - 38, Y + 38, 14, 36, '#c93a8a', '#c93a8a', true);              // the tub (open top)
-    const da = th * .95;   // the side door, hinged along the top edge, swings out as the bin tips
-    if (da > .03) { const hx2 = X + 12, hz2 = 36, doorT = p => { const dx = p[0] - hx2, dz = p[2] - hz2; return tipT([hx2 + dx * Math.cos(da) - dz * Math.sin(da), p[1], hz2 + dx * Math.sin(da) + dz * Math.cos(da)]); };
+    const da = Math.min(1.5, th * 1.5);   // the side door, hinged along the bottom edge, drops open outward as the bin tips
+    if (da > .03) { const hx2 = X + 12, hz2 = 15, doorT = p => { const dx = p[0] - hx2, dz = p[2] - hz2; return tipT([hx2 + dx * Math.cos(da) + dz * Math.sin(da), p[1], hz2 - dx * Math.sin(da) + dz * Math.cos(da)]); };
       Q.push({ d: cam(tipT([X + 12.4, Y, 25]))[1] - .2, pts: [[X + 12.4, Y - 36, 15.5], [X + 12.4, Y + 36, 15.5], [X + 12.4, Y + 36, 35], [X + 12.4, Y - 36, 35]].map(tipT), col: '#3a0f28' });   // the open side
       obox(doorT, X + 12.2, X + 13.6, Y - 37, Y + 37, 15, 36, '#b0307a', '#c93a8a');
       for (let k = -3; k <= 3; k++) obox(doorT, X + 13.6, X + 14.2, Y + k * 11 - .8, Y + k * 11 + .8, 16, 35, '#8f1a5e'); }
@@ -5467,7 +5466,7 @@ function drawSkyway() {
   Q.sort((a, b) => b.d - a.d).forEach(f => { if (f.ram) { if (f.ram[0][1] > NEAR && f.ram[1][1] > NEAR) { ctx.strokeStyle = '#d6dadd'; ctx.lineWidth = Math.max(1, f0 * 1.6 / f.ram[0][1]); ctx.beginPath(); ctx.moveTo(...scr(f.ram[0])); ctx.lineTo(...scr(f.ram[1])); ctx.stroke(); } } else face(f.pts, f.col); });
   Q.length = 0;
   if (tug) {   // you at the control pedestal on the safe side, beside the trailer you're working on
-    const py = ttCam + 52, px = X + 34;   // about 1.8 m tall at this scene's scale, on the camera side ahead of the trailer, clear of where the bin swings
+    const py = ttCam - 52, px = X + 34;   // about 1.8 m tall at this scene's scale, on the camera side behind the trailer, clear of where the bin swings
     box(px - 5, py, 5.5, .8, .8, 5.5, '#5e6c77', '#7a8892'); box(px - 5, py, 12, 2, 1.6, 1.4, '#e8c21c', '#f2d24a');            // pedestal and its button box
     box(px, py - 1, 4, .7, .7, 4, WS_DENIM); box(px, py + 1, 4, .7, .7, 4, WS_DENIM); box(px, py, 3.2, .78, 2.8, .3, WS_TAPE);   // jeans, tape below the knee
     box(px, py, 11.5, 1, 1.9, 3.5, WS_HV, WS_HV); box(px, py, 11, 1.05, 1.95, .3, WS_TAPE); box(px, py, 12.2, 1.05, 1.95, .3, WS_TAPE);   // yellow hi-vis, double tape
