@@ -76,7 +76,12 @@ const YARD = { w: 960, h: 1150 };   // the loading yard is bigger than the scree
 const PILE = { x: 20, y: 290, w: 380, h: 570 };   // one big mound; solid for the loader
 const LDR_R = 30, SEG_N = 10, SEG_H = PILE.h / SEG_N, SCOOP_CUT = .25;
 const segY = k => PILE.y + (k + .5) * SEG_H;
-const segProf = k => Math.pow(Math.sin(Math.PI * (k + .5) / SEG_N), .7);   // bell profile so the slices read as one mound
+// the ROM pile is three grade fingers side by side: high grade (red flags), low grade (yellow) and waste (blue); each slice belongs to one
+const FINGERS = [{ name: 'HIGH GRADE', col: 'red', k0: 0, k1: 4, flag: '#d62828', ore: ['#5e3a2c', '#7a4a38', '#8e5c47', '#a26c55', '#b98368'] },
+  { name: 'LOW GRADE', col: 'yellow', k0: 4, k1: 7, flag: '#f2c200', ore: ['#6a4a32', '#86603f', '#9a7350', '#ad8662', '#c49a74'] },
+  { name: 'WASTE', col: 'blue', k0: 7, k1: 10, flag: '#1d5fb4', ore: ['#4e4a46', '#625c56', '#77706a', '#8a837c', '#a09890'] }];
+const fingerOf = k => k < 4 ? 0 : k < 7 ? 1 : 2, fingerY = f => (segY(FINGERS[f].k0) + segY(FINGERS[f].k1 - 1)) / 2;
+const segProf = k => { const F = FINGERS[fingerOf(k)]; return Math.pow(Math.sin(Math.PI * (k - F.k0 + .5) / (F.k1 - F.k0)), .7); };   // a bell per finger so each reads as its own mound
 let hitCd = 0, ldrHp = 100, trDmg = [0, 0, 0, 0];   // loader hit points and per-trailer damage from yard collisions
 const OFF = i => 57 + i * 62;                           // trailer distance behind cab centre when driving
 
@@ -112,7 +117,7 @@ function drawBeacon(x, y, phase = 0) {
   }
   ctx.fillStyle = on ? '#ffa020' : '#7a4200'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
 }
-function curBtns() { return state === 'load' ? LB : DB; }
+function curBtns() { return state === 'load' || state === 'water' ? LB : DB; }
 function syncBtns() {
   for (const k of ['TL', 'TR', 'TU', 'TD', 'TB', 'TG']) keys[k] = false;
   const b = curBtns();
@@ -140,7 +145,7 @@ cv.addEventListener('pointerdown', e => {
     if (inR(p, FIT_BTN)) { startFitter(); return; }
     if (inR(p, CHG_BTN)) { bayReady = 0; toUte(); return; }
   }
-  if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'shroom' || state === 'service' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
+  if ((state === 'drive' || state === 'load' || state === 'water' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'shroom' || state === 'service' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
   if (state === 'drive' && inR(p, DRV_VIEW_BTN)) { fpv = !fpv; return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
@@ -154,6 +159,11 @@ cv.addEventListener('pointerdown', e => {
     else { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); }
     return;
   }
+  if (state === 'water') {
+    if (inR(p, ACT)) onKey('Space'); else if (inR(p, VIEW_BTN)) chaseView = !chaseView; else { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); }
+    return;
+  }
+  if (state === 'waterend') { reset(); state = 'menu'; return; }
   if (state === 'skyway' || state === 'tiptug') {
     for (let i = 0; i < NT; i++) { if (inR(p, lidBtn(i))) toggleLid(i); else if (inR(p, tipBtn(i))) tipTrailer(i); }
     return;
@@ -163,6 +173,7 @@ cv.addEventListener('pointerdown', e => {
 
   if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
   if (state === 'menu' && inR(p, MECH_BTN)) { startMechanic(); return; }
+  if (state === 'menu' && inR(p, WATER_BTN)) { startWaterCart(); return; }
   if (state === 'busride') { if (bus && bus.home) { mStage = 14; state = 'mechend'; bus = null; } else arriveWorkshopMech(); return; }
   if (state === 'mechend') { reset(); state = 'menu'; return; }
   if (state === 'menu') { if (inR(p, LOAD_BTN)) { startLoad(); return; } for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; } nameIn.blur(); return; }   // no tap-anywhere start
@@ -250,7 +261,8 @@ function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
+  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); try { romReset(); } catch (e) {}   // the very first reset runs before the ROM module below is defined
+  ptrs.clear(); syncBtns();
 }
 
 function onKey(code) {
@@ -289,6 +301,9 @@ function onKey(code) {
       ptrs.clear();syncBtns();flash('Crib Room mission complete. Drive out through the yard gate.');return;
     }
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
+  if (state === 'water') { if (code === 'Space') { if (cart.tank > 0) cart.spray = !cart.spray; else flash('Tank empty: fill up at the standpipe'); } else if (code === 'KeyV') chaseView = !chaseView; return; }
+  if (state === 'waterend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
+  if (state === 'menu' && code === 'KeyW') { startWaterCart(); return; }
   if (state === 'load') {
     if (code === 'Space') action();
     else if (code === 'KeyV') chaseView = !chaseView;
@@ -302,7 +317,7 @@ function onKey(code) {
   }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-const LOAD_BTN = [110, 560, 260, 28, 'TRUCK DRIVER: LOAD (ENTER)'], SKIP_BTN = [110, 592, 260, 28, 'SKIP LOADING (L)'], CAMP_BTN = [110, 624, 260, 28, 'TRUCK DRIVER: START AT CAMP (C)'], MECH_BTN = [110, 656, 260, 28, 'WORKSHOP MECHANIC (M)'];
+const LOAD_BTN = [110, 560, 260, 25, 'TRUCK DRIVER: LOAD (ENTER)'], SKIP_BTN = [110, 587, 260, 25, 'SKIP LOADING (L)'], CAMP_BTN = [110, 614, 260, 25, 'TRUCK DRIVER: START AT CAMP (C)'], WATER_BTN = [110, 668, 260, 25, 'ROM WATER CART (W)'], MECH_BTN = [110, 641, 260, 25, 'WORKSHOP MECHANIC (M)'];
 let nameErrT = 0;   // a name is required before any storyline starts
 function takeName() {
   const n = nameIn.value.trim().slice(0, 12);
@@ -680,12 +695,15 @@ function action() {
       const fa = ldr.angle + ldr.art, ty = ldr.y - Math.cos(fa) * 45;
       let k = -1;
       for (let j = 0; j < SEG_N; j++) if (pileSeg[j] > .02 && Math.abs(segY(j) - ty) < SEG_H * 2.2 && (k < 0 || Math.abs(segY(j) - ty) < Math.abs(segY(k) - ty))) k = j;
-      if (k < 0) { flash(pileSeg.some(v => v > .02) ? 'Nothing left here: move along the pile' : 'Pile is empty'); return; }
-      pileSeg[k] = Math.max(0, pileSeg[k] - SCOOP_CUT);
-      if (!pileSeg.some(v => v > .02)) { pileSeg.fill(1); flash('Fresh ore tipped onto the pile'); }
+      if (k < 0) { flash(pileSeg.some(v => v > .02) ? 'Nothing left here: move along the pile' : 'Pile is empty: wait for a haul truck'); return; }
+      pileSeg[k] = Math.max(0, pileSeg[k] - SCOOP_CUT); carryGrade = fingerOf(k);
+      if (rom.big[k]) { rom.big[k] = false; carryBig = true; flash('Oversize in the bucket: take it to the rock breaker'); }
+      addDust(ldr.x, ldr.y, .12, 1);
       carrying = true; burst(ldr.x + Math.sin(fa) * 35, ldr.y - Math.cos(fa) * 35, '#8a5a44', 6);
     } else flash('Drive up to the ore pile to scoop');
   } else {
+    const fa0 = ldr.angle + ldr.art;
+    if (romDump(ldr.x + Math.sin(fa0) * 40, ldr.y - Math.cos(fa0) * 40)) return;
     const i = trailerAt();
     if (i < 0) flash('Line up beside a trailer to dump');
     else if (fills[i] >= TRAILER_CAP) flash(`Trailer ${i + 1} is full`);
@@ -695,7 +713,7 @@ function action() {
       const skew = Math.abs(angDiff(fa, Math.PI / 2 + tp.a));
       const off = Math.abs(trLoc(tp, bx, by)[1]) / (TR_H / 2);
       const spill = Math.max(0, Math.min(1, Math.max((skew - .15) / .6, (off - .25) / .75)));
-      fills[i] = Math.min(TRAILER_CAP, fills[i] + 1 - spill); carrying = false;
+      fills[i] = Math.min(TRAILER_CAP, fills[i] + 1 - spill); carrying = false; if (spill < .95) romTrailerLoaded(); else carryGrade = -1;
       burst(tp.x, tp.y, '#a8705a', Math.round(8 * (1 - spill)));
       if (spill > .05) {
         spills.push({ x: bx, y: by, r: 6 + spill * 16, a: Math.random() * 6 });
@@ -837,8 +855,8 @@ function pushOutPile(o) {
 }
 function aiReset() { ai = { x: AI_HOME.x, y: AI_HOME.y, angle: 0, art: 0, carrying: false, st: 'pile', stage: 0, t: 0, k: -1 }; }
 // the second loader shuttles between the pile and trailers 3 and 4
-function updateAI(dt) {
-  const a = ai; a.t += dt;
+function updateAI(dt, a = ai, trs = AI_TRAILERS, home = AI_HOME, other = ldr) {
+  a.t += dt;
   const goto = (tx, ty, speed) => {
     const mid = a.angle + a.art / 2, err = angDiff(Math.atan2(tx - a.x, -(ty - a.y)), mid);
     a.art += (Math.max(-.6, Math.min(.6, err * 1.6)) - a.art) * (1 - Math.exp(-6 * dt));
@@ -847,17 +865,16 @@ function updateAI(dt) {
     return Math.hypot(tx - a.x, ty - a.y);
   };
   const setSt = (st) => { a.st = st; a.stage = 0; a.t = 0; };
-  if (a.t > 25 && a.st !== 'idle') { a.x = AI_HOME.x; a.y = AI_HOME.y; a.angle = 0; a.art = 0; setSt(a.carrying ? 'trailer' : 'pile'); a.k = -1; }
+  if (a.t > 25 && a.st !== 'idle') { a.x = home.x; a.y = home.y; a.angle = 0; a.art = 0; setSt(a.carrying ? 'trailer' : 'pile'); a.k = -1; }
   if (a.st === 'pile') {
-    if (a.k < 0 || pileSeg[a.k] <= .02) { const ks = []; pileSeg.forEach((m, j) => { if (m > .02) ks.push(j); }); a.k = ks.length ? ks[Math.floor(Math.random() * ks.length)] : -1; }
+    if (a.k < 0 || pileSeg[a.k] <= .02 || rom.big[a.k]) { const ks = []; pileSeg.forEach((m, j) => { if (m > .02 && fingerOf(j) === rom.grade && !rom.big[j]) ks.push(j); }); a.k = ks.length ? ks[Math.floor(Math.random() * ks.length)] : -1; }   // only the grade we're loading, never the oversize
     if (a.k < 0) return;
     if (goto(PILE.x + PILE.w + 34, segY(a.k), 140) < 16) {
-      pileSeg[a.k] = Math.max(0, pileSeg[a.k] - SCOOP_CUT);
-      if (!pileSeg.some(v => v > .02)) pileSeg.fill(1);
+      pileSeg[a.k] = Math.max(0, pileSeg[a.k] - SCOOP_CUT); addDust(a.x, a.y, .1, 1);
       a.carrying = true; a.k = -1; setSt('trailer'); burst(a.x - 35, a.y, '#8a5a44', 6);
     }
   } else if (a.st === 'trailer') {
-    const j = AI_TRAILERS.find(i => fills[i] < TRAILER_CAP);
+    const j = trs.find(i => fills[i] < TRAILER_CAP);
     if (j === undefined) { setSt('idle'); return; }
     const p = trPose(j);
     if (a.stage === 0) { const [wx, wy] = trWorld(p, -150, 0); if (goto(wx, wy, 110) < 26 || a.t > 12) { a.stage = 1; a.t = 0; } }
@@ -872,13 +889,13 @@ function updateAI(dt) {
     a.x += Math.sin(mid) * d; a.y -= Math.cos(mid) * d;
     if (a.t > 1) setSt('pile');
   } else {   // idle: park at home until a trailer needs filling again
-    if (goto(AI_HOME.x, AI_HOME.y, 100) < 20 || a.t > 15) a.t = 0;
-    if (AI_TRAILERS.some(i => fills[i] < TRAILER_CAP)) setSt(a.carrying ? 'trailer' : 'pile');
+    if (goto(home.x, home.y, 100) < 20 || a.t > 15) a.t = 0;
+    if (trs.some(i => fills[i] < TRAILER_CAP)) setSt(a.carrying ? 'trailer' : 'pile');
   }
   a.x = Math.max(25, Math.min(YARD.w - 25, a.x)); a.y = Math.max(30, Math.min(YARD.h - 30, a.y));
   pushOutTrailers(a); pushOutPile(a);
-  const dx = a.x - ldr.x, dy = a.y - ldr.y, dd = Math.hypot(dx, dy);
-  if (dd < LDR_R * 2 && dd > 0) { const k = (LDR_R * 2 - dd) / dd / 2; a.x += dx * k; a.y += dy * k; ldr.x -= dx * k; ldr.y -= dy * k; }
+  const dx = a.x - other.x, dy = a.y - other.y, dd = Math.hypot(dx, dy);
+  if (dd < LDR_R * 2 && dd > 0) { const k = (LDR_R * 2 - dd) / dd / 2; a.x += dx * k; a.y += dy * k; other.x -= dx * k; other.y -= dy * k; }
 }
 function updateLoad(dt) {
   const steering = steerAxis();
@@ -897,10 +914,199 @@ function updateLoad(dt) {
   }
   hitCd -= dt;
   pushOutPile(ldr);
-  updateAI(dt);
+  if (!lvStop()) updateAI(dt);   // the second loader stops dead while the LV is on the pad
+  if (distance) addDust(ldr.x, ldr.y, dt * .16 * Math.abs(throttle), 0);
+  if (ai.st !== 'idle' && !lvStop()) addDust(ai.x, ai.y, dt * .12, 0);
+  updateRom(dt, ldr, Math.abs(distance) > 0);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
   particles = particles.filter(p => p.l > 0); msgT -= dt;
 }
+
+// ---------- the ROM: haul trucks tipping off the bench, oversize and the rock breaker, dust and the water cart, the ROM sup and a stray LV ----------
+// The haul road runs along a bench BENCH_Z above the pad, its tip edge along x = 0 behind the fingers. Trucks back up to the bund and tip
+// down onto whichever finger is running low. Dust lives on a coarse grid over the yard: loaders and tipping kick it up, water lays it.
+const BENCH_Z = 150, RB = { x: 175, y: 1010 }, DG = 40, DG_W = Math.ceil(YARD.w / DG), DG_H = Math.ceil(YARD.h / DG);
+const CART_LOOP = [[470, 1230], [470, 200], [70, 200], [470, 200], [470, 920], [70, 920], [470, 920], [470, 1230]];   // the water cart's passes: up the loading lane, along the top and the bottom of the fingers
+const STANDPIPE = { x: 880, y: 1060 };
+let rom = null, carryBig = false, carryGrade = -1, cart = null, ai2 = null, wGame = null;
+const dIdx = (x, y) => Math.max(0, Math.min(DG_H - 1, Math.floor(y / DG))) * DG_W + Math.max(0, Math.min(DG_W - 1, Math.floor(x / DG)));
+function addDust(x, y, amt, r = 1) {
+  const cx = Math.floor(x / DG), cy = Math.floor(y / DG);
+  for (let j = cy - r; j <= cy + r; j++) for (let i = cx - r; i <= cx + r; i++) {
+    if (i < 0 || j < 0 || i >= DG_W || j >= DG_H) continue;
+    const k = j * DG_W + i, f = (i === cx && j === cy) ? 1 : .5;
+    rom.dust[k] = Math.min(1, rom.dust[k] + amt * f * (1 - rom.wet[k] * .9));
+  }
+}
+function waterDown(x, y, dt) {   // the spray bars: lay the dust and wet the ground in a swathe either side
+  const cx = Math.floor(x / DG), cy = Math.floor(y / DG);
+  for (let j = cy - 1; j <= cy + 1; j++) for (let i = cx - 1; i <= cx + 1; i++) {
+    if (i < 0 || j < 0 || i >= DG_W || j >= DG_H) continue;
+    const k = j * DG_W + i; rom.wet[k] = Math.min(1, rom.wet[k] + dt * 2.5); rom.dust[k] = Math.max(0, rom.dust[k] - dt * 2.2);
+  }
+}
+const dustAvg = () => { let s = 0; for (const d of rom.dust) s += d; return s / rom.dust.length; };
+const romHaze = me => Math.min(.5, rom.dust[dIdx(me.x, me.y)] * .45 + dustAvg() * .35);
+// the ROM sup on channel 2: calls queue up and each stays on screen for a few seconds
+function sup(txt, who = 'ROM SUP') { if (rom) rom.radio.push({ who, txt }); }
+const said = k => rom.said[k] ? true : (rom.said[k] = true, false);
+function romReset(mode = 'load') {
+  rom = { mode, grade: Math.random() < .6 ? 0 : 1, wrong: 0, big: Array(SEG_N).fill(false), haul: [], tipR: [], dust: new Float32Array(DG_W * DG_H), wet: new Float32Array(DG_W * DG_H),
+    cart: null, cartCd: 20, lv: null, lvAt: 22 + Math.random() * 20, radio: [], cur: null, t: 0, rbT: 0, said: {}, truckCd: 9, ambient: 30, fullT: 0 };
+  rom.big[FINGERS[rom.grade].k0 + 1 + Math.floor(Math.random() * 2)] = true;   // an oversize sitting on the finger you're loading from
+  for (let k = 0; k < rom.dust.length; k++) rom.dust[k] = .08 + .12 * hash(k * 1.7);
+  carryBig = false; carryGrade = -1;
+  const g = FINGERS[rom.grade];
+  if (mode === 'water') { sup(`Water cart, ROM sup. The pad's dusty: get the loading lanes wet and keep them that way. Fill up at the standpipe by the gate.`); sup('Two loaders and the haul trucks are working. Give them room.'); return; }
+  sup(`Morning ${playerName || 'mate'}. We're loading ${g.name} today, the ${g.col} flags. Second loader's on trailers 3 and 4.`);
+  sup('Haul trucks are tipping off the bench. Stay off the toe while they tip.');
+  sup(`There's an oversize on the ${g.name.toLowerCase()} finger. Rock breaker's at the south end.`);
+}
+function dispatchTruck(f) {
+  const n = 10 + Math.floor(Math.random() * 30), y0 = fingerY(f);
+  rom.haul.push({ f, n, st: 'in', t: 0, x: -120, y: -170, h: Math.PI, tip: 0, y0, warned: false, big: Math.random() < .4 });
+  sup(`Truck ${n} coming down the bench to tip ${FINGERS[f].name}. Loaders, give him room.`, `HAUL ${n}`);
+}
+// move o toward (tx, ty) at speed, turning at most rate rad/s; heading 0 = up the yard (-y)
+function driveTo(o, tx, ty, speed, dt, rate = 2.2) {
+  const want = Math.atan2(tx - o.x, -(ty - o.y)), e = angDiff(want, o.angle);
+  o.angle += Math.max(-rate * dt, Math.min(rate * dt, e));
+  const d = Math.hypot(tx - o.x, ty - o.y), step = Math.min(d, speed * dt * (Math.abs(e) > 1.4 ? .4 : 1));
+  o.x += Math.sin(o.angle) * step; o.y -= Math.cos(o.angle) * step;
+  return d;
+}
+function updateHaul(dt, me) {
+  for (const h of rom.haul) {
+    h.t += dt;
+    if (h.st === 'in') { h.y += 120 * dt; if (h.y >= h.y0 + 70) { h.y = h.y0 + 70; h.st = 'back'; h.t = 0; } }
+    else if (h.st === 'back') { const e = ease(Math.min(1, h.t / 2.4)); h.x = -120 + 66 * e; h.y = h.y0 + 70 - 70 * e; h.h = Math.PI + Math.PI / 2 * e; if (h.t >= 2.4) { h.st = 'tip'; h.t = 0; } }
+    else if (h.st === 'tip') {
+      h.tip = Math.min(1, h.t / 1.6);
+      if (h.t > .7) {
+        const F = FINGERS[h.f];
+        for (let k = F.k0; k < F.k1; k++) pileSeg[k] = Math.min(1, pileSeg[k] + dt * .55);
+        for (let n = 0; n < 4; n++) rom.tipR.push({ x: -2 + Math.random() * 4, y: h.y + (Math.random() - .5) * 56, z: BENCH_Z + 16 + Math.random() * 10, vx: 40 + Math.random() * 70, vy: (Math.random() - .5) * 20, vz: Math.random() * 20, l: 2.2, c: F.ore[1 + Math.floor(Math.random() * 4)] });
+        addDust(60 + Math.random() * 120, h.y + (Math.random() - .5) * 140, dt * 1.6, 1);
+        if (h.big && h.t > 1.4) { h.big = false; const k = F.k0 + Math.floor(Math.random() * (F.k1 - F.k0)); rom.big[k] = true; if (h.f === rom.grade || rom.mode === 'water') sup(`Oversize just came off truck ${h.n} on ${F.name}. Rock breaker's at the south end.`); }
+      }
+      if (rom.mode === 'load' && !h.warned && me.x < 130 && Math.abs(me.y - h.y) < 150) { h.warned = true; sup('Loader 1, get off the toe! He is tipping right on top of you.'); }
+      if (h.t >= 2.6) { h.st = 'down'; h.t = 0; }
+    } else if (h.st === 'down') { h.tip = Math.max(0, 1 - h.t / 1.6); if (h.t >= 1.6) { h.st = 'out'; h.t = 0; } }
+    else if (h.st === 'out') { const e = ease(Math.min(1, h.t / 2.2)); h.x = -54 - 66 * e; h.h = Math.PI * 1.5 - Math.PI / 2 * e; if (h.t >= 2.2) { h.st = 'away'; h.t = 0; } }
+    else { h.y += 120 * dt; h.h = Math.PI; }
+  }
+  rom.haul = rom.haul.filter(h => h.y < YARD.h + 260);
+  for (const r of rom.tipR) { r.x += r.vx * dt; r.y += r.vy * dt; r.z += r.vz * dt; r.vz -= 300 * dt; r.l -= dt; }
+  rom.tipR = rom.tipR.filter(r => r.l > 0 && r.z > (r.x < PILE.x + 140 ? 40 - r.x * .2 : 0));
+  // keep the fingers fed: a truck for any finger running low, and the odd one tipping anyway
+  rom.truckCd -= dt; rom.ambient -= dt;
+  if (rom.truckCd <= 0) for (let f = 0; f < FINGERS.length; f++) {
+    const F = FINGERS[f]; let s = 0; for (let k = F.k0; k < F.k1; k++) s += pileSeg[k];
+    if (s / (F.k1 - F.k0) < .45 && !rom.haul.some(h => h.f === f && h.st !== 'away')) { dispatchTruck(f); rom.truckCd = 6; break; }
+  }
+  if (rom.ambient <= 0 && rom.haul.length === 0) { dispatchTruck(Math.floor(Math.random() * 3)); rom.ambient = 30 + Math.random() * 20; }
+}
+function updateDust(dt) {
+  for (let k = 0; k < rom.dust.length; k++) {
+    rom.wet[k] = Math.max(0, rom.wet[k] - dt / 45);
+    rom.dust[k] = Math.max(0, Math.min(1, rom.dust[k] - dt * .012 + dt * .006 * (1 - rom.wet[k])));
+  }
+}
+// the water cart: in the loading game it's AI, called up when the pad gets dusty; in the mini game you drive it
+function newCart(ai) { return { x: CART_LOOP[0][0], y: CART_LOOP[0][1], angle: 0, v: 0, i: 1, ai, spray: ai, tank: 1, wait: 0 }; }
+function updateAICart(dt, me) {
+  const c = rom.cart; if (!c) return;
+  const p = CART_LOOP[c.i], ahead = Math.hypot(me.x - (c.x + Math.sin(c.angle) * 60), me.y - (c.y - Math.cos(c.angle) * 60)) < 70;
+  if (!ahead && !(rom.lv && rom.lv.on) && driveTo(c, p[0], p[1], 75, dt) < 10) c.i++;
+  if (c.spray) waterDown(c.x - Math.sin(c.angle) * 40, c.y + Math.cos(c.angle) * 40, dt);
+  if (c.i >= CART_LOOP.length) { rom.cart = null; rom.cartCd = 40; sup('ROM is wet. Heading back to fill up.', 'WATER CART'); }
+}
+// the stray LV: drives up the loading lane without calling up; everyone should stop until it's gone
+function updateLV(dt, me, moving) {
+  if (!rom.lv) { if (rom.t > rom.lvAt && !said('lv')) rom.lv = { x: 520, y: YARD.h + 90, angle: 0, i: 0, wait: 0, on: false, close: false, hit: false, stopped: 0 }; return; }
+  const v = rom.lv, path = [[520, 600], [520, 170], [1080, 170]];
+  if (!v.on && v.y < YARD.h - 20) { v.on = true; sup('Unknown LV on the ROM! All loaders STOP. Stop!'); }
+  if (v.i === 1 && v.wait < 2.2) v.wait += dt;   // stops halfway up, lost
+  else if (v.i < path.length && driveTo(v, path[v.i][0], path[v.i][1], 85, dt, 2.6) < 10) v.i++;
+  const d = Math.hypot(me.x - v.x, me.y - v.y);
+  if (v.on && moving && d < 170) v.close = true;
+  if (v.on && d < 58 && !v.hit) { v.hit = true; shake = .3; if (rom.mode === 'load') { ldrHp = Math.max(0, ldrHp - 15); } flash('You hit the LV!'); sup('Stop! Stop! You have hit the LV. Everyone stand still.'); }
+  if (v.i >= path.length || v.x > YARD.w + 60) {
+    sup(v.hit ? 'Incident on the ROM. Park up, we will need a statement.' : v.close ? 'Loader 1, you kept moving right next to that LV. That is not a good stop.' : 'Good stop everyone. LV, call up on channel 2 before you come on the ROM next time.');
+    if (rom.mode === 'water' && wGame) wGame.lvOk = !v.close && !v.hit;
+    rom.lv = { done: true, on: false, x: -999, y: -999 };
+  }
+}
+function updateRom(dt, me, moving) {
+  rom.t += dt; rom.rbT = Math.max(0, rom.rbT - dt);
+  if (!rom.cur || (rom.cur.t -= dt) <= 0) { const n = rom.radio.shift(); rom.cur = n ? { ...n, t: 3 + n.txt.length / 30 } : null; }
+  updateHaul(dt, me); updateDust(dt);
+  if (rom.lv === null || (rom.lv && !rom.lv.done)) updateLV(dt, me, moving);
+  if (rom.mode === 'load') {
+    rom.cartCd -= dt;
+    if (!rom.cart && rom.cartCd <= 0 && dustAvg() > .26) { rom.cart = newCart(true); sup('Water cart, ROM sup. The pad is getting dusty, can you give it a drink?'); sup('Water cart copies, on my way down the loading lane.', 'WATER CART'); }
+    updateAICart(dt, me);
+  }
+}
+const lvStop = () => rom && rom.lv && rom.lv.on;
+// dumping a bucket: back onto the pile, onto the rock breaker's grizzly, or into a trailer (checks the grade)
+function romDump(bx, by) {
+  if (Math.hypot(bx - RB.x, by - RB.y) < 80) {
+    if (!carryBig) { flash('Only oversize goes on the grizzly'); return true; }
+    carrying = false; carryBig = false; rom.rbT = 5; burst(RB.x, RB.y, '#8f8a84', 10); sup('Got it. I will have that broken up in a minute.', 'ROCK BREAKER'); return true;
+  }
+  if (nearPile() && trailerAt() < 0) {
+    let k = 0; for (let j = 0; j < SEG_N; j++) if (Math.abs(segY(j) - by) < Math.abs(segY(k) - by)) k = j;
+    pileSeg[k] = Math.min(1, pileSeg[k] + SCOOP_CUT); if (carryBig) rom.big[k] = true;
+    carrying = false; carryBig = false; burst(bx, by, '#8a5a44', 6); flash('Tipped it back on the pile'); return true;
+  }
+  if (carryBig && trailerAt() >= 0) { flash('Too big for the trailer!'); sup('Do not put that oversize in the trailer! Rock breaker, south end.'); return true; }
+  return false;
+}
+function romTrailerLoaded() {   // after a good bucket goes in: grade check
+  if (carryGrade >= 0 && carryGrade !== rom.grade) {
+    rom.wrong++; const g = FINGERS[carryGrade];
+    sup(carryGrade === 2 ? `Loader 1, that was WASTE! We are loading ${FINGERS[rom.grade].name}, the ${FINGERS[rom.grade].col} flags.` : `Loader 1, wrong finger. That was ${g.name}, we want ${FINGERS[rom.grade].name}.`);
+  }
+  carryGrade = -1;
+  if (ore() >= MIN_ORE && !said('enough')) sup('Looking good. Road train is right to go when you are.');
+}
+// ---------- water cart mini game ----------
+const W_TIME = 120;
+function startWaterCart() {
+  if (!takeName()) return;
+  state = 'water'; chaseView = true; fills = [0, 0, 0, 0]; pileSeg = Array(SEG_N).fill(1); spills = []; particles = [];
+  ldr = { x: -999, y: -999, angle: 0, art: 0 }; aiReset(); ai2 = { ...ai, x: 500, y: 330 }; romReset('water');
+  for (let k = 0; k < rom.dust.length; k++) rom.dust[k] = .3 + .35 * hash(k * 2.9);
+  cart = newCart(false); cart.x = 470; cart.y = 1100; cart.spray = false;
+  wGame = { t: W_TIME, dustSum: 0, n: 0, refills: 0, hits: 0, lvOk: null, best: 1 };
+  ptrs.clear(); syncBtns(); flash('Drive the water cart: SPACE sprays. Keep the loading lanes wet.');
+}
+function updateWater(dt) {
+  const c = cart, steer = steerAxis(), thr = (keys.ArrowUp || keys.KeyW || keys.TU ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TD ? 1 : 0);
+  wGame.t -= dt;
+  c.v += (thr ? thr * (thr > 0 ? 55 : 70) : -Math.sign(c.v) * Math.min(Math.abs(c.v), 45 * dt) / dt) * dt;
+  c.v = Math.max(-35, Math.min(105, c.v)); if (lvStop() && Math.hypot(c.x - rom.lv.x, c.y - rom.lv.y) < 60) c.v = Math.min(c.v, 0);
+  c.angle += steer * 1.5 * dt * Math.max(-1, Math.min(1, c.v / 40));
+  c.x = Math.max(25, Math.min(YARD.w - 25, c.x + Math.sin(c.angle) * c.v * dt)); c.y = Math.max(30, Math.min(YARD.h - 30, c.y - Math.cos(c.angle) * c.v * dt));
+  const hit = pushOutTrailers(c); pushOutPile(c);
+  for (const a of [ai, ai2]) { const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy); if (d < 56 && d > 0) { c.x += dx / d * (56 - d); c.y += dy / d * (56 - d); if (Math.abs(c.v) > 25) { wGame.hits++; shake = .2; flash('Bumped a loader!'); } c.v *= .3; } }
+  if (hit >= 0 && Math.abs(c.v) > 25) { wGame.hits++; shake = .2; flash(`Bumped trailer ${hit + 1}!`); c.v *= .3; }
+  if (c.spray && c.tank > 0) { c.tank = Math.max(0, c.tank - dt / 38); waterDown(c.x - Math.sin(c.angle) * 40, c.y + Math.cos(c.angle) * 40, dt); if (!c.tank) { c.spray = false; sup('Tank is empty. Back to the standpipe to fill up.'); } }
+  if (Math.hypot(c.x - STANDPIPE.x, c.y - STANDPIPE.y) < 70 && Math.abs(c.v) < 8 && c.tank < 1) { c.tank = Math.min(1, c.tank + dt / 4); if (c.tank >= 1) { wGame.refills++; flash('Tank full'); } }
+  if (!lvStop()) { updateAI(dt, ai, AI_TRAILERS, AI_HOME, c); updateAI(dt, ai2, [0, 1], { x: 500, y: 330 }, c); }
+  for (const a of [ai, ai2]) if (a.st !== 'idle') addDust(a.x, a.y, dt * .2, 0);
+  addDust(c.x, c.y, dt * .1 * Math.abs(c.v) / 100, 0);
+  if (fills.every(f => f >= TRAILER_CAP)) { rom.fullT += dt; if (rom.fullT > 3) { fills = [0, 0, 0, 0]; rom.fullT = 0; sup('Road train is away, next one is backed in. Loaders carry on.'); } }
+  updateRom(dt, c, Math.abs(c.v) > 6);
+  // the score: how dusty the working lanes in front of the fingers are, over the whole shift
+  let s = 0, n = 0; for (let j = 5; j < 25; j++) for (let i = 9; i < 15; i++) { s += rom.dust[j * DG_W + i]; n++; }
+  wGame.dustSum += s / n * dt; wGame.n += dt;
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
+  particles = particles.filter(p => p.l > 0); msgT -= dt;
+  if (wGame.t <= 0) { state = 'waterend'; ptrs.clear(); syncBtns(); }
+}
+const waterRating = () => Math.max(0, Math.min(100, Math.round(100 * (1 - (wGame.dustSum / Math.max(1, wGame.n)) / .5) - wGame.hits * 4 + (wGame.lvOk ? 5 : wGame.lvOk === false ? -10 : 0))));
 
 function updateSkyway(dt) {
   for (let i = 0; i < NT; i++) {
@@ -925,7 +1131,7 @@ function startSecondLoad() {
   trip++; ret = false; state = 'load'; shake = 0; scroll = 0; dist = 0; speed = 0; steeringSpeed = 0; warned = 0; hurtByStock = false;
   qx = LANE_X[0]; traffic = []; animals = []; particles = []; fills = [0, 0, 0, 0]; spawnT = 0;
   train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); ptrs.clear(); syncBtns();
+  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); romReset(); ptrs.clear(); syncBtns();
   flash('Back at the ROM! Load up for trip ' + trip + '. Total hauled: ' + tons + 't');
 }
 function startReturn() {
@@ -1885,6 +2091,8 @@ function update(dt) {
   if (state === 'menu') scroll += 70 * dt;
   if (nameErrT > 0) nameErrT -= dt;
   if (state === 'load') return updateLoad(dt);
+  if (state === 'water') return updateWater(dt);
+  if (state === 'waterend') { msgT -= dt; return; }
   if (state === 'skyway' || state === 'tiptug') return updateSkyway(dt);
   if (state === 'service') return updateService(dt);
   if (state === 'parkhandover') return updateParkHandover(dt);
@@ -1994,7 +2202,8 @@ function update(dt) {
   if (state === 'drive' && ret && dist >= TRIP) {
     startSecondLoad(); return;
   } else if (state === 'drive' && !ret && dist >= TRIP) {
-    state = 'skyway'; arrivalOre = ore(); tons += arrivalOre; speed = 0; particles = []; ptrs.clear(); syncBtns();
+    state = 'skyway'; arrivalOre = ore(); tons += Math.max(0, arrivalOre - (rom ? rom.wrong * BUCKET : 0));
+    if (rom && rom.wrong) setTimeout(() => flash(`${rom.wrong * BUCKET} t of the load was the wrong grade: not counted`), 2600); speed = 0; particles = []; ptrs.clear(); syncBtns();
     flash('The Skyway! Open each lid, then tip over the ledge');
   }
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; p.l -= dt; }
@@ -2830,10 +3039,10 @@ function wheelBox(cx, cy, hw, hl, z0, z1, a, col, side) {
   poly(q.map(p => P(p[0], p[1], z1)), col);
 }
 // oncoming water truck (cab toward the viewer): tank on the back with spray bars throwing water out both sides
-function waterTruck3(x, y) {
+function waterTruck3(x, y, spray = true) {
   const w = 30, t = beaconClock(), glass = '#27323d', CAB = '#f4f4f4', TK = '#2f78c4';
   shadow(x, y, w + 24, 96);
-  for (const sx of [-1, 1]) topRect(x + sx * (w / 2 + 3), y - 50, x + sx * (w / 2 + 58), y - 8, .15, 'rgba(60,35,20,.16)');   // wet road either side
+  if (spray) for (const sx of [-1, 1]) topRect(x + sx * (w / 2 + 3), y - 50, x + sx * (w / 2 + 58), y - 8, .15, 'rgba(60,35,20,.16)');   // wet road either side
   box(x, y, w - 8, 92, 3, 10, '#202020');
   for (const sx of [-1, 1]) for (const d of [-36, -22, 28]) { box(x + sx * (w / 2), y + d, 4.6, 11, 0, 11, '#151515'); box(x + sx * (w / 2 + 2.2), y + d, 1, 5.5, 2.5, 8.5, '#a6adb3'); }
   box(x, y - 26, w, 52, 10, 24, TK); box(x, y - 26, w - 6, 48, 24, 27, '#4a93dc');
@@ -2848,7 +3057,7 @@ function waterTruck3(x, y) {
   const nr = y + 46;
   for (const sx of [-1, 1]) { rearRect(nr, x + sx * 10 - 2.4, x + sx * 10 + 2.4, 11, 15, '#fff4c0'); glow(x + sx * 10, nr, 13, 14, 'rgba(255,245,200,.55)'); }
   const k = sc(y);
-  for (const sx of [-1, 1]) for (const oy of [-48, -34, -20]) for (let i = 0; i < 12; i++) {   // droplets arcing out from the tank sides
+  if (spray) for (const sx of [-1, 1]) for (const oy of [-48, -34, -20]) for (let i = 0; i < 12; i++) {   // droplets arcing out from the tank sides
     const u = ((t * 1.3 + i / 12 + oy * .013) % 1 + 1) % 1, dx = sx * (w / 2 + 2 + u * 52), z = 18 + 44 * u - 60 * u * u;
     const [sx2, sy2] = P(x + dx, y + oy, Math.max(.5, z));
     ctx.fillStyle = `rgba(210,235,255,${.85 - u * .5})`; ctx.beginPath(); ctx.arc(sx2, sy2, (2.6 - u * .8) * k, 0, Math.PI * 2); ctx.fill();
@@ -5369,7 +5578,8 @@ function drawLoader(x, y, loaded, L = ldr) {
   rect(x - 19, y - 44, 6, 36, Yd); rect(x + 13, y - 44, 6, 36, Yd);   // lift arms
   rect(x - 17, y - 22, 34, 4, '#8a6a00');                // cross tube
   rect(x - 29, y - 52, 58, 16, Yd); rect(x - 27, y - 50, 54, 12, Y);   // bucket
-  if (loaded) { rect(x - 24, y - 51, 48, 10, '#8a5a44'); rect(x - 18, y - 53, 36, 5, '#a8705a'); }
+  if (loaded === 'big') { ctx.fillStyle = '#7d7873'; ctx.beginPath(); ctx.ellipse(x, y - 50, 20, 12, 0, 0, 7); ctx.fill(); }
+  else if (loaded) { rect(x - 24, y - 51, 48, 10, '#8a5a44'); rect(x - 18, y - 53, 36, 5, '#a8705a'); }
   rect(x - 29, y - 56, 58, 4, '#c8c8c8');                // cutting edge
   ctx.restore();
   ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
@@ -5447,7 +5657,8 @@ function chaseLoader(J, carry, L = ldr, a0 = 0) {
   shadow(J[0], J[1] + 8, 62, 100);
   // front section (furthest from the camera) first
   let p = F(0, -48); prism(p[0], p[1], 58, 16, 2 + up, 16 + up, Yd, art);
-  if (carry) { quadAt(p[0], p[1], 50, 11, 18 + up, '#8a5a44', art); quadAt(p[0], p[1], 36, 7, 21 + up, '#a8705a', art); }
+  if (carry === 'big') { prism(p[0], p[1], 34, 12, 16 + up, 34 + up, '#7d7873', art); prism(p[0] - 4, p[1], 20, 8, 34 + up, 40 + up, '#948e88', art); }
+  else if (carry) { quadAt(p[0], p[1], 50, 11, 18 + up, '#8a5a44', art); quadAt(p[0], p[1], 36, 7, 21 + up, '#a8705a', art); }
   p = F(0, -57); prism(p[0], p[1], 58, 3, 1 + up, 5 + up, '#c8c8c8', art);
   for (const sx of [-1, 1]) { p = F(sx * 16, -28); prism(p[0], p[1], 6, 36, 10, 22 + up, Yd, art); }
   for (const sx of [-1, 1]) tyre(F(sx * 19.5, -18), art);
@@ -5553,15 +5764,15 @@ function chaseTrailer(vx, vy, ang, i, f, w, l, hl, label) {
   if (label) { const [tx, ty] = P(vx, vy, 30); text(`${i + 1}`, tx, ty, 12 * sc(vy), '#fff'); }
 }
 function drawYardChase() {
-  const th = ldr.angle, c = Math.cos(-th), sn = Math.sin(-th), VY = 520, ang = -th;
+  const me = state === 'water' ? cart : ldr, th = me.angle, c = Math.cos(-th), sn = Math.sin(-th), VY = 520, ang = -th;
   camX = W / 2;
-  const V = (x, y) => { const dx = x - ldr.x, dy = y - ldr.y; return [W / 2 + dx * c - dy * sn, VY + dx * sn + dy * c]; };
+  const V = (x, y) => { const dx = x - me.x, dy = y - me.y; return [W / 2 + dx * c - dy * sn, VY + dx * sn + dy * c]; };
   const near = y => y > -140 && y < H + 70;
   drawSky();
   const g = ctx.createLinearGradient(0, HOR, 0, H);
   g.addColorStop(0, '#d29a74'); g.addColorStop(.18, '#b4552f'); g.addColorStop(1, '#8c3820');
   ctx.fillStyle = g; ctx.fillRect(0, HOR, W, H - HOR);
-  const gs = 90, gx0 = Math.floor((ldr.x - 800) / gs), gy0 = Math.floor((ldr.y - 800) / gs);
+  const gs = 90, gx0 = Math.floor((me.x - 800) / gs), gy0 = Math.floor((me.y - 800) / gs);
   for (let i = 0; i < 18; i++) for (let j = 0; j < 18; j++) {
     const k = (gx0 + i) * 73 + (gy0 + j) * 31, [vx, vy] = V((gx0 + i) * gs + hash(k) * gs, (gy0 + j) * gs + hash(k + 1) * gs);
     if (near(vy)) flatEllipse(vx, vy, 7 + hash(k + 2) * 7, 3 + hash(k + 3) * 3, 'rgba(90,35,20,.35)');
@@ -5571,17 +5782,20 @@ function drawYardChase() {
     flatEllipse(vx, vy, p.r, p.r * .8, '#8a5a44'); flatEllipse(vx - 2, vy - 2, p.r * .55, p.r * .45, '#a8705a', .4);
   }
   const list = [];
+  romChase(list, V, near, ang);
   {
     const cx = PILE.x + PILE.w / 2, [, pvy] = V(cx, PILE.y + PILE.h / 2);
     const sl = pileSeg.map((m, k) => { const pf = segProf(k), e = m > .02 ? .3 + .7 * m : .08; return { y: segY(k), hw: PILE.w / 2 * pf * (.55 + .45 * e), h: 100 * pf * e }; });
     const pt = (x, y, z) => { const [vx, vy] = V(x, y); return P(vx, vy, z); };
-    const layer = (f, col, dx = 0) => {
-      const L = sl.map(o => pt(cx + dx - o.hw * (1 - f * .8), o.y, o.h * f)), R = sl.map(o => pt(cx + dx + o.hw * (1 - f * .8), o.y, o.h * f));
+    const layer = (f, col, dx = 0, a = 0, b = SEG_N) => {
+      const S = sl.slice(a, b), L = S.map(o => pt(cx + dx - o.hw * (1 - f * .8), o.y, o.h * f)), R = S.map(o => pt(cx + dx + o.hw * (1 - f * .8), o.y, o.h * f));
       poly([...L, ...R.reverse()], col);
     };
     if (near(pvy)) list.push({ y: pvy, fn: () => {
-      layer(0, 'rgba(0,0,0,.3)', 8);
-      [['#5e3a2c', 0], ['#7a4a38', .3], ['#8e5c47', .55], ['#a26c55', .78], ['#b98368', .94]].forEach(([col, f]) => layer(f, col, -f * 5));
+      for (const F of FINGERS) {   // each grade finger in its own ore colour
+        layer(0, 'rgba(0,0,0,.3)', 8, F.k0, F.k1);
+        [0, .3, .55, .78, .94].forEach((f, i) => layer(f, F.ore[i], -f * 5, F.k0, F.k1));
+      }
       for (let k = 0; k < SEG_N; k++) if (pileSeg[k] > .02) for (let j = 0; j < 3; j++) {
         const o = sl[k], u = hash(k * 7 + j * 3 + 1) * 2 - 1, f = .25 + hash(k * 5 + j) * .6, [vx, vy] = V(cx + u * o.hw * (1 - f * .8), o.y + (hash(k + j * 9) - .5) * SEG_H * .6), [sx, sy] = P(vx, vy, o.h * f), q = sc(vy);
         ctx.fillStyle = hash(k * 3 + j) > .5 ? '#5a3426' : '#c08c70'; ctx.beginPath(); ctx.ellipse(sx, sy, 5 * q, 3.5 * q, 0, 0, 7); ctx.fill();
@@ -5595,29 +5809,159 @@ function drawYardChase() {
     if (!near(vy)) continue;
     list.push({ y: vy, fn: () => chaseTrailer(vx, vy, ang + tp.a, i, f, w, l, trailerAt() === i && carrying, true) });
   }
-  { const [ax, ay] = V(ai.x, ai.y); if (near(ay)) list.push({ y: ay, fn: () => chaseLoader([ax, ay], ai.carrying, ai, ang + ai.angle) }); }
-  list.push({ y: VY, fn: () => chaseLoader([W / 2, VY], carrying) });
+  for (const A of state === 'water' ? [ai, ai2] : [ai]) { const [ax, ay] = V(A.x, A.y); if (near(ay)) list.push({ y: ay, fn: () => chaseLoader([ax, ay], A.carrying, A, ang + A.angle) }); }
+  if (state === 'water') list.push({ y: VY, fn: () => withFrame(W / 2, VY, Math.PI, () => waterTruck3(W / 2, VY, cart.spray && cart.tank > 0)) });
+  else list.push({ y: VY, fn: () => chaseLoader([W / 2, VY], carrying ? (carryBig ? 'big' : true) : false) });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) o.fn();
   for (const p of particles) { const [vx, vy] = V(p.x, p.y); if (near(vy)) { const [sx, sy] = P(vx, vy, 12), k = sc(vy); rect(sx, sy, 4 * k, 4 * k, p.col); } }
+  romChaseAfter(V, near);
   atmosphere();
 }
+// ---------- drawing the ROM extras: the bench and its haul trucks, finger flags, oversize, rock breaker, carts, the LV, dust and the radio ----------
+const HT_Y = '#f2b200', HT_D = '#c98f00', HT_K = '#1a1a1a';
+// CAT 793-style rear dump truck in the chase view, on the bench (z0), nose to local -y; tip 0..1 raises the tray about its rear hinge
+function haulTruck3(vx, vy, ang, tip, loaded, oreCol, z0 = BENCH_Z) {
+  const c = Math.cos(ang), s = Math.sin(ang), rot = (dx, dy) => [vx + dx * c - dy * s, vy + dx * s + dy * c], parts = [];
+  const add = (dx, dy, w, l, za, zb, col) => { const p = rot(dx, dy); parts.push({ k: p[1], fn: () => prism(p[0], p[1], w, l, z0 + za, z0 + zb, col, ang) }); };
+  for (const sx of [-1, 1]) { add(sx * 27, -30, 13, 30, 0, 30, HT_K); add(sx * 22, 30, 12, 30, 0, 30, HT_K); add(sx * 33, 30, 9, 30, 0, 30, HT_K); }   // tyres: steer pair, dual rears
+  add(0, 0, 28, 96, 8, 22, '#3a3a3a');                                                  // frame
+  add(0, -44, 66, 12, 22, 27, HT_D); add(0, -50, 24, 3, 20, 40, '#2b2b2b');            // deck, radiator grille
+  add(0, -40, 26, 16, 24, 40, HT_Y); add(-21, -44, 20, 15, 27, 46, HT_Y); add(-21, -51.6, 17, 1, 34, 44, '#26404f');   // engine hood, cab (driver on the left), windscreen
+  add(22, -45, 16, 10, 27, 31, '#d9dcde');                                              // air cleaners on the right of the deck
+  // the tray, tilted about its hinge at the rear (y = 50, z = 30): four faces and the canopy, painted far to near
+  const th = tip * .95, hy = 50, hz = 30, T = (u, v, h) => { const d = v - hy, dd = d * Math.cos(th) + h * Math.sin(th), hh = -d * Math.sin(th) + h * Math.cos(th), [x, y] = rot(u, hy + dd); return P(x, y, z0 + hz + hh); };
+  const faces = [
+    [[[-33, -42, 0], [33, -42, 0], [33, 52, 0], [-33, 52, 0]], HT_D],
+    [[[-33, -42, 0], [-33, 52, 0], [-33, 52, 24], [-33, -42, 28]], HT_Y], [[[33, -42, 0], [33, 52, 0], [33, 52, 24], [33, -42, 28]], HT_Y],
+    [[[-33, -42, 0], [33, -42, 0], [33, -42, 34], [-33, -42, 34]], HT_D], [[[-33, -58, 34], [33, -58, 34], [33, -42, 34], [-33, -42, 34]], HT_Y]];
+  if (loaded && tip < .35) faces.push([[[-30, -38, 22], [30, -38, 22], [30, 46, 20], [-30, 46, 20]], oreCol]);
+  const trayK = rot(0, 10)[1];
+  parts.push({ k: trayK, fn: () => { const fs = faces.map(([q, col]) => { const pts = q.map(p => T(...p)); return { pts, col, d: q.reduce((a, p) => a + rot(p[0], hy + (p[1] - hy) * Math.cos(th))[1], 0) / 4 }; });
+    fs.sort((a, b) => a.d - b.d).forEach(f => poly(f.pts, f.col)); } });
+  parts.sort((a, b) => a.k - b.k).forEach(p => p.fn());
+  const on = Math.sin(beaconClock() * 11 + vx) > 0, [bx, by] = rot(-21, -44); prism(bx, by, 3, 3, z0 + 46, z0 + 49, on ? '#ffb030' : '#7a4200'); if (on) glow(bx, by, z0 + 49, 22, 'rgba(255,150,0,.7)');
+}
+function haulTruck2D(h) {
+  ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.h);
+  rect(-36, -54, 72, 110, 'rgba(0,0,0,.25)');
+  for (const sx of [-1, 1]) { rect(sx * 27 - 7, -45, 14, 30, HT_K); rect(sx * 27 - 9, 15, 18, 30, HT_K); }
+  const L = 94 * (1 - h.tip * .35);   // the tray foreshortens as it lifts
+  rect(-33, 52 - L, 66, L, HT_D); rect(-29, 56 - L, 58, L - 8, h.st === 'in' || h.st === 'back' || (h.st === 'tip' && h.tip < .35) ? FINGERS[h.f].ore[2] : '#8f6a10');
+  rect(-33, -58, 66, 14, HT_Y); rect(-30, -56, 18, 12, '#26404f'); rect(-12, -56, 26, 10, HT_D);
+  ctx.restore();
+}
+function cart2D(c) {   // water cart from above: blue tank, white cab, spray fans off the rear
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.angle);
+  if (c.spray && c.tank > 0) { ctx.fillStyle = 'rgba(190,225,255,.45)'; ctx.beginPath(); ctx.moveTo(-14, 44); ctx.lineTo(-62, 84); ctx.lineTo(62, 84); ctx.lineTo(14, 44); ctx.fill(); }
+  rect(-17, -46, 34, 92, 'rgba(0,0,0,.25)'); for (const sx of [-1, 1]) for (const d of [-30, 20, 34]) rect(sx * 17 - 3, d - 6, 6, 12, '#151515');
+  rect(-15, -10, 30, 52, '#2f78c4'); rect(-11, -6, 22, 44, '#4a93dc'); rect(-15, -42, 30, 26, '#f4f4f4'); rect(-12, -38, 24, 10, '#27323d'); rect(-15, 40, 30, 3, '#555');
+  ctx.restore();
+}
+function lv2D(v) { ctx.save(); ctx.translate(v.x, v.y); ctx.rotate(v.angle); rect(-12, -30, 24, 60, '#f4f4f4'); rect(-10, -20, 20, 22, '#27323d'); rect(-11, 6, 22, 22, '#5e6468'); const on = Math.sin(beaconClock() * 12) > 0; rect(-3, 1, 6, 4, on ? '#ffb030' : '#7a4200'); ctx.restore(); }
+// the yard's extras in the top-down view (world coordinates, under the yard transform)
+function romDraw2DGround() {
+  rect(-420, -300, 420, YARD.h + 600, '#b8693e'); rect(-12, -300, 12, YARD.h + 600, '#6e3018'); rect(-22, -300, 10, YARD.h + 600, '#9a5333');   // the bench, its tip face and the bund
+  for (let y = -280; y < YARD.h + 300; y += 70) rect(-124, y, 4, 34, '#d9a77d');
+  text('HAUL ROAD BENCH', -70, 140, 12, '#fff');
+  for (let j = 0; j < DG_H; j++) for (let i = 0; i < DG_W; i++) { const w = rom.wet[j * DG_W + i]; if (w > .05) rect(i * DG, j * DG, DG, DG, `rgba(70,30,15,${w * .38})`); }
+}
+function romDraw2D() {
+  for (let f = 0; f < FINGERS.length; f++) { const F = FINGERS[f], y = segY(F.k0) - SEG_H * .25; rect(PILE.x + PILE.w - 20, y - 2, 3, 26, '#333'); rect(PILE.x + PILE.w - 17, y - 2, 34, 14, F.flag); text(F.name, PILE.x + PILE.w + 2, y + 24, 10, '#fff'); }
+  for (let k = 0; k < SEG_N; k++) if (rom.big[k] && pileSeg[k] > .05) { ctx.fillStyle = '#6f6a65'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 40, segY(k), 22, 17, .4, 0, 7); ctx.fill(); ctx.fillStyle = '#948e88'; ctx.beginPath(); ctx.ellipse(PILE.x + PILE.w / 2 + 35, segY(k) - 4, 12, 9, .4, 0, 7); ctx.fill(); }
+  rect(RB.x - 48, RB.y - 38, 96, 76, '#8f8a84'); for (let x = RB.x - 40; x <= RB.x + 40; x += 10) rect(x, RB.y - 32, 3, 64, '#3a3a3a');
+  rect(RB.x - 70, RB.y - 10, 20, 20, HT_Y); rect(RB.x - 56, RB.y - 3, 44 + Math.sin(rom.t * 20) * (rom.rbT ? 4 : 0), 6, HT_D);
+  if (rom.rbT > 0) { const k = rom.rbT / 5; ctx.fillStyle = '#7d7873'; ctx.beginPath(); ctx.ellipse(RB.x + 6, RB.y, 8 + 14 * k, 6 + 10 * k, 0, 0, 7); ctx.fill(); }
+  text('ROCK BREAKER', RB.x, RB.y + 54, 11, '#fff');
+  if (rom.mode === 'water') { rect(STANDPIPE.x - 6, STANDPIPE.y - 30, 12, 30, '#1d5fb4'); rect(STANDPIPE.x - 30, STANDPIPE.y - 36, 40, 8, '#1d5fb4'); text('STANDPIPE', STANDPIPE.x, STANDPIPE.y + 18, 11, '#fff'); }
+  for (const h of rom.haul) haulTruck2D(h);
+  for (const r of rom.tipR) rect(r.x - 2, r.y - r.z * .4 - 2, 5, 5, r.c);
+  if (rom.lv && rom.lv.on) lv2D(rom.lv);
+  if (rom.cart) cart2D(rom.cart);
+  if (rom.mode === 'water') cart2D(cart);
+  for (let j = 0; j < DG_H; j++) for (let i = 0; i < DG_W; i++) { const d = rom.dust[j * DG_W + i]; if (d > .18) { ctx.fillStyle = `rgba(214,170,128,${Math.min(.45, (d - .1) * .6)})`; ctx.beginPath(); ctx.arc(i * DG + DG / 2 + Math.sin(rom.t * .7 + i) * 6, j * DG + DG / 2, DG * .75, 0, 7); ctx.fill(); } }
+}
+// the extras in the chase view: ground layers drawn now, everything standing pushed into the sorted list
+function romChase(list, V, near, ang) {
+  const pt = (x, y, z) => { const [vx, vy] = V(x, y); return P(vx, vy, z); };
+  for (let j = 0; j < DG_H; j++) for (let i = 0; i < DG_W; i++) { const w = rom.wet[j * DG_W + i]; if (w < .05) continue; const [vx, vy] = V(i * DG + DG / 2, j * DG + DG / 2); if (near(vy)) poly([pt(i * DG, j * DG, .3), pt(i * DG + DG, j * DG, .3), pt(i * DG + DG, j * DG + DG, .3), pt(i * DG, j * DG + DG, .3)], `rgba(70,30,15,${w * .38})`); }
+  for (let y = -300; y < YARD.h + 300; y += 50) {   // the bench: its top, the tip face down to the pad, and the windrow along the edge
+    const [, vy] = V(-10, y + 25); if (!near(vy)) continue;
+    { // ground under everything that stands on it, so drawn straight away
+
+      poly([pt(-420, y, BENCH_Z), pt(0, y, BENCH_Z), pt(0, y + 50, BENCH_Z), pt(-420, y + 50, BENCH_Z)], '#b8693e');
+      poly([pt(-124, y + 8, BENCH_Z + .2), pt(-120, y + 8, BENCH_Z + .2), pt(-120, y + 40, BENCH_Z + .2), pt(-124, y + 40, BENCH_Z + .2)], '#d9a77d');
+      poly([pt(0, y, 0), pt(0, y + 50, 0), pt(0, y + 50, BENCH_Z), pt(0, y, BENCH_Z)], (y / 50) & 1 ? '#8f4a2e' : '#984f31');
+      poly([pt(-24, y, BENCH_Z), pt(-24, y + 50, BENCH_Z), pt(-14, y + 50, BENCH_Z + 9), pt(-14, y, BENCH_Z + 9)], '#a45a36'); poly([pt(-14, y, BENCH_Z + 9), pt(-14, y + 50, BENCH_Z + 9), pt(-4, y + 50, BENCH_Z), pt(-4, y, BENCH_Z)], '#8a4a2c');
+    }
+  }
+  for (let f = 0; f < FINGERS.length; f++) {   // grade signs at the head of each finger, and peg flags along its toe
+    const F = FINGERS[f], sx0 = PILE.x + PILE.w - 18, sy0 = segY(F.k0) - SEG_H * .25, [vx, vy] = V(sx0, sy0);
+    if (near(vy)) list.push({ y: vy, fn: () => { box(vx, vy, 2, 2, 0, 40, '#444'); box(vx, vy, 40, 2, 40, 54, F.flag); const [tx, ty] = P(vx, vy + 1.2, 47), k = sc(vy); text(F.name, tx, ty + 3 * k, 6.5 * k, f === 1 ? '#111' : '#fff'); } });
+    for (let k = F.k0; k < F.k1; k++) { const [px, py] = V(PILE.x + PILE.w - 6, segY(k)); if (near(py)) list.push({ y: py, fn: () => { box(px, py, 1, 1, 0, 16, '#ddd'); const [a, b] = P(px, py, 16), q = sc(py); ctx.fillStyle = F.flag; ctx.fillRect(a, b, 6 * q, 4 * q); } }); }
+  }
+  for (let k = 0; k < SEG_N; k++) if (rom.big[k] && pileSeg[k] > .05) { const [vx, vy] = V(PILE.x + PILE.w / 2 + 40, segY(k)); if (near(vy)) list.push({ y: vy + 1, fn: () => { dome(vx, vy, 20, 24, '#7d7873', 40 * pileSeg[k]); dome(vx - 8, vy + 4, 10, 10, '#948e88', 40 * pileSeg[k] + 12); } }); }
+  { const [vx, vy] = V(RB.x, RB.y); if (near(vy)) list.push({ y: vy, fn: () => {   // rock breaker: concrete pad, grizzly bars, pedestal and boom with the hammer working
+    box(vx, vy, 96, 76, 0, 6, '#8f8a84', true); for (let x = -40; x <= 40; x += 10) box(vx + x, vy, 3, 64, 6, 8, '#3a3a3a');
+    const [px, py] = V(RB.x - 60, RB.y), bob = rom.rbT ? Math.abs(Math.sin(rom.t * 14)) * 6 : 0; box(px, py, 14, 14, 0, 34, HT_Y);
+    const [hx, hy] = V(RB.x + 4, RB.y); line3([[px, py, 34], [(px + hx) / 2, (py + hy) / 2, 54], [hx, hy, 26 + bob]], 5, HT_D); box(hx, hy, 6, 6, 12 + bob, 26 + bob, '#2b2b2b');
+    if (rom.rbT > 0) dome(vx + 4, vy, 8 + 14 * rom.rbT / 5, 10 + 12 * rom.rbT / 5, '#7d7873', 8);
+    const [tx, ty] = P(vx, vy + 40, 4), q = sc(vy); text('ROCK BREAKER', tx, ty + 10 * q, 7 * q, '#fff'); } }); }
+  if (rom.mode === 'water') { const [vx, vy] = V(STANDPIPE.x, STANDPIPE.y); if (near(vy)) list.push({ y: vy, fn: () => { box(vx, vy, 6, 6, 0, 44, '#1d5fb4'); box(vx - 14, vy, 28, 4, 40, 44, '#1d5fb4'); const [tx, ty] = P(vx, vy, 50), q = sc(vy); text('STANDPIPE', tx, ty, 7 * q, '#fff'); } }); }
+  for (const h of rom.haul) { const [vx, vy] = V(h.x, h.y); if (near(vy)) list.push({ y: vy - 40, fn: () => haulTruck3(vx, vy, ang + h.h, h.tip, h.st === 'in' || h.st === 'back' || h.st === 'tip', FINGERS[h.f].ore[2]) }); }
+  if (rom.lv && rom.lv.on) { const v = rom.lv, [vx, vy] = V(v.x, v.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, ang + v.angle, () => ute3(vx, vy, '#f4f4f4', -1)) }); }
+  for (const c of [rom.cart]) if (c) { const [vx, vy] = V(c.x, c.y); if (near(vy)) list.push({ y: vy, fn: () => withFrame(vx, vy, ang + c.angle + Math.PI, () => waterTruck3(vx, vy, c.spray)) }); }
+}
+function romChaseAfter(V, near) {   // falling ore off the bench and the dust hanging over the pad, drawn over everything
+  for (const r of rom.tipR) { const [vx, vy] = V(r.x, r.y); if (near(vy)) { const [sx, sy] = P(vx, vy, r.z), k = sc(vy); rect(sx, sy, 5 * k, 5 * k, r.c); } }
+  let n = 0;
+  for (let j = 0; j < DG_H && n < 90; j++) for (let i = 0; i < DG_W && n < 90; i++) {
+    const d = rom.dust[j * DG_W + i]; if (d < .2) continue;
+    const [vx, vy] = V(i * DG + DG / 2 + Math.sin(rom.t * .7 + i) * 8, j * DG + DG / 2); if (!near(vy) || vy < 120) continue;
+    n++; glow(vx, vy, 16, 70, `rgba(214,170,128,${Math.min(.5, (d - .1) * .7)})`);
+  }
+}
+function romHud(me) {
+  const hz = romHaze(me); if (hz > .02) rect(0, 0, W, H, `rgba(205,155,110,${hz})`);
+  if (rom.cur) {
+    rect(10, 98, W - 20, 46, '#0b1a2ae8'); rect(10, 98, 6, 46, '#e8b100');
+    text('📻 ' + rom.cur.who, 24, 114, 11, '#e8b100', 'left');
+    ctx.font = 'bold 12px system-ui,sans-serif'; const words = rom.cur.txt.split(' '); let line = '', y = 130, lines = [];
+    for (const w of words) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > W - 50) { lines.push(line); line = w; } else line = t; }
+    lines.push(line); if (lines.length > 1) { rect(10, 144, W - 20, 14 * (lines.length - 1), '#0b1a2ae8'); rect(10, 144, 6, 14 * (lines.length - 1), '#e8b100'); }
+    lines.forEach((l, i) => text(l, 24, y + i * 14, 12, '#fff', 'left'));
+  }
+  if (rom.mode === 'load') { const g = FINGERS[rom.grade]; rect(W - 150, 62, 140, 20, '#000a'); rect(W - 146, 66, 12, 12, g.flag); text('LOAD ' + g.name, W - 128, 77, 11, '#fff', 'left'); }
+  if (lvStop()) { const on = Math.sin(beaconClock() * 8) > 0; if (on) text('LV ON THE ROM - STOP!', W / 2, 186, 20, '#f44'); }
+}
+function drawWaterEnd() {
+  rect(0, 0, W, H, '#1a2a38'); const r = waterRating();
+  text('WATER CART: END OF SHIFT', W / 2, 150, 24, '#ffe568');
+  text(`Dust control rating: ${r}%`, W / 2, 230, 26, r >= 70 ? '#6c6' : r >= 45 ? '#fc3' : '#e44');
+  text('★'.repeat(r >= 85 ? 3 : r >= 60 ? 2 : r >= 35 ? 1 : 0) + '☆'.repeat(3 - (r >= 85 ? 3 : r >= 60 ? 2 : r >= 35 ? 1 : 0)), W / 2, 285, 40, '#ffd23a');
+  text(`Tanks refilled: ${wGame.refills}`, W / 2, 340, 16, '#fff'); text(`Bumps: ${wGame.hits}`, W / 2, 366, 16, '#fff');
+  text(wGame.lvOk === null ? 'No LV this shift' : wGame.lvOk ? 'Good stop for the LV (+5)' : 'Kept moving near the LV (-10)', W / 2, 392, 16, '#fff');
+  text(r >= 70 ? 'ROM sup: "Pad is nice and wet, cheers mate."' : 'ROM sup: "Still dusty out there. Keep the lanes wet."', W / 2, 450, 14, '#cfe');
+  text(isTouch ? 'Tap for the menu' : 'Press SPACE for the menu', W / 2, 540, 18, '#ff6');
+}
+
 function drawYard() {
+  const me = state === 'water' ? cart : ldr;
   if (chaseView) drawYardChase(); else {
-  const camX0 = Math.max(0, Math.min(YARD.w - W, ldr.x - W / 2)), camY0 = Math.max(0, Math.min(YARD.h - H, ldr.y - 400));
+  const camX0 = Math.max(-170, Math.min(YARD.w - W, me.x - W / 2)), camY0 = Math.max(0, Math.min(YARD.h - H, me.y - 400));
   ctx.save(); ctx.translate(-camX0, -camY0);
   rect(0, 0, YARD.w, YARD.h, '#a74626');
   for (let i = 0; i < 90; i++) rect((i * 97) % YARD.w, (i * 61) % YARD.h, 6, 6, '#85371f');
+  romDraw2DGround();
   const pcx = PILE.x + PILE.w / 2, pcy = PILE.y + PILE.h / 2;
   const sl = pileSeg.map((m, k) => ({ y: segY(k), hw: PILE.w / 2 * segProf(k) * (m > .02 ? .55 + .45 * (.3 + .7 * m) : .12), m }));
-  [['rgba(0,0,0,.28)', 1.04, 6], ['#5e3a2c', 1, 0], ['#7a4a38', .84, -1], ['#9a6a55', .62, -2], ['#b98368', .36, -3]].forEach(([col, f, dy]) => {
-    ctx.fillStyle = col; ctx.beginPath();
-    sl.forEach((o, k) => k ? ctx.lineTo(pcx - o.hw * f, o.y + dy) : ctx.moveTo(pcx - o.hw * f, o.y + dy));
-    for (let k = sl.length - 1; k >= 0; k--) ctx.lineTo(pcx + sl[k].hw * f, sl[k].y + dy);
+  for (const F of FINGERS) [['rgba(0,0,0,.28)', 1.04, 6], [F.ore[0], 1, 0], [F.ore[1], .84, -1], [F.ore[2], .62, -2], [F.ore[4], .36, -3]].forEach(([col, f, dy]) => {   // one mound per grade finger
+    const S = sl.slice(F.k0, F.k1); ctx.fillStyle = col; ctx.beginPath();
+    S.forEach((o, k) => k ? ctx.lineTo(pcx - o.hw * f, o.y + dy) : ctx.moveTo(pcx - o.hw * f, o.y + dy));
+    for (let k = S.length - 1; k >= 0; k--) ctx.lineTo(pcx + S[k].hw * f, S[k].y + dy);
     ctx.closePath(); ctx.fill();
   });
   sl.forEach((o, k) => { if (o.m > .02) rockChunks(pcx, o.y, o.hw - 6, SEG_H * .6, Math.ceil(9 * o.m), 7, 7 + k); });
-  ctx.save(); ctx.translate(pcx, pcy); ctx.rotate(-Math.PI / 2); text('IRON ORE', 0, 5, 18, '#fff'); ctx.restore();
   const at = (p, fn) => { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.translate(-p.x, -p.y); fn(); ctx.restore(); };
   at(cabPose, () => {
     lift(() => drawCab(cabPose.x, cabPose.y, -1, true));
@@ -5639,9 +5983,22 @@ function drawYard() {
     rockChunks(p.x, p.y, p.r, p.r * .7, Math.round(p.r / 2) + 2, 3.5, Math.round(p.a * 100) + 1);
   }
   drawLoader(ai.x, ai.y, ai.carrying, ai);
-  drawLoader(ldr.x, ldr.y, carrying);
+  if (state === 'water') drawLoader(ai2.x, ai2.y, ai2.carrying, ai2); else drawLoader(ldr.x, ldr.y, carrying ? (carryBig ? 'big' : true) : false);
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
+  romDraw2D();
   ctx.restore();
+  }
+  romHud(me);
+  if (state === 'water') {   // the water cart game's own HUD
+    rect(0, 0, W, 56, '#000a');
+    text('WATER CART', 12, 24, 18, '#5fb0e8', 'left'); text(`Time ${Math.max(0, Math.ceil(wGame.t))}s`, 12, 46, 13, '#ddd', 'left');
+    bar(150, 6, 120, 14, cart.tank, cart.tank > .25 ? '#4a93dc' : '#e44'); text(`Tank ${Math.round(cart.tank * 100)}%`, 210, 17, 10, '#fff', 'center');
+    text(cart.spray && cart.tank > 0 ? 'SPRAYING' : 'Spray off', 210, 40, 12, cart.spray && cart.tank > 0 ? '#8cf' : '#aaa', 'center');
+    text(`Rating ${waterRating()}%`, W - 12, 24, 14, '#ff6', 'right');
+    text(isTouch ? 'Stick steer · GAS / REV · SPRAY' : '←→ steer · ↑↓ drive · SPACE spray · V view', W - 12, 46, 12, '#ccc', 'right');
+    if (msgT > 0) text(msg, W / 2, 210, 15, '#ff6');
+    if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, 'SPRAY', cart.spray); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
+    return;
   }
   rect(0, 0, W, 56, '#000a');
   text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
@@ -5651,7 +6008,7 @@ function drawYard() {
   text(`Trailers ${trDmg.map(d => 100 - d).join('/')}%`, W - 12, 13, 10, '#aaa', 'right');
   text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
   text(isTouch ? 'Stick to steer · GAS / REV to move' : '←→ / pad stick turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
-  if (msgT > 0) text(msg, W / 2, 90, 15, '#ff6');
+  if (msgT > 0) text(msg, W / 2, rom.cur ? 210 : 90, 15, '#ff6');
   if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
   else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
   if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, ACT[4], false); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
@@ -6049,7 +6406,8 @@ function render() {
   if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
   if (state === 'workshopfoot') drawWorkshopFoot();
   else if (state === 'workshop') drawWorkshop();
-  else if (state === 'load') drawYard();
+  else if (state === 'load' || state === 'water') drawYard();
+  else if (state === 'waterend') drawWaterEnd();
   else if (state === 'ute' || state === 'uteend') drawUteScreen();
   else if (state === 'parkhandover') drawParkHandover();
   else if (state === 'officeinside') drawOffice();
@@ -6074,9 +6432,10 @@ function render() {
     drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
     drawBtn(CAMP_BTN, isTouch ? 'TRUCK DRIVER: START AT CAMP' : CAMP_BTN[4], false);
     drawBtn(MECH_BTN, isTouch ? 'WORKSHOP MECHANIC' : MECH_BTN[4], false);
+    drawBtn(WATER_BTN, isTouch ? 'ROM WATER CART' : WATER_BTN[4], false);
     if (nameErrT > 0) text('Enter your name to start', W / 2, 236, 16, '#f44');
-    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 700, 12, '#ccc');
-    text(`Best: ${best}`, W / 2, 716, 13, '#ccc');
+    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 705, 11, '#ccc');
+    text(`Best: ${best}`, W / 2, 718, 11, '#ccc');
   } else {
     if (state === 'skyway') drawSkyway();
     else {
@@ -6159,6 +6518,7 @@ function loop(now) {
   if (SS > 1 && state !== 'menu') { slowT = raw > .03 ? slowT + raw : Math.max(0, slowT - raw * 2); if (slowT > 1.5) { SS = 1; cv.width = W; cv.height = H; ctx.setTransform(1, 0, 0, 1, 0, 0); atmoCv = null; slowT = 0; } }
   try { update(dt); render(); placeName(); } catch (e) { console.error(e); }
 }
+romReset();   // the ROM state exists from the start (the first reset() above ran before the ROM module was defined)
 requestAnimationFrame(loop);
 </script>
 </body>
