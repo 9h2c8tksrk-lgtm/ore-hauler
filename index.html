@@ -131,11 +131,14 @@ addEventListener('keydown', e => {
   if (e.target === nameIn) { if (e.code === 'Enter') { const n = nameIn.value.trim().slice(0, 12); if (n) { playerName = n; localStorage.oreName = n; nameEdit = false; nameIn.blur(); } } return; }
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if (!e.repeat && overlayKey(e.code)) { e.preventDefault(); return; }
   if (!e.repeat) onKey(e.code);
 });
 addEventListener('keyup', e => { if (e.code === 'MetaLeft' || e.code === 'MetaRight') clearInput(); else keys[e.code] = false; });   // macOS swallows keyups while Cmd is held
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const p = cpos(e);
+  if (overlayTap(p)) return;
+  if (state === 'shiftend') { toUteGo(); return; }
   if (state === 'kitcheninside' && inR(p, [340, 558, 132, 52])) { kitchenInteract(); return; }
   if (state === 'shopinside' && inR(p, [340, 558, 132, 52])) { shopInteract(); return; }
   if (state === 'wsoffice' && inR(p, [340, 558, 132, 52])) { wsoInteract(); return; }
@@ -186,7 +189,7 @@ function clearInput() { ptrs.clear(); for (const k in keys) keys[k] = false; sti
 addEventListener('blur', clearInput);
 document.addEventListener('visibilitychange', clearInput);
 cv.addEventListener('contextmenu', clearInput);
-let lastState = null;
+let lastState = null, frameDt = 0;
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 let state = 'menu', fills, hp, dist, speed, qx, qy, traffic, animals, scroll, spawnT, msg, msgT, score, time, particles, shake, hist, steeringSpeed, tr, rocks, arrivalOre, tons = 0, trip = 1;   // tons: total delivered to the Skyway; trip: 1 or 2
@@ -214,7 +217,7 @@ const pctOut = () => tons > 0 ? 100 : Math.min(99, Math.floor(dist / TRIP * 100)
 function recordRun(done) {
   if (runId) return;
   runId = Date.now();
-  board.push({ id: runId, name: playerName || 'Player', done, diff, score: done ? score : 0, tons, pct: pctOut() });
+  board.push({ id: runId, name: playerName || 'Player', done, diff, score: done ? score : 0, tons, pct: pctOut(), role: 'driver', safe: shift ? shift.safe : 0 });
   board.sort(rank); board = board.slice(0, 50);
   try { localStorage.oreBoard = JSON.stringify(board); } catch (e) {}
   const mine = board.find(b => b.id === runId);
@@ -240,13 +243,14 @@ async function loadShared() {
   } catch (e) {}
 }
 loadShared(); setInterval(loadShared, 30000);
-function drawBoard(y0, n, hi) {
-  text('SCOREBOARD', W / 2, y0, 16, '#f60');
-  if (!board.length) { text('No runs yet', W / 2, y0 + 30, 14, '#bbb'); return; }
-  board.slice(0, n).forEach((b, i) => {
-    const y = y0 + 28 + i * 24, c = b.id === hi ? '#ff6' : b.done ? '#fff' : '#bbb';
-    text(`${i + 1}.`, 50, y, 15, c, 'left'); text(`${b.name} · ${(DIFFS[b.diff ?? 1].n)[0]}`, 80, y, 15, c, 'left');
-    text(b.tons !== undefined ? (b.tons > 0 ? `${b.tons} t hauled` : `${b.pct}% to Skyway`) : b.done ? `${b.score} pts` : `${b.pct}% to Skyway`, W - 50, y, 15, c, 'right');
+function drawBoard(y0, n, hi, who = 'driver') {
+  const L = board.filter(b => (b.role || 'driver') === who); if (who === 'mech') L.sort((a, b) => b.score - a.score);
+  text(who === 'mech' ? 'WORKSHOP MECHANICS' : 'TRUCK DRIVERS', W / 2, y0, 15, '#ff7a1a');
+  if (!L.length) { text('No shifts yet', W / 2, y0 + 26, 13, '#bbb'); return; }
+  L.slice(0, n).forEach((b, i) => {
+    const y = y0 + 26 + i * 22, c = b.id === hi ? '#ff6' : b.done ? '#fff' : '#bbb', sf = b.safe !== undefined ? ` · 🦺${b.safe}` : '';
+    text(`${i + 1}.`, 50, y, 14, c, 'left'); text(who === 'mech' ? b.name : `${b.name} · ${(DIFFS[b.diff ?? 1].n)[0]}`, 76, y, 14, c, 'left');
+    text(who === 'mech' ? `${b.score} pts${sf}` : (b.tons !== undefined ? (b.tons > 0 ? `${b.tons} t${sf}` : `${b.pct}% to Skyway`) : b.done ? `${b.score} pts` : `${b.pct}% to Skyway`), W - 50, y, 14, c, 'right');
   });
 }
 const ore = () => Math.round(fills.reduce((a, b) => a + b, 0) * BUCKET);
@@ -256,7 +260,7 @@ function reset() {
   runId = 0;
   stickX = 0; tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; arrivalOre = 0; tons = 0; trip = 1; fills = [0, 0, 0, 0]; hp = 100; dist = 0; speed = 0; steeringSpeed = 0; qx = LANE_X[0]; qy = 260; traffic = []; animals = [];
   scroll = 0; warned = 0; ret = false; hurtByStock = false; wk = null; spawnT = 0; msg = ''; msgT = 0; score = 0; time = 0; particles = []; shake = 0; hist = [{ s: 0, x: qx }]; train = { ph: 0, t: 0, g: 0, hit: false }; jts = straightChain(qx, qy, 1); cabAngle = 0;
-  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); try { romReset(); } catch (e) {}   // the very first reset runs before the ROM module below is defined
+  ldr = { x: 500, y: 290, angle: 0, art: 0 }; pileSeg = Array(SEG_N).fill(1); ldrHp = 100; trDmg = [0, 0, 0, 0]; hitCd = 0; carrying = false; spills = []; aiReset(); try { romReset(); shiftReset(); shift.t0 = performance.now(); mechScore = null; helpCard = null; clip = false; safetyToast = null; } catch (e) {}   // the very first reset runs before the ROM and shift modules below are defined
   ptrs.clear(); syncBtns();
 }
 
@@ -306,6 +310,7 @@ function onKey(code) {
     if (n >= 0) toggleLid(n); else if (t >= 0) tipTrailer(t);
     return;
   }
+  if (state === 'shiftend' && (code === 'Space' || code === 'Enter')) { toUteGo(); return; }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
 let nameErrT = 0;   // a name is required before any storyline starts
@@ -443,8 +448,7 @@ function drawBus() {
   ctx.fillStyle = '#23466e'; rr(40, Y1 + 40, 300, H + 40, 30); ctx.fill(); ctx.fillStyle = '#2d5683'; rr(52, Y1 + 52, 288, H + 40, 24); ctx.fill();
   rect(330, 108, 90, 10, '#9aa3aa'); rect(336, 118, 6, 22, '#9aa3aa'); rect(408, 118, 6, 22, '#9aa3aa');
   // HUD
-  rect(0, 0, W, 80, '#142536dd'); text(home ? 'HIACE BACK TO CAMP' : 'HIACE TO THE WORKSHOP', W / 2, 27, 22, '#ffea69');
-  text(isTouch ? 'Tap to skip the ride' : 'Space: skip the ride', W / 2, 55, 13, '#fff');
+  topBar(home ? 'HIACE BACK TO CAMP' : 'HIACE TO THE WORKSHOP', isTouch ? 'Tap to skip the ride' : 'Space: skip the ride');
   const sight = home ? (BUS_SIGHTS_HOME.find(([d]) => D >= d) || BUS_SIGHTS_HOME[BUS_SIGHTS_HOME.length - 1]) : BUS_SIGHTS.filter(([d]) => D >= d).pop(); rect(18, 520, W - 36, 64, '#102337ee'); text(sight[1], W / 2, 557, 15, '#fff');
   bar(60, 600, W - 120, 10, Math.min(1, bus.d / 11900), '#7fdf7f');
 }
@@ -490,6 +494,7 @@ function startTipTug() {
   ptrs.clear(); syncBtns(); flash('Bins are empty. Trailer 1 first: open its lid.'); msgT = 3;
 }
 function finishTipTug() {
+  safe(10, 'Tip and tug, one bin at a time');
   mStage = 8; state = 'workshopfoot'; shopL = shopLayout(); shopCrewInit();
   workshopFoot = { x: SVC_STAIRS.x - 46, y: SVC_STAIRS.y + 6 }; footFacing = 0; footCamH = 0; ptrs.clear(); syncBtns();
   flash('Tip and tug done. PA236 has pulled forward into bay 5 over the pit. Down the pit stairs for the service.'); msgT = 5;
@@ -523,7 +528,7 @@ function updateService(dt) {
   const near = Math.abs(svc.x - job.x) < 16;
   if (job.auto) svc.prog += dt; else if (near && svcHold()) svc.prog += dt; else svc.prog = Math.max(0, svc.prog - dt * 2);
   if (svc.prog >= job.t) { svc.prog = 0; svc.step++; flash(job.done); msgT = 2.5;
-    if (svc.step >= SVC_JOBS.length) { mStage = 10; state = 'workshopfoot'; workshopFoot = { x: SVC_STAIRS.x - 46, y: SVC_STAIRS.y + 6 }; footFacing = Math.PI; footCamH = footFacing; ptrs.clear(); syncBtns();
+    if (svc.step >= SVC_JOBS.length) { safe(10, 'Service done by the book'); mStage = 10; state = 'workshopfoot'; workshopFoot = { x: SVC_STAIRS.x - 46, y: SVC_STAIRS.y + 6 }; footFacing = Math.PI; footCamH = footFacing; ptrs.clear(); syncBtns();
       flash(`RADIO: "Workshop, PA219. Blown an airbag on trailer 2, in the park bay on the Marble Bar Highway." Supervisor: "${playerName}, take the service ute."`); msgT = 7; } }
 }
 function drawService() {
@@ -609,7 +614,7 @@ function drawService() {
   // job marker
   if (job) { const jx = job.x, jy = job.x > 440 ? G - 60 : 316, on = Math.sin(t * 6) > 0; ctx.strokeStyle = on ? '#ffe040' : 'rgba(255,224,64,.4)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(jx, jy, 14, 0, 7); ctx.stroke(); }
   // ----- HUD: the job list and the hold prompt
-  rect(0, 0, W, 64, '#142536e8'); text('500-HOUR SERVICE: PA236', W / 2, 26, 20, '#ffea69'); text(isTouch ? 'Stick: walk along the pit   HOLD: do the job' : 'A/D walk along the pit   hold E at the job', W / 2, 50, 12, '#fff');
+  topBar('500-HOUR SERVICE: PA236', 'Walk to each job and hold E');
   rect(0, 470, W, H - 470, '#142536ee');
   SVC_JOBS.forEach((j, i) => text((i < k ? '✓ ' : i === k ? '› ' : '  ') + j.say, 20, 486 + i * 14.4, 11, i < k ? '#7fdf7f' : i === k ? '#ffea69' : '#9fb0bf', 'left'));
   if (job) { const near = Math.abs(svc.x - job.x) < 16; text(job.auto ? 'Draining...' : near ? `Hold E: ${job.say}` : 'Walk to the flashing ring', W / 2, 682, 14, '#fff'); bar(60, 696, W - 120, 8, svc.prog / job.t, '#7fdf7f'); }
@@ -625,7 +630,7 @@ function mechBreakdownAct() {
   if (brk.step === 0) { if (!nearDriver) { flash('Talk to the driver by the cab first.'); return; } brk.step = 1; flash('Driver: "Airbag let go on the second trailer, left side. Lost all the air on that group."'); msgT = 4; return; }
   if (brk.step === 1) { flash(nearBag ? 'Hold E to swap the airbag' : 'The blown airbag is on trailer 2, left side.'); return; }
   if (brk.step === 2) { if (!nearDriver) { flash("Let the driver know it's done."); return; }
-    brk.step = 3; mStage = 12; state = 'workshopfoot'; workshopFoot = { x: SVC_UTE.x + 6, y: SVC_UTE.y - 70 }; footFacing = -Math.PI / 2; footCamH = footFacing; ptrs.clear(); syncBtns();
+    brk.step = 3; safe(10, 'Chocked and jacked before going under'); mStage = 12; state = 'workshopfoot'; workshopFoot = { x: SVC_UTE.x + 6, y: SVC_UTE.y - 70 }; footFacing = -Math.PI / 2; footCamH = footFacing; ptrs.clear(); syncBtns();
     flash("Driver: \"Legend, she's holding air.\" Back at the workshop, and that's knock-off: the Hiace is in the car park."); msgT = 6; }
 }
 function updateBreakdownRepair(dt) {
@@ -640,7 +645,9 @@ function drawMechDayEnd() {
   text(`${playerName}: Workshop Mechanic, day done`, W / 2, 205, 17, '#fff');
   ['Breakfast and crib packed at camp', 'Hiace past the bush, the cattle and the gold mine', 'Crib in the fridge, breatho 0.000, prestart', 'Tip and tug on PA236: all four lids and bins cycled',
     '500-hour service: oil, filters, fuel, gearbox, diffs, brakes, grease', 'Breakdown callout: new airbag on PA219', 'Hiace back to camp at sunset'].forEach((tx, i) => text('✓ ' + tx, W / 2, 262 + i * 30, 14, '#cfe'));
-  text('Good shift. See you tomorrow.', W / 2, 500, 16, '#ffea69');
+  finishMechDay(); const ms = mechScore;
+  text('★'.repeat(ms.stars) + '☆'.repeat(3 - ms.stars), W / 2, 490, 34, '#ffd23a');
+  text(`Score ${ms.score} · safety points ${shift.safe} · ${Math.round(ms.mins)} min on the tools`, W / 2, 524, 14, '#ffea69');
   text(isTouch ? 'Tap for the menu' : 'Space: back to the menu', W / 2, 580, 15, '#fff');
 }
 const PRESTART = { x: 840, y: 478 };   // gathered in the back of Bay 6, by the supervisor's whiteboard
@@ -667,13 +674,14 @@ function drawMechEnd() {
 // skip the yard: begin the run already loaded, parked in the first left-hand parking bay
 function skipLoad() {
   if (!takeName()) return;
+  shift.loaded = true;
   fills = [TRAILER_CAP, TRAILER_CAP, TRAILER_CAP, TRAILER_CAP];
   scroll = bayStarts[1] + 460; dist = scroll / 4; qx = ROAD_L - 13 - 40; speed = 0; steeringSpeed = 0;
   jts = straightChain(qx, qy, 1); cabAngle = 0; state = 'drive'; ptrs.clear(); syncBtns();
   warned = 1;   // already on the highway: don't let the 'Highway!' banner overwrite the start message
   bayReady = rigInBay(); flash('Loaded and parked: use the Fitter, Change Over, or drive off');
 }
-function start() { hp = Math.max(30, 100 - Math.round(trDmg.reduce((a, b) => a + b, 0) / 4)); state = 'drive'; ptrs.clear(); syncBtns(); flash('Steep hill ahead - watch your speed!'); }
+function start() { shift.loaded = true; hp = Math.max(30, 100 - Math.round(trDmg.reduce((a, b) => a + b, 0) / 4)); state = 'drive'; ptrs.clear(); syncBtns(); flash('Steep hill ahead - watch your speed!'); }
 function flash(t) { msg = t; msgT = 2.5; }
 function burst(x, y, col, n) { for (let i = 0; i < n; i++) particles.push({ x, y, vx: (Math.random() - .5) * 120, vy: (Math.random() - .8) * 120, l: .6, col }); }
 
@@ -688,7 +696,7 @@ function action() {
       if (k < 0) { flash(pileSeg.some(v => v > .02) ? 'Nothing left here: move along the pile' : 'Pile is empty: wait for a haul truck'); return; }
       pileSeg[k] = Math.max(0, pileSeg[k] - SCOOP_CUT); carryGrade = fingerOf(k);
       if (rom.big[k]) { rom.big[k] = false; carryBig = true; flash('Oversize in the bucket: take it to the rock breaker'); }
-      addDust(ldr.x, ldr.y, .12, 1);
+      addDust(ldr.x, ldr.y, .12, 1); SFX.bucket();
       carrying = true; burst(ldr.x + Math.sin(fa) * 35, ldr.y - Math.cos(fa) * 35, '#8a5a44', 6);
     } else flash('Drive up to the ore pile to scoop');
   } else {
@@ -703,7 +711,7 @@ function action() {
       const skew = Math.abs(angDiff(fa, Math.PI / 2 + tp.a));
       const off = Math.abs(trLoc(tp, bx, by)[1]) / (TR_H / 2);
       const spill = Math.max(0, Math.min(1, Math.max((skew - .15) / .6, (off - .25) / .75)));
-      fills[i] = Math.min(TRAILER_CAP, fills[i] + 1 - spill); carrying = false; if (spill < .95) romTrailerLoaded(); else carryGrade = -1;
+      fills[i] = Math.min(TRAILER_CAP, fills[i] + 1 - spill); carrying = false; SFX.bucket(); if (spill < .95) romTrailerLoaded(); else carryGrade = -1;
       burst(tp.x, tp.y, '#a8705a', Math.round(8 * (1 - spill)));
       if (spill > .05) {
         spills.push({ x: bx, y: by, r: 6 + spill * 16, a: Math.random() * 6 });
@@ -774,7 +782,7 @@ function tipTrailer(i) {
   if (t.lid < .95) flash(`Open trailer ${i + 1}'s lid first`);
   else if (state === 'tiptug' && ttDone[i]) flash(`Trailer ${i + 1} is done: close its lid`);
   else if (state !== 'tiptug' && fills[i] <= 0) flash(`Trailer ${i + 1} is empty`);
-  else t.dir = 1;
+  else { t.dir = 1; SFX.rumble(1.4, fills[i] > 0 ? .45 : .14); }
 }
 const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 3 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 3;
 // Articulated chain: joints[0] is the cab's hitch; each following joint is dragged to stay `len` behind the one in front,
@@ -807,9 +815,10 @@ function updateTrain(dt, parts) {
   if (train.ph === 0 && ahead < CROSS_R * 2 && ahead > 0) { train.ph = 1; train.t = 0; flash('Train coming! Stop at the crossing'); }
   if (train.ph === 1) {
     train.t += dt;
-    if (trainHead() - TRAIN_L > W + 40) train.ph = 2;
+    if (trainBlocks() && speed < 4 && crossY() < qy && crossY() > qy - 450) train.stopped = true;   // pulled up short of the gates
+    if (trainHead() - TRAIN_L > W + 40) { train.ph = 2; if (!train.hit && train.stopped && !shift.trainOk) { shift.trainOk = true; safe(10, 'Stopped for the train'); } }
     else if (!train.hit && parts.some(p => hit(p, { x: trainHead() - TRAIN_L / 2, y: crossY(), w: TRAIN_L, h: 30 }))) {
-      train.hit = true; damage(1000, 'Smashed by the train!', -1); speed = 0;
+      train.hit = true; safe(-25, 'Hit by the train'); damage(1000, 'Smashed by the train!', -1); speed = 0;
     }
   }
   train.g = Math.max(0, Math.min(1, train.g + (trainBlocks() ? 1 : -1) * dt * 1.2));
@@ -823,7 +832,7 @@ function updateTrain(dt, parts) {
 reset();
 
 function damage(n, what, idx) {
-  n = Math.round(n * D().dmg); hp -= n; shake = .3; flash(what);
+  n = Math.round(n * D().dmg); hp -= n; shake = .3; flash(what); SFX.thud();
   if (idx >= 0) fills[idx] = Math.max(0, Math.round(fills[idx] * .6 - .2)); else for (let i = 0; i < NT; i++) fills[i] = Math.max(0, fills[i] - (Math.random() < .3 ? 1 : 0));
   burst(qx, qy + (idx >= 0 ? OFF(idx) : 0), '#8a5a44', 10);
   if (hp <= 0) { hp = 0; state = 'over'; recordRun(false); }
@@ -969,7 +978,7 @@ function updateHaul(dt, me) {
   for (const h of rom.haul) {
     h.t += dt;
     if (h.st === 'in') { h.y += 120 * dt; if (h.y >= h.y0 + 70) { h.y = h.y0 + 70; h.st = 'back'; h.t = 0; } }
-    else if (h.st === 'back') { const e = ease(Math.min(1, h.t / 2.4)); h.x = -120 + 66 * e; h.y = h.y0 + 70 - 70 * e; h.h = Math.PI + Math.PI / 2 * e; if (h.t >= 2.4) { h.st = 'tip'; h.t = 0; } }
+    else if (h.st === 'back') { const e = ease(Math.min(1, h.t / 2.4)); h.x = -120 + 66 * e; h.y = h.y0 + 70 - 70 * e; h.h = Math.PI + Math.PI / 2 * e; if (h.t >= 2.4) { h.st = 'tip'; h.t = 0; const d = Math.hypot(me.x - h.x, me.y - h.y); if (d < 800) SFX.rumble(2.6, .4 * (1 - d / 800)); } }
     else if (h.st === 'tip') {
       h.tip = Math.min(1, h.t / 1.6);
       if (h.t > .7) {
@@ -979,7 +988,7 @@ function updateHaul(dt, me) {
         addDust(60 + Math.random() * 120, h.y + (Math.random() - .5) * 140, dt * 1.6, 1);
         if (h.big && h.t > 1.4) { h.big = false; const k = F.k0 + Math.floor(Math.random() * (F.k1 - F.k0)); rom.big[k] = true; if (h.f === rom.grade || rom.mode === 'water') sup(`Oversize just came off truck ${h.n} on ${F.name}. Rock breaker's at the south end.`); }
       }
-      if (rom.mode === 'load' && !h.warned && me.x < 130 && Math.abs(me.y - h.y) < 150) { h.warned = true; sup('Loader 1, get off the toe! He is tipping right on top of you.'); }
+      if (rom.mode === 'load' && !h.warned && me.x < 130 && Math.abs(me.y - h.y) < 150) { h.warned = true; sup('Loader 1, get off the toe! He is tipping right on top of you.'); safe(-10, 'Under the tip face'); }
       if (h.t >= 2.6) { h.st = 'down'; h.t = 0; }
     } else if (h.st === 'down') { h.tip = Math.max(0, 1 - h.t / 1.6); if (h.t >= 1.6) { h.st = 'out'; h.t = 0; } }
     else if (h.st === 'out') { const e = ease(Math.min(1, h.t / 2.2)); h.x = -54 - 66 * e; h.h = Math.PI * 1.5 - Math.PI / 2 * e; if (h.t >= 2.2) { h.st = 'away'; h.t = 0; } }
@@ -1023,13 +1032,14 @@ function updateLV(dt, me, moving) {
   if (v.on && d < 58 && !v.hit) { v.hit = true; shake = .3; if (rom.mode === 'load') { ldrHp = Math.max(0, ldrHp - 15); } flash('You hit the LV!'); sup('Stop! Stop! You have hit the LV. Everyone stand still.'); }
   if (v.i >= path.length || v.x > YARD.w + 60) {
     sup(v.hit ? 'Incident on the ROM. Park up, we will need a statement.' : v.close ? 'Loader 1, you kept moving right next to that LV. That is not a good stop.' : 'Good stop everyone. LV, call up on channel 2 before you come on the ROM next time.');
+    if (v.hit) safe(-25, 'Hit the LV'); else if (v.close) safe(-10, 'Kept moving near the LV'); else safe(10, 'Good stop for the LV');
     if (rom.mode === 'water' && wGame) wGame.lvOk = !v.close && !v.hit;
     rom.lv = { done: true, on: false, x: -999, y: -999 };
   }
 }
 function updateRom(dt, me, moving) {
   rom.t += dt; rom.rbT = Math.max(0, rom.rbT - dt);
-  if (!rom.cur || (rom.cur.t -= dt) <= 0) { const n = rom.radio.shift(); rom.cur = n ? { ...n, t: 3 + n.txt.length / 30 } : null; }
+  if (!rom.cur || (rom.cur.t -= dt) <= 0) { const n = rom.radio.shift(); rom.cur = n ? { ...n, t: 3 + n.txt.length / 30 } : null; if (n) SFX.radio(); }
   updateHaul(dt, me); updateDust(dt);
   if (rom.lv === null || (rom.lv && !rom.lv.done)) updateLV(dt, me, moving);
   if (rom.mode === 'load') {
@@ -1114,7 +1124,7 @@ function updateSkyway(dt) {
   rocks = rocks.filter(r => r.l > 0 && r.z > (state === 'tiptug' ? 0 : SKW_PILE_Z(r.x, r.y))); msgT -= dt;
   if (state === 'tiptug' && ttDone.every(Boolean) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0 && !t.want && t.lid < .02)) { finishTipTug(); return; }
   if (state === 'skyway' && fills.every(f => f <= 0) && tr.every(t => t.dir === 0 && t.p === 0 && t.hold <= 0)) {
-    startReturn();
+    shift.tipped = true; startReturn();
   }
 }
 function startSecondLoad() {
@@ -1982,8 +1992,7 @@ function drawWorkshopFoot() {
 
   // ----- HUD
   const atCab = role !== 'mech' && cribReached && shopAtCab();
-  rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - THIRD PERSON', W / 2, 26, 19, '#ffe568');
-  text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
+  topBar('6-BAY WORKSHOP', 'Keep out of the pits and clear of the crew');
   if (role === 'mech') text(mechObjective(), W / 2, 102, 15, '#ffe568'); else text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
   if (msgT > 0) msgBox(msg, 133, 13);
   const rm = nearShRoom(), atOff = nearWsOffice() || !!rm; if (atOff) text('PRESS E TO GO INTO THE ' + (rm ? SHR[rm].title : 'WORKSHOP OFFICE'), W / 2, 160, 14, '#83f5a3');
@@ -2076,7 +2085,10 @@ function updateWorkshop(dt) {
 }
 
 function update(dt) {
-  if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } }
+  if (state !== lastState) { lastState = state; if (ptrs.size) { ptrs.clear(); syncBtns(); } sceneChanged(); }
+  sndUpdate(dt);
+  if (helpCard || clip) return;   // paused under the controls card or the clipboard
+  if (state === 'shiftend') return;
   if (state !== 'drive' && state !== 'workshop' && state !== 'ute') shake = Math.max(0, shake - dt);   // those three decay it themselves; load/skyway/end screens never did, so a bump kept the screen shaking
   if (state === 'menu') scroll += 70 * dt;
   if (nameErrT > 0) nameErrT -= dt;
@@ -2176,6 +2188,7 @@ function update(dt) {
     const p = o.type ? (hit(parts[0], o) ? parts[0] : null) : parts.find(p => hit(p, o)); if (!p) continue;
     o.hit = true;
     if (o.type) {
+      shift.wild++; safe(-5, `Hit ${o.type === 'emu' ? 'an emu' : o.type === 'cow' ? 'a cow' : 'a roo'}`);
       const side = o.x < qx ? -1 : 1;
       Object.assign(o, { fvx: side * (90 + speed * .5), fvy: -(60 + speed * .6), fw: side * (7 + Math.random() * 4), rot: 0, t: 0 });
       burst(o.x, o.y, o.type === 'cow' ? o.col : o.type === 'emu' ? '#4a3b2e' : '#b8653a', 12);
@@ -2192,7 +2205,8 @@ function update(dt) {
   if (state === 'drive' && ret && dist >= TRIP) {
     startSecondLoad(); return;
   } else if (state === 'drive' && !ret && dist >= TRIP) {
-    state = 'skyway'; arrivalOre = ore(); tons += Math.max(0, arrivalOre - (rom ? rom.wrong * BUCKET : 0));
+    state = 'skyway'; arrivalOre = ore(); tons += Math.max(0, arrivalOre - (rom ? rom.wrong * BUCKET : 0)); shift.wrong += rom ? rom.wrong : 0; if (rom) rom.wrong = 0;
+    if (shift.wild === 0) safe(5, 'Clean run, no wildlife hit'); shift.wild = 0;
     if (rom && rom.wrong) setTimeout(() => flash(`${rom.wrong * BUCKET} t of the load was the wrong grade: not counted`), 2600); speed = 0; particles = []; ptrs.clear(); syncBtns();
     flash('The Skyway! Open each lid, then tip over the ledge');
   }
@@ -3155,10 +3169,14 @@ function uOff(s) {
 }
 function toUte() {
   if(state==='drive' && !shiftStart){
-    score=Math.round((tons*10+hp*5)*D().mult);
+    score=Math.round((tons*10+hp*5+Math.max(0,shift.safe)*20)*D().mult);
     if(score>best){best=score;localStorage.oreBest=best;}
     recordRun(true);
+    state='shiftend'; ptrs.clear(); syncBtns(); return;   // the summary card first, then on to the ute
   }
+  toUteGo();
+}
+function toUteGo() {
   uHw = false; uTurnT = 0;
   state = 'ute'; us = 0; ux = W / 2 - 38; uv = 0; uh = 0; ud = 0; uT = 0; uBump = 0; uBumps = 0; uSpawn = 4; uPark = 0; uHint = 0; uTank = 0; uoncoming = []; udust = []; particles = []; ptrs.clear(); syncBtns();
   ucows = [];
@@ -3335,7 +3353,7 @@ function drawUteHighway() {
 }
 function drawUteScreen() {
   drawUteWorld();
-  rect(0, 0, W, 64, '#000a');
+  hudBar(64);
   text(role === 'mech' ? '79 SERIES BREAKDOWN UTE' : 'DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
   text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
   text(shiftStart ? (uHw ? (us < HB0 ? `${Math.round((HB0 - us) / 4)} m to the parking bay` : 'Park in front of the pink truck') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to the highway` : 'Give way - turn LEFT') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
@@ -3670,8 +3688,7 @@ function drawShop() {
   for (const [x, y, dir, o] of folk) { const d = (x - wCam.x) * hx + (y - wCam.y) * hy; add(x, y, () => campHuman(x, y, false, false, { ...o, dir, scale: .7, lod: d > 140 ? 'low' : d > 55 ? 'mid' : 'hi' })); }
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
-  rect(0, 0, W, 80, '#142536dd'); text('CAMP SHOP & RECEPTION', W / 2, 27, 22, '#ffea69');
-  text('W / S walk    A / D turn    E use    exit by the glass doors', W / 2, 55, 13, '#fff');
+  topBar('CAMP SHOP & RECEPTION');
   const sp = shopNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { desk: 'check in at reception', lollies: 'grab some lollies', chips: 'grab some chips', toiletries: 'grab toiletries', fridge: 'grab a cold drink' }[sp.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) msgBox(msg, 110, 15);
@@ -3843,8 +3860,7 @@ function drawWsOffice() {
   add(150, -34, () => { wBox(150, -34, 14, 20, 0, 12, '#b88a55', '#c99a65'); wBox(150, -30, 13, 11, 12, 21, '#c09260', '#d2a470'); });   // boxes
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
-  rect(0, 0, W, 80, '#142536dd'); text('WORKSHOP OFFICE', W / 2, 27, 22, '#ffea69');
-  text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
+  topBar('WORKSHOP OFFICE');
   const sp = wsoNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { boss: 'talk to the supervisor', cctv: 'check the yard cameras', printer: 'grab your service sheet', manager: 'talk to the manager', parts: 'talk to the parts guy', planner: 'talk to the planner' }[sp.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) msgBox(msg, 110, 14);
@@ -3923,7 +3939,7 @@ function updateShRoom(dt) {
   kit.dir += steerAxis() * 2.3 * dt;
   if (fwd) { const nx = kit.x + Math.cos(kit.dir) * 40 * fwd * dt, ny = kit.y + Math.sin(kit.dir) * 40 * fwd * dt;
     if (!shrBlocked(nx, kit.y)) kit.x = nx; if (!shrBlocked(kit.x, ny)) kit.y = ny; }
-  if (mBreath > 0) { mBreath += dt; if (mBreath >= 2.5) { mBreath = 0; mStage = 5; flash('SIMULATED breath test: 0.000. Head into the workshop for prestart, back of bay 6.'); msgT = 4; } }
+  if (mBreath > 0) { mBreath += dt; if (mBreath >= 2.5) { mBreath = 0; mStage = 5; safe(5, 'Breatho done'); flash('SIMULATED breath test: 0.000. Head into the workshop for prestart, back of bay 6.'); msgT = 4; } }
   if (kit.y > SHR[shRoom].B.y1 - 1) leaveShRoom();
 }
 function drawShRoom() {
@@ -4058,8 +4074,7 @@ function drawShRoom() {
   }
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
-  rect(0, 0, W, 80, '#142536dd'); text(r.title, W / 2, 27, 22, '#ffea69');
-  text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
+  topBar(r.title);
   const sp = shrNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text(mBreath > 0 ? `Blowing... ${Math.round(mBreath / 2.5 * 100)}%` : 'Press E: ' + shrAct(sp), W / 2, 556, 14, '#fff'); if (mBreath > 0) bar(85, 572, 310, 10, mBreath / 2.5, '#7fdf7f'); }
   if (role === 'mech' && shRoom === 'crib' && mStage <= 4) text(mStage === 3 ? 'OBJECTIVE: CRIB IN THE FRIDGE (RIGHT END)' : 'OBJECTIVE: BREATHO ON THE WALL BY THE DOOR', W / 2, 140, 14, '#ffe568');
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
@@ -4187,8 +4202,7 @@ function drawKitchen() {
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
   // HUD
-  rect(0, 0, W, 80, '#142536dd'); text('CAMP DINING ROOM', W / 2, 27, 22, '#ffea69');
-  text('W / S walk    A / D turn    E grab / use    exit by the double doors', W / 2, 55, 13, '#fff');
+  topBar('CAMP DINING ROOM');
   const s2 = kitNear(); if (s2) { rect(18, 520, W - 36, 70, '#102337ee'); text(kitDone[s2.name] ? s2.msg : 'Press E: ' + { bain: 'grab a feed', fresh: 'fresh food', crib: 'pack your crib bag', dish: 'return your dishes', coffee: 'make a coffee' }[s2.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
   if (msgT > 0) msgBox(msg, 110, 15);
@@ -4294,10 +4308,7 @@ function drawParkHandover(){
   add(-105,80,()=>{wBox(-105,80,2,2,0,33,'#ddd','#ddd');wBox(-105,80,32,2,33,45,'#1d5fb4','#1d5fb4');wText('P',-105,80,39,9,'#fff');});
   add(handPos.x,handPos.y,()=>{const oldWp=wp;wp={x:handPos.x,y:handPos.y,dir:handPos.dir,ph:wT*10};campHuman(handPos.x,handPos.y,false,true);wp=oldWp;});
   ents.sort((p,q)=>q.f-p.f);for(const e of ents)if(e.f>-20)e.fn();
-  rect(10,10,W-20,110,'#142536e8');
-  text(role==='mech'?'BREAKDOWN: PA219 IN THE PARK BAY':'3D HIGHWAY BAY - DRIVER CHANGEOVER',W/2,42,17,'#ffe568');
-  text(role==='mech'?'Blown airbag on trailer 2':handoverLoaded?'LOADED: SKYWAY RUN':'EMPTY: RETURN TO ROM',W/2,71,15,'#fff');
-  text('W/S walk   A/D turn   E talk',W/2,100,13,'#fff');
+  topBar(role==='mech'?'BREAKDOWN: PA219 IN THE PARK BAY':'DRIVER CHANGEOVER',role==='mech'?'Blown airbag on trailer 2':handoverLoaded?'Loaded: Skyway run':'Empty: return to the ROM');
   rect(12,605,W-24,105,'#102136ee');
   if(role==='mech'){
     const step=brk?brk.step:0;
@@ -4372,8 +4383,7 @@ function drawOffice() {
   campHuman(officeVisitorX,12+Math.sin(wT*.65)*17,false,false);
 
   campHuman(officePos.x,officePos.y,false,true);
-  rect(0,0,W,80,'#142536dd');text('FLEET SCHEDULERS OFFICE',W/2,27,22,'#ffea69');
-  text('W / S walk    A / D turn    E interact',W/2,55,14,'#fff');
+  topBar('FLEET SCHEDULERS OFFICE');
   const instruction=officeStep===0?'Walk to the wall breathalyser and press E':
     officeStep===1?'Hold E: '+Math.round(officeBreath/2.5*100)+'%':
     officeStep===2?'SIMULATED 0.000 BAC. Approach the desk, press E':
@@ -5141,7 +5151,7 @@ function drawWalk() {
   const fog = ctx.createLinearGradient(0, hor, 0, hor + 90); fog.addColorStop(0, 'rgba(217,230,242,.9)'); fog.addColorStop(1, 'rgba(217,230,242,0)');
   ctx.fillStyle = fog; ctx.fillRect(0, hor, W, 90);
   const rn = CAMP_DOORS[wRoom].name;
-  rect(0, 0, W, 64, '#000a');
+  hudBar(64);
   text('CAMP', 10, 22, 14, '#fff', 'left');
   if (role === 'mech') {
     text(mStage === 0 ? 'Breakfast and pack your crib' : 'Catch the Hiace to the workshop', W - 10, 22, 16, '#ff6', 'right');
@@ -5539,7 +5549,7 @@ function drawSkyway() {
     text(`TRAILER ${i + 1}` + (ok ? ' ✓' : ''), bx + 56, H - 178, 13, ok ? '#7fdf7f' : '#ffd23a');
     drawBtn(lidBtn(i), lidBtn(i)[4], tr[i].want); drawBtn(tipBtn(i), tipBtn(i)[4], tr[i].dir !== 0 || tr[i].hold > 0);
   }
-  if (tug) { rect(0, 0, W, 64, '#142536e8'); text('TIP & TUG: PA236', W / 2, 26, 20, '#ffea69'); text('One trailer at a time: open the lid, tip the bin, close the lid', W / 2, 50, 12, '#fff');
+  if (tug) { topBar('TIP & TUG: PA236', 'One trailer at a time: lid open, tip, lid closed');
     if (msgT > 0) msgBox(msg, 90, 14);
     if (isTouch) drawBtn(VIEW_BTN, ttView === 'cab' ? 'OUTSIDE' : 'CAB', false); else text(ttView === 'cab' ? 'V: outside view' : 'V: cab view', 12, 82, 11, '#ccc', 'left');
     text(isTouch ? 'Lid, tip, then close the lid before the next trailer' : '1-4 open/close lid · Q W E R tip the bin', W / 2, H - 76, 14, '#fff'); }
@@ -6034,7 +6044,7 @@ function drawYard() {
   }
   romHud(me);
   if (state === 'water') {   // the water cart game's own HUD
-    rect(0, 0, W, 56, '#000a');
+    hudBar(56);
     text('WATER CART', 12, 24, 18, '#5fb0e8', 'left'); text(`Time ${Math.max(0, Math.ceil(wGame.t))}s`, 12, 46, 13, '#ddd', 'left');
     bar(150, 6, 120, 14, cart.tank, cart.tank > .25 ? '#4a93dc' : '#e44'); text(`Tank ${Math.round(cart.tank * 100)}%`, 210, 17, 10, '#fff', 'center');
     text(cart.spray && cart.tank > 0 ? 'SPRAYING' : 'Spray off', 210, 40, 12, cart.spray && cart.tank > 0 ? '#8cf' : '#aaa', 'center');
@@ -6044,7 +6054,7 @@ function drawYard() {
     if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, 'SPRAY', cart.spray); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
     return;
   }
-  rect(0, 0, W, 56, '#000a');
+  hudBar(56);
   text('FRONT-END LOADER', 12, 24, 18, '#f2b200', 'left');
   text(`Loaded: ${ore()} / ${MAX_ORE} t`, 12, 46, 13, '#ddd', 'left');
   bar(150, 4, 110, 14, ldrHp / 100, ldrHp > 50 ? '#4c4' : ldrHp > 25 ? '#fc3' : '#e44');
@@ -6432,7 +6442,7 @@ function drawWorkshop() {
   for (const p of particles) rect(p.x, p.y, 4, 4, p.col);
   ctx.restore();
   }
-  rect(0, 0, W, 64, '#000a');
+  hudBar(64);
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive through any bay, or out the yard gate' : workshopParked() ? 'Press E to explore workshop on foot' : 'Drive to any bay - no yard lineup required', W / 2, 52, 14, '#ddd');
@@ -6448,6 +6458,7 @@ function drawWorkshop() {
 // ---------- home screen: pick who you are, then how your shift starts ----------
 // menuPage: 'home' (name + three role cards), 'driver' (where to start + difficulty), 'mech', 'water', 'scores', 'controls'
 let menuPage = 'home', menuSel = 0, driverStart = +(localStorage.oreStart ?? 1) || 0, nameEdit = false;
+const MUTE_R = [W - 52, 14, 38, 34];
 const MENU_CARDS = [
   { id: 'driver', t: 'TRUCK DRIVER', s: 'Load at the ROM, haul to the Skyway', col: '#f062a4' },
   { id: 'mech', t: 'WORKSHOP MECHANIC', s: 'Tip and tug, pit service, breakdown callout', col: '#f2c200' },
@@ -6457,8 +6468,8 @@ const DRIVER_STARTS = [
   { t: 'Load at the ROM', s: 'Fill the trailers with the loader' },
   { t: 'Straight to the highway', s: 'Trailers already loaded, hit the road' }];
 const cardR = i => [36, 272 + i * 104, W - 72, 90];
-const startR = i => [36, 150 + i * 82, W - 72, 70];
-const chipR = i => [36 + i * ((W - 72) / 4), 438, (W - 72) / 4 - 8, 40];
+const startR = i => [36, 140 + i * 56, W - 72, 50];
+const chipR = i => [36 + i * ((W - 72) / 4), 452, (W - 72) / 4 - 8, 40];
 const BACK_R = [14, 14, 84, 34], GO_R = [60, 596, W - 120, 60], SCORES_R = [36, 620, (W - 84) / 2, 44], CTRL_R = [W / 2 + 6, 620, (W - 84) / 2, 44];
 const nameR = () => [W / 2 - 120, 196, 240, 38];
 function rrect(r, fill, stroke, rad = 10, lw = 2) { ctx.fillStyle = fill; ctx.beginPath(); ctx.roundRect(r[0], r[1], r[2], r[3], rad); ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
@@ -6468,7 +6479,7 @@ function needName() {   // every start needs a name: back to the home page with 
 }
 function menuStart() {
   if (needName()) return;
-  if (menuPage === 'driver') { localStorage.oreStart = driverStart; homeRoom = -1; [startAtCamp, startLoad, skipLoad][driverStart](); }
+  if (menuPage === 'driver') { driverStart = Math.min(driverStart, chapReached); localStorage.oreStart = driverStart; homeRoom = -1; [startAtCamp, startLoad, skipLoad, startAtSkyway, startAtReturn][driverStart](); }
   else if (menuPage === 'mech') startMechanic();
   else if (menuPage === 'water') startWaterCart();
 }
@@ -6478,6 +6489,7 @@ function openCard(i) {
   menuPage = MENU_CARDS[i].id; nameEdit = false; nameIn.blur();
 }
 function menuTap(p) {
+  if (inR(p, MUTE_R) && menuPage === 'home') { sndInit(); setMute(SND.on); return; }
   if (menuPage === 'home') {
     if ((!playerName || nameEdit) && inR(p, nameR())) return;   // the name box itself
     if (playerName && !nameEdit && inR(p, [W / 2 - 150, 196, 300, 38])) { nameEdit = true; setTimeout(() => { nameIn.focus(); nameIn.select(); }); return; }
@@ -6488,12 +6500,13 @@ function menuTap(p) {
   }
   if (inR(p, BACK_R)) { menuPage = 'home'; return; }
   if (menuPage === 'driver') {
-    for (let i = 0; i < 3; i++) if (inR(p, startR(i))) { driverStart = i; return; }
+    for (let i = 0; i < CHAPTERS.length; i++) if (inR(p, startR(i))) { if (i <= chapReached) driverStart = i; else flash('Reach this part of the shift to unlock it'); return; }
     for (let i = 0; i < DIFFS.length; i++) if (inR(p, chipR(i))) { setDiff(i); return; }
   }
   if ((menuPage === 'driver' || menuPage === 'mech' || menuPage === 'water') && inR(p, GO_R)) menuStart();
 }
 function menuKey(code) {
+  if (code === 'KeyM') { setMute(SND.on); return; }
   if (menuPage === 'home') {
     if (code === 'ArrowDown' || code === 'KeyS') menuSel = (menuSel + 1) % 3;
     else if (code === 'ArrowUp' || code === 'KeyW') menuSel = (menuSel + 2) % 3;
@@ -6503,8 +6516,8 @@ function menuKey(code) {
   }
   if (code === 'Escape' || code === 'Backspace' || (code === 'ArrowLeft' && menuPage !== 'driver')) { menuPage = 'home'; return; }
   if (menuPage === 'driver') {
-    if (code === 'ArrowDown' || code === 'KeyS') { driverStart = (driverStart + 1) % 3; return; }
-    if (code === 'ArrowUp' || code === 'KeyW') { driverStart = (driverStart + 2) % 3; return; }
+    if (code === 'ArrowDown' || code === 'KeyS') { driverStart = Math.min(chapReached, driverStart + 1); return; }
+    if (code === 'ArrowUp' || code === 'KeyW') { driverStart = Math.max(0, driverStart - 1); return; }
     if (code === 'ArrowLeft' || code === 'ArrowRight') { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   }
   if ((code === 'Enter' || code === 'Space') && menuPage !== 'scores' && menuPage !== 'controls') menuStart();
@@ -6537,22 +6550,25 @@ function drawMenu() {
     });
     rrect(SCORES_R, 'rgba(8,18,30,.82)', 'rgba(255,255,255,.3)', 10, 1.5); text('🏆  SCORES', SCORES_R[0] + SCORES_R[2] / 2, SCORES_R[1] + 28, 16, '#fff');
     rrect(CTRL_R, 'rgba(8,18,30,.82)', 'rgba(255,255,255,.3)', 10, 1.5); text('🎮  CONTROLS', CTRL_R[0] + CTRL_R[2] / 2, CTRL_R[1] + 28, 16, '#fff');
-    if (!isTouch) text('↑↓ choose · Enter to open', W / 2, 698, 12, '#c8d2dc');
+    rrect(MUTE_R, 'rgba(8,18,30,.8)', 'rgba(255,255,255,.3)', 8, 1.5); text(SND.on ? '🔊' : '🔇', MUTE_R[0] + MUTE_R[2] / 2, MUTE_R[1] + 24, 17, '#fff');
+    if (!isTouch) text('↑↓ choose · Enter to open · M sound', W / 2, 698, 12, '#c8d2dc');
     return;
   }
   rrect(BACK_R, 'rgba(8,18,30,.85)', 'rgba(255,255,255,.35)', 8, 1.5); text('‹ BACK', BACK_R[0] + BACK_R[2] / 2, BACK_R[1] + 23, 15, '#fff');
   const page = (title, sub) => { text(title, W / 2, 92, 30, '#ff7a1a'); if (sub) text(sub, W / 2, 120, 14, '#fff'); };
   const goBtn = label => { rrect(GO_R, '#ff7a1a', '#ffd0a8', 14, 2); text(label, W / 2, GO_R[1] + 39, 24, '#fff'); if (!isTouch) text('Enter to start · Esc to go back', W / 2, 690, 12, '#c8d2dc'); };
   if (menuPage === 'driver') {
-    page('TRUCK DRIVER', 'Where does your shift start?');
-    DRIVER_STARTS.forEach((o, i) => { const r = startR(i), on = i === driverStart;
-      rrect(r, on ? 'rgba(40,24,12,.92)' : 'rgba(8,18,30,.82)', on ? '#ff7a1a' : 'rgba(255,255,255,.25)', 12, on ? 3 : 1.5);
-      ctx.strokeStyle = on ? '#ff7a1a' : '#8a96a2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r[0] + 30, r[1] + r[3] / 2, 11, 0, 7); ctx.stroke();
-      if (on) { ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.arc(r[0] + 30, r[1] + r[3] / 2, 6, 0, 7); ctx.fill(); }
-      text(o.t, r[0] + 56, r[1] + 30, 19, '#fff', 'left'); text(o.s, r[0] + 56, r[1] + 52, 13, '#c8d2dc', 'left'); });
-    text('DIFFICULTY', W / 2, 426, 14, '#c8d2dc');
+    page('TRUCK DRIVER', 'Your shift: start from any part you have reached');
+    driverStart = Math.min(driverStart, chapReached);
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(66, 165); ctx.lineTo(66, 140 + 4 * 56 + 25); ctx.stroke();   // the timeline down the side
+    CHAPTERS.forEach((o, i) => { const r = startR(i), on = i === driverStart, locked = i > chapReached;
+      rrect(r, on ? 'rgba(40,24,12,.92)' : 'rgba(8,18,30,.82)', on ? '#ff7a1a' : 'rgba(255,255,255,.22)', 10, on ? 3 : 1.5);
+      ctx.fillStyle = locked ? '#4a5560' : on ? '#ff7a1a' : '#2f7a46'; ctx.beginPath(); ctx.arc(r[0] + 30, r[1] + r[3] / 2, 13, 0, 7); ctx.fill();
+      text(locked ? '🔒' : String(i + 1), r[0] + 30, r[1] + r[3] / 2 + (locked ? 5 : 6), locked ? 12 : 15, '#fff');
+      text(o.t, r[0] + 56, r[1] + 22, 17, locked ? '#8a96a2' : '#fff', 'left'); text(locked ? 'Reach it in a shift to unlock' : o.s, r[0] + 56, r[1] + 41, 12, locked ? '#6d7883' : '#c8d2dc', 'left'); });
+    text('DIFFICULTY', W / 2, 442, 14, '#c8d2dc');
     DIFFS.forEach((d, i) => { const r = chipR(i), on = i === diff; rrect(r, on ? '#ff7a1a' : 'rgba(8,18,30,.82)', on ? '#ffd0a8' : 'rgba(255,255,255,.3)', 20, 1.5); text(d.n, r[0] + r[2] / 2, r[1] + 26, 15, '#fff'); });
-    text(['Fewer cars, gentle knocks', 'The full road', 'Busy road, hard knocks, big scores', 'No wildlife, slow traffic'][diff], W / 2, 506, 13, '#c8d2dc');
+    text(['Fewer cars, gentle knocks', 'The full road', 'Busy road, hard knocks, big scores', 'No wildlife, slow traffic'][diff], W / 2, 516, 13, '#c8d2dc');
     goBtn('START SHIFT');
   } else if (menuPage === 'mech') {
     page('WORKSHOP MECHANIC', 'A day on the tools');
@@ -6567,8 +6583,8 @@ function drawMenu() {
       ctx.fillStyle = '#4a93dc'; ctx.beginPath(); ctx.arc(64, y + 27, 13, 0, 7); ctx.fill(); text('✓', 64, y + 33, 15, '#fff'); text(l, 90, y + 33, 16, '#fff', 'left'); });
     goBtn('START');
   } else if (menuPage === 'scores') {
-    page('SCORES', ''); rrect([30, 140, W - 60, 300], 'rgba(8,18,30,.85)', null, 12); drawBoard(176, 10, 0);
-    text(`Best: ${best}`, W / 2, 476, 15, '#ffe568');
+    page('SCORES', 'Tonnes, safety points and the mechanics'); rrect([30, 140, W - 60, 420], 'rgba(8,18,30,.85)', null, 12); drawBoard(174, 8, 0, 'driver'); drawBoard(400, 5, 0, 'mech');
+    text(`Best driver score: ${best}`, W / 2, 590, 15, '#ffe568');
   } else if (menuPage === 'controls') {
     page('CONTROLS', isTouch ? 'On screen: stick to steer, GAS / BRAKE, action buttons' : 'Keyboard or gamepad');
     const rows = isTouch ? [['Steer', 'Left stick'], ['Drive', 'GAS / BRAKE or REV'], ['Act', 'The action button for each job'], ['Views', 'VIEW / CAB buttons']]
@@ -6576,6 +6592,230 @@ function drawMenu() {
     rrect([30, 150, W - 60, 40 + rows.length * 42], 'rgba(8,18,30,.85)', null, 12);
     rows.forEach(([a, b2], i) => { text(a, 54, 192 + i * 42, 16, '#c8d2dc', 'left'); text(b2, W - 54, 192 + i * 42, 16, '#fff', 'right'); });
   }
+}
+
+// ---------- sound: everything synthesised with WebAudio (no files), started on the first tap or key ----------
+const SND = { ac: null, on: localStorage.oreMute !== '1', master: null, noise: null, eng: null, engG: null, engF: null, t: {}, prevBrake: false, prevSpeed: 0 };
+function sndInit() {
+  if (SND.ac) { if (SND.ac.state === 'suspended') SND.ac.resume(); return; }
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const a = SND.ac = new AC(); SND.master = a.createGain(); SND.master.gain.value = SND.on ? .55 : 0; SND.master.connect(a.destination);
+    const len = a.sampleRate * 2, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; SND.noise = buf;
+    // engine: two detuned saws through a lowpass, pitch and level follow whatever you're driving
+    SND.engF = a.createBiquadFilter(); SND.engF.type = 'lowpass'; SND.engF.frequency.value = 320; SND.engG = a.createGain(); SND.engG.gain.value = 0;
+    SND.eng = [0, 1].map(k => { const o = a.createOscillator(); o.type = k ? 'square' : 'sawtooth'; o.frequency.value = 42 + k * 1.5; o.connect(SND.engF); o.start(); return o; });
+    SND.engF.connect(SND.engG); SND.engG.connect(SND.master);
+  } catch (e) { SND.ac = null; }
+}
+addEventListener('pointerdown', sndInit); addEventListener('keydown', sndInit);
+const sndOk = () => SND.ac && SND.on && SND.ac.state === 'running';
+function setMute(off) { SND.on = !off; localStorage.oreMute = off ? '1' : '0'; if (SND.master) SND.master.gain.setTargetAtTime(SND.on ? .55 : 0, SND.ac.currentTime, .05); }
+function sNoise(dur, freq, vol, type = 'bandpass', q = 1, attack = .005, at = 0) {
+  if (!sndOk()) return; const a = SND.ac, t = a.currentTime + at, s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  s.buffer = SND.noise; s.loop = true; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(SND.master); s.start(t, Math.random()); s.stop(t + dur + .05);
+}
+function sTone(freq, dur, vol, type = 'square', slide = 0, at = 0) {
+  if (!sndOk()) return; const a = SND.ac, t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .006); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(SND.master); o.start(t); o.stop(t + dur + .05);
+}
+const SFX = {
+  airBrake: () => { sNoise(.55, 3200, .22, 'highpass', .7, .01); sNoise(.25, 900, .08, 'bandpass', 2, .005, .05); },
+  bucket: () => { sTone(65, .22, .35, 'sine', -25); sNoise(.3, 500, .25, 'lowpass', 1, .01); for (let k = 0; k < 5; k++) sNoise(.06, 1400 + k * 200, .06, 'bandpass', 4, .002, .05 + k * .04); },
+  radio: () => { sNoise(.14, 2000, .12, 'bandpass', 1.5, .002); sTone(1250, .07, .06, 'square', 0, .13); },
+  bell: hi => { sTone(hi ? 1320 : 1180, .32, .1, 'triangle'); sTone((hi ? 1320 : 1180) * 2.01, .2, .03, 'sine'); },
+  beep: () => sTone(1040, .2, .07, 'square'),
+  rumble: (dur = 1.5, vol = .4) => { sNoise(dur, 160, vol, 'lowpass', .8, .15); sNoise(dur * .8, 600, vol * .3, 'bandpass', 1, .1, .1); },
+  rattle: (vol = .1) => { for (let k = 0; k < 14; k++) sNoise(.03, 2600, vol, 'bandpass', 3, .002, k * .035); },
+  thud: () => { sTone(55, .3, .4, 'sine', -20); sNoise(.25, 400, .3, 'lowpass', 1, .005); },
+  ding: () => { sTone(880, .12, .08, 'sine'); sTone(1320, .18, .07, 'sine', 0, .1); },
+  buzz: () => sTone(140, .25, .08, 'sawtooth'),
+  click: () => sTone(600, .04, .05, 'square') };
+// every frame: the engine note for whatever you're driving, and the looping cues (crossing bells, reversing beeper, rattle guns)
+function sndUpdate(dt) {
+  if (!SND.ac) return;
+  const now = SND.ac.currentTime; let v = 0, f = 42;
+  const thr = (keys.ArrowUp || keys.KeyW || keys.TG || keys.TU ? 1 : 0) - (keys.ArrowDown || keys.KeyS || keys.TB || keys.TD ? 1 : 0);
+  if (state === 'drive') { v = .09; f = 38 + speed * .28; }
+  else if (state === 'ute') { v = .07; f = 55 + Math.abs(uv) * .4; }
+  else if (state === 'load') { v = .08; f = 40 + (thr ? 30 : 0); }
+  else if (state === 'water') { v = .08; f = 40 + Math.abs(cart.v) * .35; }
+  else if (state === 'workshop') { v = .08; f = 38 + (wk ? Math.abs(wk.v) : 0) * .5; }
+  else if (state === 'skyway' || state === 'tiptug') { v = .04; f = 36; }
+  if (helpCard || clip) v *= .3;
+  SND.engG.gain.setTargetAtTime(SND.on ? v : 0, now, .12); SND.eng.forEach((o, k) => o.frequency.setTargetAtTime(f * (k ? 1.012 : 1), now, .15));
+  SND.engF.frequency.setTargetAtTime(220 + f * 4, now, .2);
+  const T = SND.t, tick = (k, every) => { T[k] = (T[k] || 0) - dt; if (T[k] <= 0) { T[k] = every; return true; } return false; };
+  if (state === 'drive') {
+    const brake = keys.ArrowDown || keys.KeyS || keys.TB;
+    if (brake && !SND.prevBrake && speed > 25) SFX.airBrake();
+    if (SND.prevSpeed > 6 && speed <= 1) SFX.airBrake();
+    SND.prevBrake = brake; SND.prevSpeed = speed;
+    if (train.ph === 1 && trainBlocks() && Math.abs(crossY() - qy) < 700 && tick('bell', .45)) { T.bh = !T.bh; SFX.bell(T.bh); }
+  }
+  if ((state === 'load' && thr < 0) || (state === 'water' && cart.v < -2) || (state === 'workshop' && wk && wk.v < -2) || (state === 'ute' && uv < -2)) { if (tick('rev', .55)) SFX.beep(); }
+  if (state === 'workshopfoot' && workshopFoot.x > 0 && tick('rattle', 3 + Math.random() * 5)) SFX.rattle(.05 + Math.random() * .07);
+}
+
+// ---------- the shift: safety points, chapters, the clipboard, help cards, summaries ----------
+const CHAPTERS = [
+  { t: 'Camp', s: 'Wake up, brekkie, the ute out to the highway' },
+  { t: 'Load at the ROM', s: 'Fill the trailers with the loader' },
+  { t: 'Down the highway', s: 'Trailers loaded, hit the road' },
+  { t: 'Tip at the Skyway', s: 'Open the lids and tip over the wall' },
+  { t: 'Back to the ROM', s: 'The empty run home for another load' }];
+let chapReached = Math.max(2, +(localStorage.oreChap || 2) || 2), shift = null, safetyToast = null, helpCard = null, clip = false;
+const helpSeen = (() => { try { return JSON.parse(localStorage.oreSeen || '{}'); } catch (e) { return {}; } })();
+function shiftReset() { shift = { safe: 0, log: [], wrong: 0, wild: 0, trainOk: false, trainStopped: false, tipped: false, loaded: false, camp: false, chap: -1, t0: 0, toeWarn: 0, lv: null }; }
+shiftReset();
+function safe(n, why) {
+  shift.safe += n; shift.log.push([n, why]);
+  safetyToast = { txt: `${n > 0 ? '+' : ''}${n} SAFETY: ${why}`, good: n > 0, t: 2.6 };
+  if (n > 0) SFX.ding(); else SFX.buzz();
+}
+function markChapter(c) {
+  shift.chap = c; if (c === 0) shift.camp = true;
+  if (c > chapReached) { chapReached = c; localStorage.oreChap = c; }
+}
+// jump straight to a later chapter of the driver's shift
+function startAtSkyway() {
+  if (!takeName()) return;
+  fills = [TRAILER_CAP, TRAILER_CAP, TRAILER_CAP, TRAILER_CAP]; shift.loaded = true; scroll = R - 200; dist = TRIP;
+  state = 'skyway'; arrivalOre = ore(); tons += arrivalOre; speed = 0; particles = []; ptrs.clear(); syncBtns(); flash('The Skyway! Open each lid, then tip over the ledge');
+}
+function startAtReturn() { if (!takeName()) return; fills = [0, 0, 0, 0]; startReturn(); flash('Empty and heading back to the ROM for another load'); }
+const helpKind = s => ({ walk: 'walk', officeinside: 'room', kitcheninside: 'room', shopinside: 'room', wsoffice: 'room', shroom: 'room', drive: 'drive', load: 'load', skyway: 'tip', tiptug: 'tip',
+  workshop: 'yard', workshopfoot: 'foot', service: 'pit', ute: 'ute', parkhandover: 'foot', water: 'water', busride: 'bus' })[s];
+const HELP = {
+  walk: ['On foot', [['Walk', 'W S / ↑ ↓', 'Stick'], ['Turn', 'A D / ← →', 'Stick'], ['Use, talk', 'E', 'USE']]],
+  room: ['Inside', [['Walk', 'W S / ↑ ↓', 'Stick'], ['Turn', 'A D / ← →', 'Stick'], ['Use, talk', 'E', 'USE'], ['Leave', 'Walk out the door', 'Walk out the door']]],
+  foot: ['On foot', [['Walk', 'W S / ↑ ↓', 'Stick'], ['Turn', 'A D / ← →', 'Stick'], ['Use, climb in, talk', 'E', 'USE']]],
+  drive: ['Driving the road train', [['Throttle', '↑ / W', 'GAS'], ['Brake', '↓ / S', 'BRAKE'], ['Steer', '← → / A D', 'Stick'], ['Cab view', 'V', 'CAB'], ['Stop for trains and LVs', 'Safety points', 'Safety points']]],
+  load: ['The loader at the ROM', [['Drive', '↑ ↓ / W S', 'GAS / REV'], ['Steer', '← → / A D', 'Stick'], ['Scoop or dump', 'SPACE', 'SCOOP / DUMP'], ['Load the right grade', 'Check the flags', 'Check the flags'], ['Leave', 'G or Enter once 40 t is in', 'START DRIVING']]],
+  tip: ['Tipping the bins', [['Open or close a lid', '1 2 3 4', 'OPEN LID'], ['Tip a bin', 'Q W E R', 'TIP BIN'], ['Change view', 'V', 'VIEW']]],
+  yard: ['Workshop yard', [['Drive', '↑ ↓ / W S', 'GAS / BRAKE'], ['Steer', '← → / A D', 'Stick'], ['Climb out', 'E when stopped', 'E'], ['Change view', 'V', 'VIEW']]],
+  pit: ['Down in the pit', [['Walk along the pit', 'A D / ← →', 'Stick'], ['Do the job', 'Hold E', 'HOLD']]],
+  ute: ['Driving the ute', [['Drive', '↑ ↓ / W S', 'GAS / BRAKE'], ['Steer', '← → / A D', 'Stick']]],
+  water: ['The water cart', [['Drive', '↑ ↓ / W S', 'GAS / REV'], ['Steer', '← → / A D', 'Stick'], ['Spray on / off', 'SPACE', 'SPRAY'], ['Fill up', 'Stop at the standpipe', 'Stop at the standpipe']]],
+  bus: ['The Hiace', [['Skip the ride', 'SPACE', 'Tap']]] };
+const CLIP_BTN = [0, 300, 36, 44];
+function sceneChanged() {   // first time in each kind of scene: a short controls card; and the driver's chapter
+  const k = helpKind(state);
+  if (k && !helpSeen[k] && state !== 'menu') helpCard = { k, t: 0 };
+  if (role === 'driver' && shift) {
+    if (state === 'walk' || state === 'kitcheninside' || state === 'officeinside' || state === 'shopinside' || (state === 'ute' && shiftStart)) markChapter(0);
+    else if (state === 'load') markChapter(1);
+    else if (state === 'skyway') markChapter(3);
+    else if (state === 'drive') markChapter(ret ? 4 : 2);
+  }
+}
+function closeHelp() { if (helpCard) { helpSeen[helpCard.k] = 1; try { localStorage.oreSeen = JSON.stringify(helpSeen); } catch (e) {} helpCard = null; } }
+const playing = () => !['menu', 'over', 'win', 'shiftend', 'waterend', 'mechend', 'walkend', 'uteend'].includes(state);
+function overlayTap(p) {   // returns true when a tap was used by the help card or the clipboard
+  if (helpCard) { closeHelp(); return true; }
+  if (clip) { if (inR(p, [W - 150, 150, 120, 36])) { setMute(SND.on); return true; } clip = false; return true; }
+  if (playing() && inR(p, CLIP_BTN)) { clip = true; return true; }
+  return false;
+}
+function overlayKey(code) {
+  if (helpCard) { closeHelp(); return true; }
+  if (code === 'Tab' || code === 'KeyJ') { if (playing() || clip) clip = !clip; return true; }
+  if (clip) { if (code === 'KeyM') setMute(SND.on); else clip = false; return true; }
+  if (code === 'KeyM' && state !== 'menu') { setMute(SND.on); flash(SND.on ? 'Sound on' : 'Sound off'); return true; }
+  return false;
+}
+// the standard top bar every scene uses: title, an optional line under it
+const BAR_BG = 'rgba(12,24,38,.93)';
+function hudBar(h) { rect(0, 0, W, h, BAR_BG); rect(0, h, W, 3, '#ff7a1a'); }
+function topBar(title, sub) { hudBar(sub ? 58 : 40); text(title, W / 2, 26, 19, '#ffe568'); if (sub) text(sub, W / 2, 49, 13, '#e6edf3'); }
+// the driver's and the mechanic's task lists, for the clipboard
+function shiftTasks() {
+  if (role === 'mech') { const m = mStage;
+    return [['Brekkie and crib packed at camp', m >= 1], ['Hiace to the workshop', m >= 3], ['Crib in the fridge', m >= 4], ['Breatho', m >= 5], ['Prestart with the supervisor', m >= 6],
+      ['Tip and tug PA236', m >= 8], ['500-hour service in the pit', m >= 10], ['Breakdown callout: PA219 airbag', m >= 12], ['Hiace home', m >= 14]]; }
+  if (state === 'water' || state === 'waterend') return [['Keep the loading lanes wet', wGame && waterRating() >= 60], ['Refill at the standpipe', wGame && wGame.refills > 0], ['Stop for the LV if it turns up', wGame && wGame.lvOk === true]];
+  const L = [];
+  if (shift.camp) L.push(['Brekkie and paperwork at camp', shift.chap >= 1 || state === 'ute' || state === 'drive']);
+  L.push(['Load at least 40 t at the ROM', shift.loaded || ore() >= MIN_ORE], ['Load only the grade you are told', shift.loaded && shift.wrong === 0 && rom.wrong === 0],
+    ['Stop for the train at the crossing', shift.trainOk], ['Tip all four bins at the Skyway', shift.tipped], ['Run back to the ROM', chapReached >= 4 && shift.chap >= 4], ['Change over at a parking bay', state === 'shiftend']);
+  return L;
+}
+function drawClipboard() {
+  rect(0, 0, W, H, 'rgba(4,10,18,.72)');
+  const x = 24, y = 70, w = W - 48, h = 580;
+  ctx.fillStyle = '#c69c6d'; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.fill();
+  ctx.fillStyle = '#f7f3e8'; ctx.beginPath(); ctx.roundRect(x + 12, y + 30, w - 24, h - 42, 6); ctx.fill();
+  rect(W / 2 - 50, y - 8, 100, 30, '#8f969c'); rect(W / 2 - 34, y - 2, 68, 14, '#5e666c');   // the clip
+  ctx.fillStyle = '#1b2733'; ctx.font = 'bold 20px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText(role === 'mech' ? 'MECHANIC: TODAY' : state === 'water' ? 'WATER CART' : 'DRIVER: THIS SHIFT', x + 28, y + 62);
+  ctx.font = 'bold 13px system-ui,sans-serif'; ctx.fillStyle = '#2f7a46'; ctx.fillText(`Safety points: ${shift.safe}`, x + 28, y + 84);
+  const sb = [W - 150, 150, 120, 36]; rect(sb[0], sb[1], sb[2], sb[3], SND.on ? '#2f7a46' : '#8a3a3a'); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(SND.on ? '🔊 Sound on' : '🔇 Sound off', sb[0] + sb[2] / 2, sb[1] + 23);
+  let yy = y + 120;
+  if (role === 'driver' && state !== 'water') {   // the shift timeline
+    const n = CHAPTERS.length, x0 = x + 44, x1 = x + w - 44;
+    ctx.strokeStyle = '#b5ab98'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+    CHAPTERS.forEach((c, i) => { const cx = x0 + (x1 - x0) * i / (n - 1), on = i === shift.chap, done = i < shift.chap || (i <= shift.chap && state === 'shiftend');
+      ctx.fillStyle = on ? '#ff7a1a' : done ? '#2f7a46' : '#d7cfbf'; ctx.beginPath(); ctx.arc(cx, yy, on ? 11 : 8, 0, 7); ctx.fill();
+      ctx.fillStyle = '#1b2733'; ctx.font = `${on ? 'bold ' : ''}10px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.fillText(c.t.split(' ').slice(-1)[0], cx, yy + 26); });
+    yy += 52;
+  }
+  ctx.textAlign = 'left';
+  for (const [t, done] of shiftTasks()) {
+    ctx.strokeStyle = '#1b2733'; ctx.lineWidth = 2; ctx.strokeRect(x + 30, yy - 14, 18, 18);
+    if (done) { ctx.strokeStyle = '#2f7a46'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(x + 33, yy - 5); ctx.lineTo(x + 38, yy + 1); ctx.lineTo(x + 47, yy - 13); ctx.stroke(); }
+    ctx.fillStyle = done ? '#55606a' : '#1b2733'; ctx.font = '15px system-ui,sans-serif'; ctx.fillText(t, x + 58, yy); yy += 34;
+  }
+  const k = helpKind(state);
+  if (k && HELP[k]) { yy += 6; ctx.fillStyle = '#1b2733'; ctx.font = 'bold 14px system-ui,sans-serif'; ctx.fillText('CONTROLS', x + 30, yy); yy += 22;
+    for (const [a, kb, tc] of HELP[k][1]) { if (yy > y + h - 40) break; ctx.font = '13px system-ui,sans-serif'; ctx.fillStyle = '#55606a'; ctx.fillText(a, x + 30, yy); ctx.textAlign = 'right'; ctx.fillStyle = '#1b2733'; ctx.fillText(isTouch ? tc : kb, x + w - 30, yy); ctx.textAlign = 'left'; yy += 20; } }
+  ctx.textAlign = 'center'; ctx.fillStyle = '#55606a'; ctx.font = '13px system-ui,sans-serif'; ctx.fillText(isTouch ? 'Tap anywhere to close' : 'Tab or any key to close · M sound', W / 2, y + h - 22);
+}
+function drawHelpCard() {
+  const [title, rows] = HELP[helpCard.k];
+  rect(0, 0, W, H, 'rgba(4,10,18,.6)');
+  const h = 120 + rows.length * 38, y = (H - h) / 2;
+  ctx.fillStyle = 'rgba(12,24,38,.97)'; ctx.beginPath(); ctx.roundRect(30, y, W - 60, h, 14); ctx.fill(); rect(30, y + 14, 5, h - 28, '#ff7a1a');
+  text(title.toUpperCase(), W / 2, y + 40, 20, '#ffe568');
+  rows.forEach(([a, kb, tc], i) => { const yy = y + 80 + i * 38; text(a, 56, yy, 15, '#c8d2dc', 'left'); text(isTouch ? tc : kb, W - 56, yy, 15, '#fff', 'right'); });
+  text(isTouch ? 'Tap to start · 📋 for your clipboard' : 'Press any key to start · Tab for your clipboard', W / 2, y + h - 22, 12, '#ffd23a');
+}
+function drawOverlays(dt) {
+  if (playing() && !helpCard && !clip) {   // the clipboard tab on the left edge
+    ctx.fillStyle = 'rgba(12,24,38,.85)'; ctx.beginPath(); ctx.roundRect(CLIP_BTN[0] - 8, CLIP_BTN[1], CLIP_BTN[2] + 8, CLIP_BTN[3], 8); ctx.fill(); text('📋', CLIP_BTN[0] + 17, CLIP_BTN[1] + 29, 18, '#fff');
+  }
+  if (safetyToast && playing() && (safetyToast.t -= dt) > 0) { const a = Math.min(1, safetyToast.t); ctx.globalAlpha = a; ctx.fillStyle = safetyToast.good ? 'rgba(30,110,60,.95)' : 'rgba(150,40,30,.95)'; ctx.font = 'bold 15px system-ui,sans-serif';
+    const w2 = ctx.measureText(safetyToast.txt).width + 30; ctx.beginPath(); ctx.roundRect((W - w2) / 2, H - 236, w2, 32, 16); ctx.fill(); text(safetyToast.txt, W / 2, H - 214, 15, '#fff'); ctx.globalAlpha = 1; }
+  if (clip) drawClipboard(); else if (helpCard) drawHelpCard();
+}
+// ---------- end of the driver's shift: summary card with stars, then on to the ute ----------
+let shiftSum = null;
+function driverStars() {
+  const s = [tons >= 140, shift.wrong === 0 && tons > 0, shift.safe >= 10 && hp >= 60];
+  return { s, n: s.filter(Boolean).length };
+}
+function drawShiftEnd() {
+  rect(0, 0, W, H, '#142536'); const { s, n } = driverStars();
+  text('END OF SHIFT', W / 2, 120, 34, '#ffe568'); text(`${playerName}: Truck Driver · ${D().n}`, W / 2, 152, 15, '#fff');
+  text('★'.repeat(n) + '☆'.repeat(3 - n), W / 2, 214, 46, '#ffd23a');
+  const rows = [[`Tonnes hauled: ${tons} t`, s[0], '140 t or more'], [`Wrong-grade loads: ${shift.wrong * BUCKET} t`, s[1], 'None'], [`Safety points: ${shift.safe} · rig ${Math.round(hp)}%`, s[2], '10+ and the rig in good nick']];
+  rows.forEach(([t, ok, goal], i) => { const y = 268 + i * 62; rect(40, y - 24, W - 80, 50, 'rgba(255,255,255,.06)'); text(ok ? '★' : '☆', 64, y + 8, 22, '#ffd23a'); text(t, 92, y, 16, '#fff', 'left'); text('Goal: ' + goal, 92, y + 18, 12, '#9fb0c0', 'left'); });
+  let y = 470; text('SAFETY', W / 2, y, 14, '#9fb0c0');
+  shift.log.slice(-5).forEach(([pts, why], i) => text(`${pts > 0 ? '+' : ''}${pts}  ${why}`, W / 2, y + 24 + i * 20, 13, pts > 0 ? '#7fdf7f' : '#ff8a7a'));
+  if (!shift.log.length) text('Nothing logged this shift', W / 2, y + 24, 13, '#9fb0c0');
+  text(`Score: ${score}`, W / 2, 618, 20, '#ffe568');
+  text(isTouch ? 'Tap to head back to camp' : 'Space: head back to camp', W / 2, 668, 16, '#fff');
+}
+// ---------- the mechanic's day: a score for the scoreboard ----------
+let mechScore = null;
+function finishMechDay() {
+  if (mechScore) return;
+  const mins = (performance.now() - (shift.t0 || performance.now())) / 60000;
+  const sc = Math.max(100, Math.round(1000 + shift.safe * 15 - Math.max(0, mins - 12) * 20));
+  mechScore = { score: sc, mins, stars: sc >= 1150 ? 3 : sc >= 950 ? 2 : 1 };
+  if (!runId) { runId = Date.now(); board.push({ id: runId, name: playerName || 'Player', done: true, diff, score: sc, tons: 0, pct: 100, role: 'mech', safe: shift.safe }); board.sort(rank); board = board.slice(0, 50); try { localStorage.oreBoard = JSON.stringify(board); } catch (e) {} }
 }
 
 function render() {
@@ -6598,12 +6838,13 @@ function render() {
   else if (state === 'mechend') (mStage >= 14 ? drawMechDayEnd : drawMechEnd)();
   else if (state === 'walk' || state === 'walkend') drawWalk();
   else if (state === 'menu') drawMenu();
+  else if (state === 'shiftend') drawShiftEnd();
 else {
     if (state === 'skyway') drawSkyway();
     else {
       drawWorld3D(qx);
     }
-    rect(0, 0, W, 64, '#000a');
+    hudBar(64);
     text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
     text('ORE', 10, 48, 12, '#fff', 'left'); bar(40, 36, 134, 16, ore() / MAX_ORE, '#c86');
     if (state === 'drive' || state === 'over') {
@@ -6631,20 +6872,22 @@ else {
         text(`${D().n}: ${tons} t hauled in ${trip} trips, ${Math.round(time)}s`, W / 2, 205, 15);
         text(`Score: ${score}`, W / 2, 238, 24, '#ff6');
       }
-      drawBoard(285, 10, runId);
+      drawBoard(290, 10, runId, 'driver');
+      text(`Safety points: ${shift.safe}`, W / 2, 262, 15, shift.safe >= 0 ? '#7fdf7f' : '#ff8a7a');
       text(isTouch ? 'Tap to play again' : 'Press SPACE to play again', W / 2, 590, 18, '#ff6');
     }
   }
+  drawOverlays(frameDt);
   ctx.restore();
 }
 
 let last = performance.now();
 function placeName() {
-  const show = state === 'menu' && menuPage === 'home' && (!playerName || nameEdit), r = cv.getBoundingClientRect(), k = r.width / W;
+  const show = state === 'menu' && menuPage === 'home' && (!playerName || nameEdit), r = cv.getBoundingClientRect(), k = r.width / W, ky = r.height / H;
   nameIn.style.display = show ? 'block' : 'none';
   nameIn.style.borderColor = show && nameErrT > 0 ? '#f44' : '#fff';
   if (!show) return;
-  const [nx, ny, nw, nh] = nameR(); Object.assign(nameIn.style, { left: r.left + nx * k + 'px', top: r.top + ny * k + 'px', width: nw * k + 'px', height: nh * k + 'px', fontSize: 18 * k + 'px' });
+  const [nx, ny, nw, nh] = nameR(); Object.assign(nameIn.style, { left: r.left + nx * k + 'px', top: r.top + ny * ky + 'px', width: nw * k + 'px', height: nh * ky + 'px', fontSize: 18 * Math.min(k, ky) + 'px' });
 }
 let slowT = 0;
 
@@ -6678,7 +6921,7 @@ function loop(now) {
   last = now;
   // sustained slow frames: halve the backing-store resolution (4x fewer pixels) so the scroll stays smooth
   if (SS > 1 && state !== 'menu') { slowT = raw > .03 ? slowT + raw : Math.max(0, slowT - raw * 2); if (slowT > 1.5) { SS = 1; cv.width = W; cv.height = H; ctx.setTransform(1, 0, 0, 1, 0, 0); atmoCv = null; slowT = 0; } }
-  try { update(dt); render(); placeName(); } catch (e) { console.error(e); }
+  try { frameDt = dt; update(dt); render(); placeName(); } catch (e) { console.error(e); }
 }
 romReset();   // the ROM state exists from the start (the first reset() above ran before the ROM module was defined)
 requestAnimationFrame(loop);
