@@ -587,13 +587,13 @@ function drawService() {
   const up = k === 12 && svc.x > 440, fy = up ? G : PB, mx = svc.x, f = svc.face, reach = job && Math.abs(svc.x - job.x) < 16 && !job.auto && svcHold();
   if (!up && job && Math.abs(svc.x - job.x) < 40) { ctx.fillStyle = 'rgba(255,250,200,.14)'; ctx.beginPath(); ctx.moveTo(mx, fy - 92); ctx.lineTo(job.x - 18, 290); ctx.lineTo(job.x + 18, 290); ctx.fill(); }   // head torch
   rect(mx - 7, fy - 5, 7, 5, '#1d1f22'); rect(mx + 1, fy - 5, 7, 5, '#1d1f22');                                    // boots
-  rect(mx - 6, fy - 46, 5, 42, '#2a3b5c'); rect(mx + 1, fy - 46, 5, 42, '#2a3b5c');                                // trousers
-  rect(mx - 9, fy - 84, 18, 40, '#ff8a1c'); rect(mx - 9, fy - 66, 18, 3, '#e4e8e9'); rect(mx - 9, fy - 56, 18, 3, '#e4e8e9');   // hi-vis with tape
+  rect(mx - 6, fy - 46, 5, 42, WS_DENIM); rect(mx + 1, fy - 46, 5, 42, WS_DENIM); rect(mx - 6, fy - 20, 12, 3, WS_TAPE);   // jeans, tape below the knee
+  rect(mx - 9, fy - 84, 18, 40, WS_HV); rect(mx - 9, fy - 66, 18, 3, WS_TAPE); rect(mx - 9, fy - 56, 18, 3, WS_TAPE);   // yellow hi-vis, double tape
   circ(mx, fy - 94, 9, '#d8a27b'); rect(mx - 10, fy - 104, 20, 6, '#1d5fb4'); rect(mx + f * 3 - 4, fy - 97, 8, 3, '#2b2f33');   // head, cap, safety glasses
   circ(mx + f * 2, fy - 101, 2, '#fff6c0');                                                                         // head torch
   const tool = job && job.tool;
   if (reach && !up) {
-    const hx = mx + f * 3, hy = fy - 134; rect(hx - 2, hy + 4, 4, 50, '#ff8a1c'); rect(hx - 3, hy, 6, 6, '#2f7a46');   // arm up, green glove
+    const hx = mx + f * 3, hy = fy - 134; rect(hx - 2, hy + 4, 4, 50, WS_HV); rect(hx - 3, hy, 6, 6, '#2f7a46');   // arm up, green glove
     if (tool === 'spanner') { rect(hx - 1, hy - 14, 2, 14, '#c9ced2'); rect(hx - 4, hy - 16, 8, 3, '#c9ced2'); }
     if (tool === 'wrench') { rect(hx - 8, hy - 6, 16, 3, '#c62828'); }
     if (tool === 'grease') { rect(hx - 3, hy - 4, 6, 22, '#c62828'); rect(hx - 1, hy - 12, 2, 8, '#2b2f33'); }
@@ -1354,7 +1354,7 @@ function drawWorkshopFoot() {
   const LOOKS = { 'MECHANIC': { hair: 'short', hairCol: '#3a2a20', beard: 1 }, 'TYRE FITTER': { hair: 'cap', cap: '#e45c37', hairCol: '#2e2018' }, 'MULLET MECHANIC': { hair: 'mullet', hairCol: '#8a5a2b' },
     'AUTO SPARKY': { hair: 'hardhat', cap: '#f4f4f4', hairCol: '#2a1c14', skin: '#c58a62' }, 'LEADING HAND': { hair: 'bald', hairCol: '#5a4030', beard: 1, skin: '#8a5a3c' }, 'STORE PERSON': { hair: 'ponytail', hairCol: '#2a1c14' } };
   const human = m => {
-    const d = (m.x - CX) * fx + (m.y - CY) * fy, o = { ...(LOOKS[m.role] || { hair: 'short', hairCol: '#49332b' }), shirt: m.col, dir: m.heading, walk: !!m.walk, ph: (m.phase || 0) * 8, t: m.phase || 0,
+    const d = (m.x - CX) * fx + (m.y - CY) * fy, o = { ...(LOOKS[m.role] || { hair: 'short', hairCol: '#49332b' }), shirt: m.col, ws: m.role !== 'YOU' || role === 'mech', dir: m.heading, walk: !!m.walk, ph: (m.phase || 0) * 8, t: m.phase || 0,
       scale: 1.27, z: m.z || 0, pose: m.reach ? 'reach' : undefined, lod: d > 230 ? 'mid' : 'hi' };
     const keep = [wCam, WF, WCY, WCH, wCos, wSin];
     wCam = { x: CX, y: CY, hx: fx, hy: fy, rx, ry }; WF = focus; WCY = horizon; WCH = eye; wCos = cp; wSin = sp;
@@ -2723,7 +2723,7 @@ function cart3(vx, vy, col, ang) {
   for (const dx of [-6, 6]) { const p = rt(dx, 10); prism(p[0], p[1], 1.4, 1.4, 6.5, 24, '#2b2e32', ang); }
   const bar = rt(0, 10); prism(bar[0], bar[1], 14, 1.6, 24, 26, '#2b2e32', ang);
 }
-// the fitter: navy overalls, hi-vis vest, white hard hat; carries a red toolbox out, kneels and works with a spanner
+// the fitter: yellow hi-vis shirt with double tape, denim jeans taped below the knee, white hard hat; carries a red toolbox out, kneels and works with a spanner
 // smooth shaded limbs and a rounded head instead of boxes, so he reads as a person rather than a block figure
 function limb(a, b, r, col) {
   const [x1, y1] = P(a[0], a[1], a[2]), [x2, y2] = P(b[0], b[1], b[2]), w = 2 * r * sc(a[1]);
@@ -2741,13 +2741,14 @@ function ball(x, y, z, r, col) {
 }
 function person3(m) {
   const { x, y, dir } = m, sw = m.walk ? Math.sin(m.walk) : 0, lean = m.work ? 4 : 0, dz = m.work ? -5 : 0;
-  const navy = '#24385e', skin = '#d9a07a', skinD = '#c68c68', hair = '#4a3425', boot = '#34261b';
+  const navy = WS_HV, denim = WS_DENIM, skin = '#d9a07a', skinD = '#c68c68', hair = '#4a3425', boot = '#34261b';   // navy: his sleeves and body, now hi-vis yellow
   const tx = x + dir * lean * .6, hx = x + dir * lean, hip = 14 + dz * .5;
   flatEllipse(x + 2, y + 1, 11, 3.6, 'rgba(0,0,0,.14)'); flatEllipse(x + 2, y + 1, 8, 2.6, 'rgba(0,0,0,.22)');
   for (const s of [-1, 1]) {   // long legs: thigh, shin, boot with a sole
     const ly = y + s * sw * 3, kz = 7.5 + dz * .5 + (s * sw > 0 ? 1.2 : 0), lx = x + s * 1.8;
-    limb([lx, y, hip], [lx, y + (ly - y) * .5 + (m.work ? 1.5 : 0), kz], 2.2, navy);
-    limb([lx, y + (ly - y) * .5, kz], [lx, ly, 3.2], 1.7, navy);
+    limb([lx, y, hip], [lx, y + (ly - y) * .5 + (m.work ? 1.5 : 0), kz], 2.2, denim);
+    limb([lx, y + (ly - y) * .5, kz], [lx, ly, 3.2], 1.7, denim);
+    { const u = .3, a = [lx, y + (ly - y) * .5, kz], b = [lx, ly, 3.2], k = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u]; limb([k[0], k[1], k[2] + .35], [k[0], k[1], k[2] - .35], 1.85, WS_TAPE); }   // tape below the knee
     limb([lx, ly, 2.6], [lx + dir * 2.4, ly, 1.6], 1.9, boot);
     limb([lx, ly, .9], [lx + dir * 2.8, ly, .9], 1.9, '#15100c');
   }
@@ -2755,7 +2756,7 @@ function person3(m) {
   limb([tx, y, hip - .5], [tx, y, 19.5 + dz], 3.2, navy);   // waist and belly
   limb([tx, y, 19 + dz], [tx, y, 23 + dz], 3.7, navy);   // chest
   limb([tx - 3.6, y, 23.2 + dz], [tx + 3.6, y, 23.2 + dz], 1.7, navy);   // shoulders
-  limb([tx, y + .2, hip + .5], [tx, y + .2, 23.2 + dz], 3.5, '#f2d400');   // hi-vis vest
+
   limb([tx - 3.4, y + .5, 18.6 + dz], [tx + 3.4, y + .5, 18.6 + dz], .8, '#dfe3e5');   // reflective stripes
   limb([tx - 3.4, y + .5, 15.4 + dz], [tx + 3.4, y + .5, 15.4 + dz], .8, '#dfe3e5');
   limb([tx - 3.2, y + .5, hip - .2], [tx + 3.2, y + .5, hip - .2], .9, '#3a2a1a'); ball(tx + dir * 1.2, y + .7, hip - .2, 1, '#c9a33a');
@@ -2791,12 +2792,13 @@ function ladderGuy(list, vx, vy, bx, by) {
     shadow(vx, vy, 10, 8);
     for (const s of [-4, 4]) box(vx + s, vy, 1.6, 1.6, 0, topZ, '#c9a46a');
     for (let r = 4; r < topZ; r += 8) box(vx, vy, 8, 1.2, r, r + 1.4, '#a9854e');
-    box(vx - 2, vy + 2, 3.2, 4, z - 18, z, '#1b2a4a'); box(vx + 2, vy + 2, 3.2, 4, z - 18, z, '#1b2a4a');   // legs on the rungs
+    box(vx - 2, vy + 2, 3.2, 4, z - 18, z, WS_DENIM); box(vx + 2, vy + 2, 3.2, 4, z - 18, z, WS_DENIM);   // jeans on the rungs
+    box(vx - 2, vy + 2, 3.4, 4.2, z - 13, z - 11.8, WS_TAPE); box(vx + 2, vy + 2, 3.4, 4.2, z - 13, z - 11.8, WS_TAPE);   // tape below the knee
     box(vx - 2, vy + 3, 3.8, 5.6, z - 20, z - 17.4, '#2a1d14'); box(vx + 2, vy + 3, 3.8, 5.6, z - 20, z - 17.4, '#2a1d14');
-    box(vx, vy + 2, 9, 5.2, z, z + 11, '#1b2a4a'); box(vx, vy + 2, 9.6, 5.8, z + 3, z + 11, '#f2e600'); box(vx, vy + 2, 9.9, 6, z + 6, z + 7.4, '#e6e6e6');
-    box(vx - 5.4, vy + 2, 2.6, 3, z + 9, z + 20, '#1b2a4a'); box(vx - 5.4, vy + 2, 2.6, 2.8, z + 20, z + 22, '#d29a73');   // free hand holds the rail
+    box(vx, vy + 2, 9, 5.2, z, z + 3, WS_DENIM); box(vx, vy + 2, 9.6, 5.8, z + 3, z + 11, WS_HV); box(vx, vy + 2, 9.9, 6, z + 5, z + 6.2, WS_TAPE); box(vx, vy + 2, 9.9, 6, z + 8, z + 9.2, WS_TAPE);
+    box(vx - 5.4, vy + 2, 2.6, 3, z + 9, z + 20, WS_HV); box(vx - 5.4, vy + 2, 2.6, 2.8, z + 20, z + 22, '#d29a73');   // free hand holds the rail
     const wob = ph > 2 && ph < 9 ? Math.sin(t * 7) * 1.2 : 0;
-    for (let k = 1; k <= 5; k++) { const u = k / 5, ax = vx + 5.4 + (bx - vx - 5.4) * u, ay = vy + 2 + (by - vy - 2) * u, az = z + 11 + (bz - z - 11 + wob) * u; box(ax, ay, 2.6, 2.6, az - 1, az + 1.4, k > 3 ? '#d29a73' : '#1b2a4a'); }   // working arm reaching out to the beacon
+    for (let k = 1; k <= 5; k++) { const u = k / 5, ax = vx + 5.4 + (bx - vx - 5.4) * u, ay = vy + 2 + (by - vy - 2) * u, az = z + 11 + (bz - z - 11 + wob) * u; box(ax, ay, 2.6, 2.6, az - 1, az + 1.4, k > 3 ? '#d29a73' : WS_HV); }   // working arm reaching out to the beacon
     box(vx, vy + 2, 3.2, 3.2, z + 11, z + 12.6, '#c98f66'); box(vx, vy + 2, 5.2, 5.2, z + 12, z + 17, '#d29a73');
     box(vx, vy + 2, 5.4, 5.4, z + 14.6, z + 16.6, '#3b2a1c'); box(vx, vy + 2, 6.6, 6.6, z + 16.6, z + 19.8, '#f4f4f4'); box(vx, vy + 3, 7.2, 8, z + 16.6, z + 17.8, '#f4f4f4');
     if (ph > 5 && ph < 9) box(bx + 1, by, 4, 4, bz + 1, bz + 5, '#ffb030');   // new beacon in his hand
@@ -3550,7 +3552,7 @@ function drawWsOffice() {
     wBox(-74, -18, 5, 14, 15, 15.7, '#25292e', '#3a3f44'); wBox(-74, -6, 4, 3, 15, 15.6, '#25292e', '#3a3f44');   // keyboard, mouse
     wBox(-67, -32, 6, 8, 15, 15.6, '#15171a', '#25292e'); wBox(-66, 4, 7, 9, 15, 15.4, '#f4f4f2', '#ffffff');      // phone, paperwork
     wBox(-68, -8, 7, 2.4, 15, 16, '#d8d000', '#efe62a');                                                           // safety glasses
-    chair(-88, -14, 0, { shirt: '#e6e21a', stripe: '#e4e8e9', pants: '#2a3b5c', hair: 'short', hairCol: '#3a2a20', skin: '#e2ab86', beard: 1 });
+    chair(-88, -14, 0, { ws: 1, hair: 'short', hairCol: '#3a2a20', skin: '#e2ab86', beard: 1 });
   });
   add(-100, 46, () => { wBox(-100, 46, 14, 18, 0, 26, '#8d959b', '#a3aab0'); for (const z of [7, 14, 21]) X(-92.9, 40, 52, z, z + .6, '#5e666c'); });   // filing cabinet
   add(WSO.x0 + 2, 24, () => {   // the CCTV screen on his left wall, six camera tiles
@@ -3560,8 +3562,8 @@ function drawWsOffice() {
   }, pre);
   // two double U desks butted together: each a long back run with a return at both ends and two workstations. Parts guy and an
   // empty station on the left desk, an empty station and the supervisor on the right
-  const LOOK = { parts: [{ shirt: '#ff7a1a', stripe: '#e4e8e9', pants: '#2b2b2b', hair: 'cap', cap: '#2f2f33', hairCol: '#2e2018', skin: '#c58a62' }, false],
-    boss: [{ shirt: '#e7e900', stripe: '#e4e8e9', pants: '#293b56', hair: 'mullet', hairCol: '#b8915e', skin: '#e2ab86' }, true] };   // the supervisor: light brown mullet and a mo
+  const LOOK = { parts: [{ ws: 1, hair: 'cap', cap: '#2f2f33', hairCol: '#2e2018', skin: '#c58a62' }, false],
+    boss: [{ ws: 1, hair: 'mullet', hairCol: '#b8915e', skin: '#e2ab86' }, true] };   // the supervisor: light brown mullet and a mo
   WSO_DESKS.forEach((c, d) => add(c, -30, () => {
     for (const [x, y] of [[c - 39, -47], [c + 39, -47], [c - 39, -9], [c + 39, -9]]) wBox(x, y, 1.6, 1.6, 0, 13, '#9a9ea2', '#9a9ea2');
     wBox(c, -42, 80, 12, 13, 15, '#b9925f', '#d8b07a'); for (const sx of [-1, 1]) wBox(c + sx * 35, -22, 10, 28, 13, 15, '#b9925f', '#d8b07a');
@@ -4250,7 +4252,10 @@ let ovalSink=null;   // when set, campOval queues its faces so a whole figure ca
 // o (optional, for camp folk): dir, walk, ph (stride phase), t (own clock), scale, lod ('low' far away),
 // shirt, stripe (reflective tape, null for none), pants, shorts, skin, shoes, hair ('short' | 'buzz' | 'mullet' | 'long' |
 // 'ponytail' | 'bald' | 'cap' | 'hardhat'), hairCol, cap, beard, sunnies, pose ('drink' | 'dribble' | 'shoot' | 'bag' | 'pack'), can, bag
+// workshop uniform: yellow hi-vis shirt with double reflective tape, blue denim jeans with a single band of tape below the knee
+const WS_UNI = { shirt: '#ecdf12', stripe: '#dfe5e8', pants: '#3b5f93', knee: '#dfe5e8' }, WS_DENIM = '#3b5f93', WS_HV = '#ecdf12', WS_TAPE = '#dfe5e8';
 function campHuman(x,y,moustache=false,player=false,o={}) {
+  if (o.ws || (player && role === 'mech')) o = { ...o, ...WS_UNI };
   const a=o.dir!==undefined?o.dir:player?(state==='officeinside'?officeHeading:state==='kitcheninside'||state==='shopinside'||state==='wsoffice'||state==='shroom'?kit.dir:wp.dir):Math.PI/2, fx=Math.cos(a),fy=Math.sin(a),rx=-fy,ry=fx;
   const keysWalk=keys.KeyW||keys.KeyS||keys.ArrowUp||keys.ArrowDown||keys.TG||keys.TB;
   const walking=player?keysWalk:!!o.walk, ph=player?wT*10:(o.ph||0), t=o.t!==undefined?o.t:wT;
@@ -4267,10 +4272,10 @@ function campHuman(x,y,moustache=false,player=false,o={}) {
   const hairCol=o.hairCol||'#49332b', hair=o.hair||'short', shoes=o.shoes||'#202329', pose=o.pose;
   // legs: boots, shins and thighs (bare shins in shorts)
   for(const side of [-1,1]){
-    if(sit){let p=point(side*2.7,6.6);O0(p[0],p[1],2,2.3,3.4,2.3,shoes);p=point(side*2.7,6);O0(p[0],p[1],7.4,2.1,2.2,4.3,o.shorts?skin:pants);
+    if(sit){let p=point(side*2.7,6.6);O0(p[0],p[1],2,2.3,3.4,2.3,shoes);p=point(side*2.7,6);O0(p[0],p[1],7.4,2.1,2.2,4.3,o.shorts?skin:pants);if(o.knee)O0(p[0],p[1],6.4,2.4,2.5,1,o.knee);
       p=point(side*2.7,3);O0(p[0],p[1],13.4,2.6,4.4,2.3,o.shorts?o.shorts:pants);continue;}
     let p=point(side*2.6,side*moving);O(p[0],p[1],2,2.3,3.4,2.3,shoes);
-    p=point(side*2.7,side*moving*.6);O(p[0],p[1],7,2.1,2.2,4.2,o.shorts?skin:pants);
+    p=point(side*2.7,side*moving*.6);O(p[0],p[1],7,2.1,2.2,4.2,o.shorts?skin:pants);if(o.knee)O(p[0],p[1],6.2,2.4,2.5,1,o.knee);
     p=point(side*2.7,side*moving*.3);O(p[0],p[1],13,2.6,2.6,4.2,o.shorts?o.shorts:pants);
   }
   // arms by pose
@@ -4287,7 +4292,7 @@ function campHuman(x,y,moustache=false,player=false,o={}) {
   }
   // torso, tape, neck, head
   O(x,y,18.5,6.1,4.3,8,shirt);
-  if(stripe){O(x,y,16.5,6.25,4.45,1,stripe);O(x,y,22,6,4.4,1,stripe);}
+  if(stripe){const k=o.knee?1.3:1;O(x,y,o.knee?15.6:16.5,6.25,4.45,k,stripe);O(x,y,o.knee?20.8:22,6.1,4.45,k,stripe);}   // two bands of tape (wider on the workshop uniform)
   if(pose==='pack'){const p=point(0,-4.2);O(p[0],p[1],21,4.6,2.4,5.2,o.bag||'#3b4d2e');}
   O(x,y,26,2.1,2.2,2.5,shade(skin,.92));
   O(x,y,31,4.3,4.6,5.6,skin);
@@ -5086,9 +5091,9 @@ function drawSkyway() {
   if (tug) {   // you at the control pedestal on the safe side, beside the trailer you're working on
     const py = ttCam + 52, px = X + 34;   // about 1.8 m tall at this scene's scale, on the camera side ahead of the trailer, clear of where the bin swings
     box(px - 5, py, 5.5, .8, .8, 5.5, '#5e6c77', '#7a8892'); box(px - 5, py, 12, 2, 1.6, 1.4, '#e8c21c', '#f2d24a');            // pedestal and its button box
-    box(px, py - 1, 4, .7, .7, 4, '#2a3b5c'); box(px, py + 1, 4, .7, .7, 4, '#2a3b5c');                                       // legs
-    box(px, py, 11.5, 1, 1.9, 3.5, '#ff8a1c', '#ff8a1c'); box(px, py, 11, 1.05, 1.95, .35, '#e4e8e9');                       // hi-vis
-    box(px - 2, py - 1.6, 12.6, 2, .45, .45, '#ff8a1c'); box(px - 2, py + 1.6, 12.6, 2, .45, .45, '#ff8a1c');                   // arms out to the buttons
+    box(px, py - 1, 4, .7, .7, 4, WS_DENIM); box(px, py + 1, 4, .7, .7, 4, WS_DENIM); box(px, py, 3.2, .78, 2.8, .3, WS_TAPE);   // jeans, tape below the knee
+    box(px, py, 11.5, 1, 1.9, 3.5, WS_HV, WS_HV); box(px, py, 11, 1.05, 1.95, .3, WS_TAPE); box(px, py, 12.2, 1.05, 1.95, .3, WS_TAPE);   // yellow hi-vis, double tape
+    box(px - 2, py - 1.6, 12.6, 2, .45, .45, WS_HV); box(px - 2, py + 1.6, 12.6, 2, .45, .45, WS_HV);                   // arms out to the buttons
     box(px, py, 16.3, 1.1, 1.1, 1.3, '#d8a27b'); box(px, py, 17.9, 1.25, 1.25, .4, '#1d5fb4');                                 // head, cap
     Q.sort((a2, b2) => b2.d - a2.d).forEach(f => face(f.pts, f.col)); Q.length = 0;
   }
@@ -5494,9 +5499,10 @@ function tyreDisc(x, y, r, spin = 0) {
 function drawMech(m) {
   const t = performance.now() / 1000, sw = m.walk ? Math.sin(t * 10 + m.ph) : 0, reach = m.work ? 7 + Math.sin(t * 16 + m.ph) * 2 : 3 + sw * 1.5;
   ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.a); ctx.scale(1.3, 1.3);
-  rect(-4, -1 + sw * 3, 3, 5, '#1b2a4a'); rect(1, -1 - sw * 3, 3, 5, '#1b2a4a');
-  ctx.fillStyle = '#f2e600'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#1b2a4a'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath();
+  rect(-4, -1 + sw * 3, 3, 5, WS_DENIM); rect(1, -1 - sw * 3, 3, 5, WS_DENIM);
+  ctx.fillStyle = WS_HV; ctx.beginPath(); ctx.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = WS_TAPE; ctx.fillRect(-5.6, -1.6, 11.2, .9); ctx.fillRect(-5.6, .8, 11.2, .9);   // double tape across the back
+  ctx.strokeStyle = WS_HV; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath();
   ctx.moveTo(-5, 0); ctx.lineTo(-4, -reach); ctx.moveTo(5, 0); ctx.lineTo(4, -reach * .9); ctx.stroke(); ctx.lineCap = 'butt';
   if (m.work) rect(-6, -reach - 5, 3, 7, '#b8bcc0');
   ctx.fillStyle = '#e0b090'; ctx.beginPath(); ctx.arc(0, -1, 3.4, 0, Math.PI * 2); ctx.fill();
