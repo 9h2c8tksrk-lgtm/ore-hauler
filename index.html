@@ -53,7 +53,7 @@ const CONT = [{ x: 734, y: 520, w: 46, h: 140, c: '#2f6f9f' }, { x: 826, y: 520,
 const SHELTER = { x: 780, y: 520, w: 46, h: 140 };   // arched shelter between them
 const LADDER = { x: 88, y: 1102 }, BEACON_AT = { x: 95, y: 1104, z: 48 };   // beside the second parked truck's cab; its left roof beacon is being swapped
 // four long transportable buildings round a square courtyard (a pinwheel, long sides facing across it); n is the face's outward normal, pointing into the yard
-const BLDG = [[235, 530, 80, 30, 0, 1], [285, 570, 30, 80, -1, 0], [195, 620, 80, 30, 0, -1], [195, 530, 30, 80, 1, 0]].map(([x, y, w, h, nx, ny]) => ({ x, y, w, h, nx, ny, c: '#cfd3d6' }));
+const BLDG = [[223, 500, 70, 28, 0, 1], [287, 548, 28, 70, -1, 0], [197, 610, 70, 28, 0, -1], [175, 520, 28, 70, 1, 0]].map(([x, y, w, h, nx, ny]) => ({ x, y, w, h, nx, ny, c: '#cfd3d6' }));   // 20-unit gaps between them
 // a point/size along a building's yard-facing wall: t = offset along the wall, returns the face centre
 const bldgFace = b => ({ px: b.nx > 0 ? b.x + b.w : b.nx < 0 ? b.x : b.x + b.w / 2, py: b.ny > 0 ? b.y + b.h : b.ny < 0 ? b.y : b.y + b.h / 2 });
 // rectangle hugging the yard-facing wall: along = offset on the wall, len along it, depth from the wall (positive goes into the yard, negative into the building)
@@ -1175,15 +1175,15 @@ const SH_DOORS = [{ y0: 150, y1: 186 }, { y0: 664, y1: 700 }];   // clear of the
 const shInDoor = (y, pad = 0) => SH_DOORS.some(d => y > d.y0 - pad && y < d.y1 + pad);
 const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { o.push([a, d.y0]); a = d.y1; } o.push([a, SH_D]); return o; };   // solid stretches of the Bay 1 wall
 const SH_OUT = { x0: -650, y0: -90, y1: SH_D + 300 };   // x0: out past the small car park to the truck lane beside the truck wash
-const SH_CARPARK = { x0: -540, x1: -404, y0: 236, y1: 470 }, SH_TRUCKLANE = { x0: -650, x1: -545 }, SH_WASH = { x0: -800, x1: -668, y0: 120, y1: 600 };   // behind (west of) the crib room
+const SH_CARPARK = { x0: -540, x1: -424, y0: 236, y1: 470 }, SH_TRUCKLANE = { x0: -650, x1: -545 }, SH_WASH = { x0: -800, x1: -668, y0: 120, y1: 600 };   // behind (west of) the crib room
 // SH_OUT   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
 // Four transportables in a pinwheel round a courtyard beside Bay 1, laid out like the yard's aerial map. Each has its door
 // on the courtyard side (face N/S/E/W); the crib room is the one you head for.
 const SH_BLDGS = [   // laid out on the editable courtyard map: four transportables closing in round a paved courtyard, every door opening onto it
-  { x0: -384, x1: -313, y0: 252, y1: 441, name: 'CRIB ROOM', face: 'E', col: '#1d5fb4' },
+  { x0: -404, x1: -333, y0: 252, y1: 441, name: 'CRIB ROOM', face: 'E', col: '#1d5fb4' },
   { x0: -140, x1: -69, y0: 254, y1: 443, name: 'WORKSHOP OFFICE', face: 'W', col: '#1d5fb4' },
-  { x0: -338, x1: -149, y0: 168, y1: 239, name: 'ABLUTIONS', face: 'S', col: '#2f7a46', doors: [{ off: .28, label: 'FEMALE' }, { off: -.28, label: 'MALE' }] },   // female end nearest the workshop
-  { x0: -346, x1: -157, y0: 456, y1: 527, name: 'OPERATIONS & HSEC', face: 'N', col: '#c62828' }]
+  { x0: -338, x1: -149, y0: 128, y1: 199, name: 'ABLUTIONS', face: 'S', col: '#2f7a46', doors: [{ off: .28, label: 'FEMALE' }, { off: -.28, label: 'MALE' }] },   // female end nearest the workshop
+  { x0: -346, x1: -157, y0: 496, y1: 567, name: 'OPERATIONS & HSEC', face: 'N', col: '#c62828' }]
 const shDoorPt = b => b.face === 'S' ? { x: (b.x0 + b.x1) / 2, y: b.y1 } : b.face === 'N' ? { x: (b.x0 + b.x1) / 2, y: b.y0 } : b.face === 'E' ? { x: b.x1, y: (b.y0 + b.y1) / 2 } : { x: b.x0, y: (b.y0 + b.y1) / 2 };
 const shDoorN = b => ({ x: b.face === 'E' ? 1 : b.face === 'W' ? -1 : 0, y: b.face === 'S' ? 1 : b.face === 'N' ? -1 : 0 });   // outward normal of the door face
 const shDoors = b => { const d = shDoorPt(b), ns = b.face === 'N' || b.face === 'S'; return (b.doors || [{ off: 0 }]).map(o => ({ x: d.x + (ns ? o.off * (b.x1 - b.x0) : 0), y: d.y + (ns ? 0 : o.off * (b.y1 - b.y0)), label: o.label })); };
@@ -1517,11 +1517,11 @@ function drawWorkshopFoot() {
     box(x1 + 1, y1 - 30, 1, 70, 14, '#1d5fb4', '#1d5fb4', 96); label(x1 + 2, y1 - 30, 100, 'TRUCK WASH', 7, '#fff');
   }, outside);
   add(SH_TANK.x, SH_TANK.y, () => vcyl(SH_TANK.x, SH_TANK.y, SH_TANK.r, 0, 64, '#5e7f5a', '#4e6b4b'), outside);   // rainwater tank
-  flat(-305, 247, -148, 448, .04, '#b7a58f');   // courtyard pavers, between all four doors
+  flat(-325, 207, -148, 488, .04, '#b7a58f');   // courtyard pavers, between all four doors
   const [pa1, pa2] = SH_DOORS.map(d => (d.y0 + d.y1) / 2);
   for (const [x0, y0, x1, y1] of [[-56, pa1 - 8, 0, pa1 + 8], [-56, pa2 - 8, 0, pa2 + 8], [-56, -60, -40, SH_D + 60],   // path from both PA doors, along the shed
     [-56, -60, SH_W, -44], [-56, SH_D + 44, SH_W, SH_D + 60],   // round from the open back and the big bay doors
-    [-148, 241, -40, 252], [-148, 444, -40, 455]])   // into the courtyard, either side of the workshop office
+    [-148, 222, -40, 233], [-148, 464, -40, 475]])   // into the courtyard, either side of the workshop office
     flat(x0, y0, x1, y1, .03, '#b39b80');
 
   // ----- inspection pit, as on site: yellow steel kerb with bolt holes, white lined walls with LED strip lights, checker-plate
@@ -3106,7 +3106,7 @@ function drawUteScreen() {
 // Layout traced from the aerial of Golden Eagle Village (world units = aerial pixels). Room blocks: A = west strips, C = second column,
 // B = middle column, D = the U block (open end to the car park), E = north-east wings. Car park sits beside the U block; the kitchen, wet mess
 // and courts run down the east side and the schedule office is tucked behind the kitchen.
-const CAMP_W = 1230, CAMP_H = 1800;   // widened east for the big car park behind the kitchen / dining room
+const CAMP_W = 1230, CAMP_H = 1800, CAMP_X0 = -200;   // widened east for the big car park behind the kitchen / dining room, and west so the room pods have room between them
 const CAMP_WINGS = [], CAMP_DOORS = [], CAMP_VERANDAS = [], campCount = {};
 function campDoors(L, x1, y1, x2, y2, n, nx, ny) {   // n doors evenly spaced along a wall segment; (nx, ny) points out into the walkway
   const len = Math.hypot(x2 - x1, y2 - y1);
@@ -3126,7 +3126,7 @@ function campWing(L, x, y, w, h, face, n, roof = 'AB'.includes(L) ? '#dccfa8' : 
 // Room blocks laid out like the camp map: U-shaped pods of three 4-room transportables (a wing down each side and one across
 // the bottom) round an open courtyard of dry grass and red dirt with a tree. Rooms are numbered like the real signs (B01, B09...).
 // A few bottom wings are a LAUNDRY, MEDIC or NPI instead of rooms.
-const POD_W = 135, POD_H = 110, POD_SIDE = 24, POD_BOT = 26, POD_COLS = [25, 185, 345, 495], POD_ROWS = [480, 620, 760, 900, 1040, 1180, 1320];
+const POD_W = 135, POD_H = 110, POD_SIDE = 24, POD_BOT = 26, POD_COLS = [-135, 60, 255, 450], POD_ROWS = [290, 460, 630, 800, 970, 1140, 1310];   // 60-unit lanes between the pods
 const POD_SPECIAL = { '1,0': 'LAUNDRY', '1,2': 'MEDIC', '1,3': 'NPI', '3,1': 'LAUNDRY', '3,3': 'LAUNDRY', '4,2': 'LAUNDRY', '6,1': 'LAUNDRY' };
 const CAMP_PODS = [], CAMP_LABELS = [];
 POD_ROWS.forEach((py, r) => {
@@ -3164,8 +3164,8 @@ const campOvalFull = (...a) => campOval(...a);
 // Pilbara bush round the outside of the camp: spinifex hummocks, mulga shrubs, snappy gums, termite mounds and red rocks
 const CAMP_BUSH = (() => { let sd = 7; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647, o = [];
   for (let i = 0; i < 2000; i++) {
-    const x = -650 + r() * (CAMP_W + 1300), y = -650 + r() * (CAMP_H + 1300), k = r(), sc = .7 + r() * .7, a = r() * 6.28;
-    if (x > -45 && x < CAMP_W + 45 && y > -45 && y < CAMP_H + 45) continue;
+    const x = CAMP_X0 - 650 + r() * (CAMP_W - CAMP_X0 + 1300), y = -650 + r() * (CAMP_H + 1300), k = r(), sc = .7 + r() * .7, a = r() * 6.28;
+    if (x > CAMP_X0 - 45 && x < CAMP_W + 45 && y > -45 && y < CAMP_H + 45) continue;
     o.push({ x, y, t: k < .58 ? 0 : k < .76 ? 1 : k < .86 ? 2 : k < .93 ? 3 : 4, s: sc, a });
   }
   return o; })();
@@ -3249,7 +3249,7 @@ const CAMP_SOLID = [...CAMP_TREES.map(([x, y]) => ({ x: x - 3, y: y - 3, w: 6, h
   { x: 755, y: 1097, w: 120, h: 6 }, { x: 770, y: 1103, w: 90, h: 11 }, ...MESS_POSTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 })), { x: 718, y: 1036, w: 12, h: 7 }, { x: 744, y: 1060, w: 7, h: 14 },
   ...MESS_SMALL.map(([x, y]) => ({ x: x - 16, y: y - 16, w: 32, h: 32 })), { x: MESS_BIG.x - 16, y: MESS_BIG.y - MESS_BIG.len / 2 - 2, w: 32, h: MESS_BIG.len + 4 },
   ...BP_UTES.map(u => ({ x: u.x - 32, y: u.y - 13, w: 64, h: 26 })), ...BP_LIGHTS.map(([x, y]) => ({ x: x - 2, y: y - 2, w: 4, h: 4 }))];
-const campHit = (x, y) => x < 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
+const campHit = (x, y) => x < CAMP_X0 + 8 || x > CAMP_W - 8 || y < 8 || y > CAMP_H - 8 || CAMP_SOLID.some(b => x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - 6 && y < b.y + b.h + 6);
 const atDoor = (d, p) => { const dx = p.x - d.x, dy = p.y - d.y, n = dx * d.nx + dy * d.ny, l = Math.abs(dx * d.ny - dy * d.nx); return n > 0 && n < 16 && l < d.hw; };
 let wp = { x: 0, y: 0, dir: 0, ph: 0 }, wStage = 0, wRoom = 0, wT = 0, wWrong = 0, wCamH = 0, wCam = null;
 let officeStep = 0, officeBreath = 0, officeLine = 0, officeTouchHeld = false, officePos = {x:0,y:0}, officeHeading = -Math.PI/2;
@@ -3393,7 +3393,7 @@ function drawShop() {
     wText('RECEPTION', 0, -35, 13, 5, '#fff');
   });
   add(0, -60, () => { wBox(-20, -61, 22, 4, 16, 36, '#7a5a3c', '#8a6a4a'); for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) wBox(-28 + c * 4, -58.8, 1, .4, 20 + r * 4, 22 + r * 4, '#d6b400', '#d6b400');   // key cabinet
-    wPoly([[8, -64.6, 22], [40, -64.6, 22], [40, -64.6, 36], [8, -64.6, 36]], '#c62828'); wText('GOLDEN EAGLE CAMP', 24, -64, 30, 4.5, '#fff'); });
+    wPoly([[8, -64.6, 22], [40, -64.6, 22], [40, -64.6, 36], [8, -64.6, 36]], '#c62828'); wText('CAMP', 24, -64, 30, 4.5, '#fff'); });
   // shelf units: lollies, chips, toiletries, each three shelves deep with coloured packets
   const SHELF = [[-6, 'LOLLIES', ['#e63946', '#f4a261', '#ffd166', '#06d6a0', '#8338ec', '#ff006e']], [18, 'CHIPS', ['#f2c200', '#2a9d8f', '#e76f51', '#264653', '#e9c46a', '#d62828']], [42, 'TOILETRIES', ['#4ea8de', '#f4f4f4', '#90be6d', '#bdb2ff', '#48cae4', '#ffafcc']]];
   for (const [sy, name, cols] of SHELF) add(-72, sy, () => {
@@ -4341,13 +4341,13 @@ const FOLK_LOOKS = [
   { shirt: '#f2f2f2', stripe: null, pants: '#2f4f7a', hair: 'cap', cap: '#c62828', hairCol: '#2e2018', skin: '#6b4430' }];
 // walkers go back and forth along a footpath route, pausing at each end; [route, speed, look, pose, start offset]
 const FOLK_WALKS = [
-  [[[560, 1772], [545, 1520], [545, 1085], [545, 820]], 20, 0, 'bag', 0],
-  [[[530, 1772], [545, 1520], [545, 1085], [300, 1085], [163, 1085], [163, 800]], 18, 4, 'pack', 40],
+  [[[560, 1772], [545, 1520], [617, 1110], [617, 770]], 20, 0, 'bag', 0],
+  [[[530, 1772], [545, 1520], [617, 1110], [320, 1110], [225, 1110], [225, 770]], 18, 4, 'pack', 40],
   [[[960, 850], [770, 850], [760, 960], [740, 1090]], 22, 1, null, 10],
-  [[[650, 1085], [300, 1085], [163, 1085], [163, 1230]], 19, 3, null, 25],
+  [[[650, 1110], [320, 1110], [225, 1110], [225, 1280]], 19, 3, null, 25],
   [[[712, 1078], [760, 960], [770, 850], [900, 850]], 21, 5, null, 5],
   [[[810, 735], [810, 950], [744, 960], [744, 1085]], 20, 2, null, 60],
-  [[[575, 1772], [548, 1600], [548, 1240]], 17, 9, 'bag', 90],
+  [[[575, 1772], [548, 1600], [420, 1280]], 17, 9, 'bag', 90],
   [[[1112, 1100], [1112, 1150], [900, 1150], [880, 1180]], 21, 7, null, 15],
   [[[995, 850], [995, 960], [890, 990], [882, 1090]], 19, 6, 'pack', 70]];
 function routeAt(pts, s, pause) {   // ping-pong along a polyline with a pause at each end: position and heading
@@ -4365,9 +4365,9 @@ const HOOPS = [{ x: 825, y: 1325, by: 1320, pole: 1312 }, { x: 825, y: 1483, by:
 // walker routes are re-planned once around every solid in camp (grid search + line-of-sight smoothing), so nobody walks through a wall
 let FOLK_ROUTES = null;
 function planFolkRoutes() {
-  const CS = 6, GW = Math.ceil(CAMP_W / CS), GH = Math.ceil(CAMP_H / CS), free = new Uint8Array(GW * GH);
-  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) free[j * GW + i] = campHit(i * CS + 3, j * CS + 3) ? 0 : 1;
-  const cell = (x, y) => [Math.max(0, Math.min(GW - 1, Math.floor(x / CS))), Math.max(0, Math.min(GH - 1, Math.floor(y / CS)))];
+  const CS = 6, X0 = CAMP_X0, GW = Math.ceil((CAMP_W - X0) / CS), GH = Math.ceil(CAMP_H / CS), free = new Uint8Array(GW * GH);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) free[j * GW + i] = campHit(X0 + i * CS + 3, j * CS + 3) ? 0 : 1;
+  const cell = (x, y) => [Math.max(0, Math.min(GW - 1, Math.floor((x - X0) / CS))), Math.max(0, Math.min(GH - 1, Math.floor(y / CS)))];
   const nearestFree = ([i, j]) => { for (let r = 0; r < 40; r++) for (let di = -r; di <= r; di++) for (const dj of [-r, r]) for (const [a, b] of [[i + di, j + dj], [i + dj, j + di]]) if (a >= 0 && b >= 0 && a < GW && b < GH && free[b * GW + a]) return [a, b]; return [i, j]; };
   const clear = (a, b) => { const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 3); for (let k = 0; k <= n; k++) { const x = a[0] + (b[0] - a[0]) * k / n, y = a[1] + (b[1] - a[1]) * k / n; if (campHit(x, y)) return false; } return true; };
   const path = (A, B) => {
@@ -4376,7 +4376,7 @@ function planFolkRoutes() {
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) { const ni = ci + di, nj = cj + dj, n = nj * GW + ni;
         if (ni < 0 || nj < 0 || ni >= GW || nj >= GH || prev[n] >= 0 || !free[n] || (di && dj && (!free[cj * GW + ni] || !free[nj * GW + ci]))) continue; prev[n] = c; q.push(n); } }
     const out = []; let c = g[1] * GW + g[0]; if (prev[c] < 0) return [A, B];
-    while (true) { out.push([(c % GW) * CS + 3, ((c / GW) | 0) * CS + 3]); if (prev[c] === c) break; c = prev[c]; }
+    while (true) { out.push([X0 + (c % GW) * CS + 3, ((c / GW) | 0) * CS + 3]); if (prev[c] === c) break; c = prev[c]; }
     out.reverse(); const sm = [out[0]]; let k = 0;   // keep only the corners you can't see past
     while (k < out.length - 1) { let m = out.length - 1; while (m > k + 1 && !clear(out[k], out[m])) m--; sm.push(out[m]); k = m; }
     return sm;
@@ -4432,9 +4432,9 @@ function drawWalk() {
   }
   wFlat(640, 998, 140, 90, '#6f9a45', .1);   // hub lawn
   for (const [x, y, w, h] of [[778, 1318, 94, 2], [778, 1490, 94, 2], [778, 1318, 2, 174], [870, 1318, 2, 174], [778, 1404, 94, 2]]) wFlat(x, y, w, h, '#fff', .2);
-  for (const x of [172, 332, 482, 637]) wFlat(x - 5, 470, 10, x === 637 ? 380 : 990, '#c4b8a3', .15);   // concrete walkways between the pod columns
-  for (const y of POD_ROWS.slice(1)) wFlat(20, y - 20, 610, 10, '#c4b8a3', .15);   // and between the rows
-  wFlat(20, 1450, 610, 10, '#c4b8a3', .15); wFlat(540, 1450, 10, 280, '#c4b8a3', .15);   // down to the crew bus
+  for (const x of [30, 225, 420, 617]) wFlat(x - 5, 270, 10, x === 617 ? 480 : 1190, '#c4b8a3', .15);   // concrete walkways between the pod columns
+  for (const y of POD_ROWS.slice(1)) wFlat(-150, y - 30, 780, 10, '#c4b8a3', .15);   // and between the rows
+  wFlat(-150, 1450, 780, 10, '#c4b8a3', .15); wFlat(540, 1450, 10, 280, '#c4b8a3', .15);   // down to the crew bus
   wFlat(BIG_PARK.x0, BIG_PARK.y0, BIG_PARK.x1 - BIG_PARK.x0, BIG_PARK.y1 - BIG_PARK.y0, '#4b4e52', .08);   // sealed car park
   wFlat(BIG_PARK.x1, 950, CAMP_W - BIG_PARK.x1 + 400, 60, '#8f7a5e', .07);                                        // access road off the east
   for (const rx of BP_ROWS) { for (let k = 0; k <= 10; k++) wFlat(rx - 34, 821 + k * 30, 68, 1.4, '#e8e8e8', .1); wFlat(rx + 34, 821, 1.4, 300, '#e8e8e8', .1); }   // bay lines
@@ -4552,8 +4552,8 @@ function drawWalk() {
     if (p.smoker) { const x = p.x + POD_W - POD_SIDE - 16, y = p.y + 14; add(x, y, () => { campOval(x, y, 2, 3.2, 3.2, 2, '#9aa1a6'); wBox(x, y, 1.4, 1.4, 2, 11, '#9aa1a6', '#b8bec2'); }); }   // smokers' bin
     if (p.cone) { const x = p.x + POD_SIDE + 14, y = p.y + 60; add(x, y, () => { wBox(x, y, 4, 4, 0, .8, '#e85d1a', '#e85d1a'); campOval(x, y, 4, 1.5, 1.5, 4, '#f26b1d'); }); }   // orange cone
   }
-  for (const x of [172, 332, 482]) for (let y = 490; y < 1440; y += 70) add(x + 7, y, () => { if (!near2(x, y, 300)) return; wBox(x + 7, y, 1.4, 1.4, 0, 9, '#6b7278', '#d9dcde'); wBox(x + 7, y, 1.8, 1.8, 7, 8.5, '#f4f4ee', '#fff8d8'); });   // bollard lights
-  for (const [x0, y0, w, h] of [[-3000, -3000, 6922, 2955], [-3000, CAMP_H + 45, 6922, 3000], [-3000, -45, 2955, CAMP_H + 90], [CAMP_W + 45, -45, 3000, CAMP_H + 90]]) wFlat(x0, y0, w, h, '#ad6a40', .02);   // red dirt beyond the camp
+  for (const x of [30, 225, 420]) for (let y = 300; y < 1440; y += 70) add(x + 7, y, () => { if (!near2(x, y, 300)) return; wBox(x + 7, y, 1.4, 1.4, 0, 9, '#6b7278', '#d9dcde'); wBox(x + 7, y, 1.8, 1.8, 7, 8.5, '#f4f4ee', '#fff8d8'); });   // bollard lights
+  for (const [x0, y0, w, h] of [[-3000, -3000, 6922, 2955], [-3000, CAMP_H + 45, 6922, 3000], [-3000, -45, 2955 + CAMP_X0, CAMP_H + 90], [CAMP_W + 45, -45, 3000, CAMP_H + 90]]) wFlat(x0, y0, w, h, '#ad6a40', .02);   // red dirt beyond the camp
   for (const b of CAMP_BUSH) {   // the bush, only what's in view
     const d = (b.x - wCam.x) * hx + (b.y - wCam.y) * hy, lat = (b.x - wCam.x) * -hy + (b.y - wCam.y) * hx;
     if (d < 20 || d > 820 || Math.abs(lat) > d * .62 + 40) continue;
@@ -4690,7 +4690,7 @@ function drawWalk() {
   ctx.fillStyle = fog; ctx.fillRect(0, hor, W, 90);
   const rn = CAMP_DOORS[wRoom].name;
   rect(0, 0, W, 64, '#000a');
-  text('GOLDEN EAGLE CAMP', 10, 22, 14, '#fff', 'left');
+  text('CAMP', 10, 22, 14, '#fff', 'left');
   if (role === 'mech') {
     text(mStage === 0 ? 'Breakfast and pack your crib' : 'Catch the Hiace to the workshop', W - 10, 22, 16, '#ff6', 'right');
     text(mStage === 0 ? `Dining room - ${['bain', 'crib'].filter(k => !kitDone[k]).map(k => k === 'bain' ? 'feed' : 'crib bag').join(' and ') || 'done'} to go` : 'Bus stop by the wet mess - follow the glow', W - 10, 48, 13, '#ccc', 'right');
