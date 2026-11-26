@@ -62,6 +62,7 @@ const faceRect = (b, along, len, d0, d1) => {
   return b.ny ? { x: px + along - len / 2, y: b.ny > 0 ? py + d0 : py - d1, w: len, h: d1 - d0 } : { x: b.nx > 0 ? px + d0 : px - d1, y: py + along - len / 2, w: d1 - d0, h: len };
 };
 const WS_BTN = [10, 70, 170, 34, 'WORKSHOP'];
+const DRV_VIEW_BTN = [W - 94, 98, 84, 28, 'VIEW'];   // highway: chase view / first-person cab view
 const TR_W = 76, BUCKET_W = 58, TR_H = BUCKET_W * 3 + 24;   // loading-yard trailer layout: each bin is three loader buckets long
 // the road train is parked on a half-moon arc that bulges toward the pile (loaders work on the outside of the curve); u is the distance along it from the cab
 const ARC = { cx: 900, cy: 575, R: 300 }, CAB_U = 38, ARC_MID = (CAB_U + NT * TR_H) / 2;
@@ -141,6 +142,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if ((state === 'drive' || state === 'load' || state === 'workshop' || state === 'ute' || state === 'walk' || state === 'officeinside' || state === 'kitcheninside' || state === 'shopinside' || state === 'wsoffice' || state === 'shroom' || state === 'service' || state === 'workshopfoot') && inR(p, STICK.zone)) { p.stick = true; cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, p); syncBtns(); return; }
   if (state === 'drive' && hurtByStock && inR(p, WS_BTN)) { toWorkshop(); return; }
+  if (state === 'drive' && inR(p, DRV_VIEW_BTN)) { fpv = !fpv; return; }
   if(state==='workshopfoot'&&inR(p,[340,570,132,52])){onKey('KeyE');return;}
   if(state==='workshop'&&inR(p,[340,570,132,52])&&workshopParked()){onKey('KeyE');return;}
   if (state === 'workshop' && inR(p, VIEW_BTN)) { chaseView = !chaseView; return; }
@@ -261,6 +263,7 @@ function onKey(code) {
   if (state === 'parkhandover' && (code === 'Space' || code === 'Enter' || code === 'KeyE')) { advanceHandover(); return; }
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
+  if (state === 'drive' && code === 'KeyV') { fpv = !fpv; return; }
   if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
   if (state === 'menu' && code === 'KeyL') { homeRoom = -1; skipLoad(); return; }
   if (state === 'kitcheninside' && code === 'KeyE') { kitchenInteract(); return; }
@@ -2009,10 +2012,18 @@ const roadX = y => state === 'ute' || state === 'uteend' ? uOff(us + UTE_Y - y) 
 // ---------- pseudo-3D driving view ----------
 // World coords stay 2D (x across, y down the screen); a perspective camera projects them with a height axis z.
 // `fr` rotates primitives about a point so the cab, trailers and tossed animals can be drawn at any heading.
-const HOR = 92, CAM_Y = H + 400;
+let HOR = 92, CAM_Y = H + 400;
+const HOR0 = 92, CAM_Y0 = H + 400;
+// first-person cab view (V / VIEW on the highway): the eye sits in the driver's seat (right-hand drive) looking out the
+// windscreen along the cab's heading. Depth is stretched (fpD) so the short stretch of road ahead still runs off to a horizon.
+let fpv = false, fpOn = false, fpBehind = false;
+const fpE = { x: 0, y: 0, z: 48, c: 1, s: 0 }, FPF = 300, FP_HOR = 300, FP_NEAR = 4;
+const fpD = d => { d = Math.max(FP_NEAR, d); return d + d * d / 120; };
+const fpNearY = (lat = 0) => fpE.y - 8 - Math.abs(fpE.s) * lat;   // nearest world y that's still safely in front of the eye
+const fpSkip = () => { const b = fpBehind; fpBehind = false; return b; };   // a shape reached behind the eye: don't draw it
 const uOf = y => (y + 120) / (H + 120);
-const sc = y => Math.max(.02, .22 + 1.15 * uOf(y));   // never negative: far objects would crash arc()/gradients and freeze the loop
-const sY = y => { const u = uOf(y); return HOR + (H - HOR) * (.22 * u + .575 * u * u) / .795; };
+const sc = y => fpOn ? FPF / fpD(fpE.y - y) : Math.max(.02, .22 + 1.15 * uOf(y));   // never negative: far objects would crash arc()/gradients and freeze the loop
+const sY = y => { if (fpOn) return HOR + fpE.z * sc(y); const u = uOf(y); return HOR + (H - HOR) * (.22 * u + .575 * u * u) / .795; };
 let camX = W / 2, fr = null;
 function withFrame(cx, cy, a, fn) {
   const c = Math.cos(a), s = Math.sin(a), dx = camX - cx, dy = CAM_Y - cy;
@@ -2022,6 +2033,11 @@ function withFrame(cx, cy, a, fn) {
 const camL = () => fr ? fr.lx : camX;
 const P = (x, y, z = 0) => {
   if (fr) { const dx = x - fr.cx, dy = y - fr.cy; x = fr.cx + dx * fr.c - dy * fr.s; y = fr.cy + dx * fr.s + dy * fr.c; }
+  if (fpOn) {
+    const dx = x - fpE.x, dy = y - fpE.y, d = dx * fpE.s - dy * fpE.c;
+    if (d < FP_NEAR) fpBehind = true;
+    const s = FPF / fpD(d); return [W / 2 + (dx * fpE.c + dy * fpE.s) * s, HOR + (fpE.z - z) * s];
+  }
   const s = sc(y); return [W / 2 + (x - camX) * s, sY(y) - z * s * .9];
 };
 const rgbCache = {};
@@ -2031,6 +2047,7 @@ function shade(c, f) {
   return `rgb(${Math.min(255, v[0] * f) | 0},${Math.min(255, v[1] * f) | 0},${Math.min(255, v[2] * f) | 0})`;
 }
 function poly(pts, col) {
+  if (fpSkip()) return;
   ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
   ctx.closePath(); ctx.fill();
@@ -2040,15 +2057,15 @@ function box(cx, cy, w, l, z0, z1, col, noTop) {
   if (cl > x1) poly([P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, .6));
   else if (cl < x0) poly([P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), P(x0, y0, z1)], shade(col, .85));
   poly([P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, .72));
-  if (!noTop) poly([P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 1.05));
+  if (!noTop && !(fpOn && z1 > fpE.z)) poly([P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 1.05));
 }
 const rearRect = (y, xa, xb, za, zb, col) => poly([P(xa, y, za), P(xb, y, za), P(xb, y, zb), P(xa, y, zb)], col);
-const topRect = (xa, ya, xb, yb, z, col) => poly([P(xa, ya, z), P(xb, ya, z), P(xb, yb, z), P(xa, yb, z)], col);
-const flatEllipse = (x, y, rx, ry, col, z = 0) => { const [sx, sy] = P(x, y, z), s = sc(y); ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sx, sy, rx * s, ry * s, 0, 0, Math.PI * 2); ctx.fill(); };
+const topRect = (xa, ya, xb, yb, z, col) => { if (fpOn) { yb = Math.min(yb, fpNearY(Math.max(Math.abs(xa - fpE.x), Math.abs(xb - fpE.x)))); if (yb <= ya) return; } poly([P(xa, ya, z), P(xb, ya, z), P(xb, yb, z), P(xa, yb, z)], col); };
+const flatEllipse = (x, y, rx, ry, col, z = 0) => { const [sx, sy] = P(x, y, z), s = sc(y); if (fpSkip()) return; ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sx, sy, rx * s, ry * s, 0, 0, Math.PI * 2); ctx.fill(); };
 const shadow = (cx, cy, w, l) => { for (let k = 0; k < 3; k++) { const e = (2 - k) * 2.5; topRect(cx - w / 2 + 5 - e, cy - l / 2 + 3 - e, cx + w / 2 + 6 + e, cy + l / 2 + 4 + e, 0, 'rgba(0,0,0,.15)'); } };   // stacked layers give a soft edge
 function glow(x, y, z, r, col) {
   const [sx, sy] = P(x, y, z), rr = r * sc(y);
-  if (!(rr > 0)) return;   // far off-screen objects give a negative scale
+  if (fpSkip() || !(rr > 0)) return;   // far off-screen objects give a negative scale
   const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
   g.addColorStop(0, col); g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g; ctx.fillRect(sx - rr, sy - rr, rr * 2, rr * 2);
@@ -2056,6 +2073,7 @@ function glow(x, y, z, r, col) {
 // layered ellipses fake a rounded mound (rocks, bushes, canopies, termite hills)
 function dome(x, y, r, hgt, col, z = 0) {
   const s = sc(y), [sx, sy] = P(x, y, z), rx = r * s, ry = r * s * .6;
+  if (fpSkip()) return;
   if (!z) { ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(sx + rx * .3, sy + ry * .15, rx * 1.05, ry, 0, 0, 7); ctx.fill(); }
   for (let i = 0; i < 5; i++) {
     const f = i / 4;
@@ -2092,6 +2110,7 @@ function drawGround() {
 }
 // a strip of road-relative x range [xa, xb] between world y's, following the road's bends
 function strip(xa, xb, col, ya = -120, yb = H + 80) {
+  if (fpOn) { if (ya === -120) ya = -700; yb = Math.min(yb, fpNearY(300)); if (yb <= ya) return; }
   const n = Math.max(1, Math.ceil((yb - ya) / 24)), L = [], Rt = [];
   for (let k = 0; k <= n; k++) { const y = ya + (yb - ya) * k / n, o = roadX(y); L.push(P(xa + o, y)); Rt.push(P(xb + o, y)); }
   poly(L.concat(Rt.reverse()), col);
@@ -2103,7 +2122,7 @@ function drawRoad3D() {
   strip(ROAD_L, ROAD_R, '#45433f');
   for (const lx of LANE_X) { strip(lx - 20, lx - 8, 'rgba(0,0,0,.14)'); strip(lx + 8, lx + 20, 'rgba(0,0,0,.14)'); }
   strip(ROAD_L + 2, ROAD_L + 6, '#eee8d5'); strip(ROAD_R - 6, ROAD_R - 2, '#eee8d5');
-  for (let y = -140 + (scroll % 70); y < Y1; y += 70) if (y + 34 > Y0) strip(W / 2 - 2, W / 2 + 2, '#eee8d5', Math.max(Y0, y), y + 34);
+  for (let y = (fpOn ? -700 : -140) + (scroll % 70); y < Y1; y += 70) if (y + 34 > (fpOn ? -700 : Y0)) strip(W / 2 - 2, W / 2 + 2, '#eee8d5', Math.max(Y0, y), y + 34);
 }
 // pink mobile lighting tower in the 3D views: trailer with outriggers, tall mast, four-lamp head and a glow
 function lightTower3(x, y, ang = 0, k = 1) {
@@ -2121,7 +2140,7 @@ function drawBays(list) {
     if (yc + BAY_L / 2 < -120 || yc - BAY_L / 2 > H + 80) continue;
     for (const side of [baySide(b)]) {
       const edge = side < 0 ? ROAD_L - 13 : ROAD_R + 13;
-      const oval = (rd, rl) => { const o = []; for (let i = 0; i <= 32; i++) { const a = -Math.PI / 2 + Math.PI * i / 32; o.push(P(edge + side * rd * Math.cos(a), Math.max(-118, Math.min(H + 80, yc + rl * Math.sin(a))))); } return o; };
+      const oval = (rd, rl) => { const o = []; for (let i = 0; i <= 32; i++) { const a = -Math.PI / 2 + Math.PI * i / 32; o.push(P(edge + side * rd * Math.cos(a), Math.max(-118, Math.min(fpOn ? fpNearY(400) : H + 80, yc + rl * Math.sin(a))))); } return o; };
       poly(oval(BAY_D, BAY_L / 2), '#eee8d5'); poly(oval(BAY_D - 3, BAY_L / 2 - 3), '#5e5a54');
     }
     if (b === bayStarts[2]) { const side = baySide(b), tx = (side < 0 ? ROAD_L - 13 : ROAD_R + 13) + side * 70, ty = yc - 190; list.push({ y: ty, fn: () => { car3({ x: tx, y: ty, w: 34, h: 90, col: '#2a7ab8', truck: true, oncoming: false }); beaconAt(tx, ty - 30, 36); } }); }
@@ -2345,7 +2364,7 @@ function cab3(x, y) {
 const trailerAxles = (i, l) => { const m = l * .08, sp = l * .13, rear = Array.from({ length: i ? 4 : 3 }, (_, k) => l / 2 - m - k * sp); return i ? rear.concat([0, 1, 2].map(k => -l / 2 + m + k * sp)) : rear; };   // trailer 1: 3 at the rear (its front sits over the cab's rear tyres); the others 4 at the rear and 3 at the front
 const line3 = (pts, lw, col) => {
   ctx.strokeStyle = col; ctx.lineWidth = lw * sc(pts[0][1]); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath();
-  pts.forEach((q, k) => { const [sx, sy] = P(q[0], q[1], q[2]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); ctx.stroke();
+  pts.forEach((q, k) => { const [sx, sy] = P(q[0], q[1], q[2]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); if (!fpSkip()) ctx.stroke();
 };
 // ring feeder (towing ring) on the rear of a trailer; the next gooseneck's eye drops over it at the joint
 function ringFeeder(x, jy) {
@@ -2510,14 +2529,17 @@ function drawAnimal3(a) {
 }
 // the rig: cab heading `cabAngle`, trailers on the articulated chain; `menu` shows it parked and loaded
 // fog, vignette and sun glow never change, so they're painted once and stamped each frame (full-screen gradients are costly on phones)
-let atmoCv = null;
+let atmoCv = null, atmoCvs = {};
 function atmosphere() {
+  if (!atmoCv) atmoCvs = {};
+  atmoCv = atmoCvs[HOR] || null;
   if (!atmoCv) {
     atmoCv = document.createElement('canvas'); atmoCv.width = W * SS; atmoCv.height = H * SS;
     const c = atmoCv.getContext('2d'); c.scale(SS, SS);
-    const fog = c.createLinearGradient(0, HOR - 14, 0, HOR + 150);
+    const fd = HOR === HOR0 ? 150 : 60;   // the cab view's horizon is lower down the screen, so its haze band is shallower
+    const fog = c.createLinearGradient(0, HOR - 14, 0, HOR + fd);
     fog.addColorStop(0, 'rgba(236,217,189,.85)'); fog.addColorStop(.3, 'rgba(226,190,150,.55)'); fog.addColorStop(1, 'rgba(226,190,150,0)');
-    c.fillStyle = fog; c.fillRect(0, HOR - 14, W, 165);
+    c.fillStyle = fog; c.fillRect(0, HOR - 14, W, fd + 15);
     const vg = c.createRadialGradient(W / 2, H * .55, H * .35, W / 2, H * .55, H * .85);
     vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
     c.fillStyle = vg; c.fillRect(0, 0, W, H);
@@ -2525,10 +2547,19 @@ function atmosphere() {
     sun.addColorStop(0, 'rgba(255,220,160,.2)'); sun.addColorStop(1, 'rgba(255,220,160,0)');
     c.fillStyle = sun; c.fillRect(0, 0, W, H);
   }
+  atmoCvs[HOR] = atmoCv;
   ctx.drawImage(atmoCv, 0, 0, W, H);
 }
 function drawWorld3D(playerX, menu) {
-  camX = W / 2 + (playerX - W / 2) * .55;
+  fpOn = !menu && fpv && (state === 'drive' || state === 'over');
+  if (fpOn) {   // driver's eye: right-hand seat, mid-cab, looking along the cab's heading
+    const c = Math.cos(cabAngle), s = Math.sin(cabAngle);
+    Object.assign(fpE, { x: qx + 7 * c - 2 * s, y: qy + 7 * s + 2 * c, c, s });
+    HOR = FP_HOR; camX = fpE.x; CAM_Y = fpE.y; fpBehind = false;
+  } else { HOR = HOR0; CAM_Y = CAM_Y0; camX = W / 2 + (playerX - W / 2) * .55; }
+  try { drawWorld3DInner(playerX, menu); } finally { fpOn = false; fpBehind = false; HOR = HOR0; CAM_Y = CAM_Y0; }
+}
+function drawWorld3DInner(playerX, menu) {
   drawSky(); drawGround(); drawRoad3D();
   const list = [], ry = !menu && ret ? scroll + qy - (R - 120) : null;
   if (ry !== null && ry > -130) romWorld(ry, list);
@@ -2557,8 +2588,8 @@ function drawWorld3D(playerX, menu) {
     if (cy > -60 && cy < H + 60) { list.push({ y: cy, fn: train3D }); list.push({ y: cy + 30, fn: gates3D }); }
   }
   const J = menu ? straightChain(W / 2, 360, 1) : jts, cx = menu ? W / 2 : qx, cyy = menu ? 360 : qy, ang = menu ? 0 : cabAngle;
-  list.push({ y: cyy, fn: () => withFrame(cx, cyy, ang, () => cab3(cx, cyy)) });
-  for (let i = 0; i < NT; i++) {
+  if (!fpOn) list.push({ y: cyy, fn: () => withFrame(cx, cyy, ang, () => cab3(cx, cyy)) });
+  for (let i = 0; i < NT && !fpOn; i++) {
     const p = chainPose(J, i), q = i ? chainPose(J, i - 1) : { x: J[0].x, y: J[0].y };
     list.push({ y: p.y - 1, fn: () => {
       withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, menu ? .8 : fills[i] / TRAILER_CAP, menu ? 1 : tr[i].lid));
@@ -2566,7 +2597,7 @@ function drawWorld3D(playerX, menu) {
   }
   if (bf && !menu) { const fp = fitPose(); if (fp.ute) list.push({ y: fp.ute.y, fn: () => ute3(fp.ute.x, fp.ute.y, '#f4f4f4', -1, { toolbox: true }) }); if (fp.man) list.push({ y: fp.man.y, fn: () => person3(fp.man) }); }
   list.sort((a, b) => a.y - b.y);
-  for (const o of list) o.fn();
+  for (const o of list) { if (fpOn && o.y > fpE.y - 6) continue; fpBehind = false; o.fn(); }
   if (bf && !menu) {   // fitter signs off the job
     const tw = BF.arrive + BF.out + BF.walk + BF.work, fp = fitPose(), who = fp.man || fp.ute;
     if (who && bf.t > tw - .1 && bf.t < tw + BF.back + BF.inn + BF.leave * .5) {
@@ -2576,8 +2607,72 @@ function drawWorld3D(playerX, menu) {
       text(msg, x + bw / 2, yy + 17, 13, '#222');
     }
   }
-  if (!menu) for (const p of particles) { const [sx, sy] = P(p.x, p.y, 8), z = 4 * sc(p.y); ctx.fillStyle = p.col; ctx.fillRect(sx, sy, z, z); }
+  if (!menu) for (const p of particles) { const [sx, sy] = P(p.x, p.y, 8), z = 4 * sc(p.y); if (fpSkip()) continue; ctx.fillStyle = p.col; ctx.fillRect(sx, sy, z, z); }
   atmosphere();
+  if (fpOn) { fpBehind = false; withFrame(qx, qy, cabAngle, () => bonnetFP(qx, qy)); cabInteriorFP(); }
+}
+// first-person: the long pink bonnet out in front of the windscreen, seen from the driver's seat (sat a little low so the road shows over it)
+function bonnetFP(x, y) {
+  box(x, y - 45, 30, 2.2, 11, 13, '#2b2e33');   // top rail of the bull bar
+  box(x, y - 44, 25, 3, 6, 14, '#c9ccd0');   // grille top
+  for (const sx of [-1, 1]) box(x + sx * 15, y - 30, 3, 26, 6, 11, '#3a3a3a');   // guards
+  box(x, y - 26, 27, 34, 4, 14, '#f062a4');
+  box(x, y - 26, 23, 30, 14, 15, '#d94a8c');
+  box(x, y - 26, 2, 30, 15, 15.4, '#c9ccd0');   // chrome strip down the middle
+  for (const sx of [-1, 1]) { box(x + sx * 16.5, y - 13, 5, 5, 8, 24, '#d9dce0'); box(x + sx * 16.5, y - 13, 5.6, 5.6, 24, 25.5, '#b8bec4'); }   // twin air intakes
+}
+// first-person: windscreen frame, mirrors, dash, gauges and the wheel, painted in screen space over the view
+function cabInteriorFP() {
+  fpBehind = false;
+  const t = beaconClock(), dark = '#1d1f22', trim = '#2c2f33';
+  // roof lining and sun visors
+  ctx.fillStyle = trim; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 150); ctx.quadraticCurveTo(W / 2, 112, 0, 142); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3b3f44'; ctx.beginPath(); ctx.moveTo(W * .55, 122); ctx.lineTo(W - 26, 128); ctx.lineTo(W - 34, 166); ctx.lineTo(W * .56, 158); ctx.closePath(); ctx.fill();   // driver's visor, flipped half down
+  ctx.fillStyle = '#34383d'; ctx.beginPath(); ctx.moveTo(30, 132); ctx.lineTo(W * .42, 122); ctx.lineTo(W * .42, 136); ctx.lineTo(34, 146); ctx.closePath(); ctx.fill();
+  // split windscreen: centre bar sits left of the view (you're in the right-hand seat), thick A-pillars each side
+  poly([[172, 118], [180, 118], [184, 560], [174, 560]], dark);
+  poly([[0, 130], [30, 132], [6, 560], [0, 560]], dark);
+  poly([[W, 140], [W - 26, 136], [W - 4, 560], [W, 560]], dark);
+  // West Coast mirrors out past the pillars, with the road and your trailers behind in them
+  for (const [mx, sgn] of [[14, -1], [W - 58, 1]]) {
+    const my = 250, mw = 44, mh = 92;
+    rect(mx + (sgn < 0 ? mw : -10), my + 30, 10, 4, '#111'); rect(mx + (sgn < 0 ? mw : -10), my + mh - 30, 10, 4, '#111');
+    rect(mx - 3, my - 3, mw + 6, mh + 6, '#111');
+    const g = ctx.createLinearGradient(0, my, 0, my + mh); g.addColorStop(0, '#9cc4e4'); g.addColorStop(.42, '#e2cdae'); g.addColorStop(.46, '#b4552f'); g.addColorStop(1, '#8c3820');
+    ctx.fillStyle = g; ctx.fillRect(mx, my, mw, mh);
+    const ix = sgn < 0 ? mx + mw : mx;   // the road and the rig's flank in the mirror
+    ctx.fillStyle = '#45433f'; ctx.beginPath(); ctx.moveTo(ix, my + mh * .44); ctx.lineTo(ix - sgn * mw * .3, my + mh * .44); ctx.lineTo(ix - sgn * mw * .9, my + mh); ctx.lineTo(ix, my + mh); ctx.fill();
+    ctx.fillStyle = '#c93a8a'; ctx.beginPath(); ctx.moveTo(ix, my + mh * .2); ctx.lineTo(ix - sgn * 7, my + mh * .38); ctx.lineTo(ix - sgn * 7, my + mh * .5); ctx.lineTo(ix, my + mh * .8); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(mx + 4, my + 4, 6, mh - 8);
+  }
+  // dash: dark moulding across the bottom, binnacle in front of you
+  ctx.fillStyle = '#26292d'; ctx.beginPath(); ctx.moveTo(0, 560); ctx.quadraticCurveTo(W / 2, 530, W, 556); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.beginPath(); ctx.moveTo(0, 560); ctx.quadraticCurveTo(W / 2, 530, W, 556); ctx.lineTo(W, 562); ctx.quadraticCurveTo(W / 2, 537, 0, 566); ctx.fill();
+  ctx.fillStyle = '#18191c'; ctx.beginPath(); ctx.moveTo(W / 2 - 120, 600); ctx.quadraticCurveTo(W / 2, 540, W / 2 + 120, 600); ctx.lineTo(W / 2 + 110, 640); ctx.lineTo(W / 2 - 110, 640); ctx.closePath(); ctx.fill();
+  const gauge = (gx, gy, r, f, lbl, val) => {
+    ctx.fillStyle = '#0b0c0d'; ctx.beginPath(); ctx.arc(gx, gy, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#c9ccd0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(gx, gy, r - 1, 0, 7); ctx.stroke();
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1.2;
+    for (let k = 0; k <= 8; k++) { const a = Math.PI * .75 + k / 8 * Math.PI * 1.5; ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * (r - 3), gy + Math.sin(a) * (r - 3)); ctx.lineTo(gx + Math.cos(a) * (r - 8), gy + Math.sin(a) * (r - 8)); ctx.stroke(); }
+    const a = Math.PI * .75 + Math.max(0, Math.min(1, f)) * Math.PI * 1.5;
+    ctx.strokeStyle = '#ff5a2a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + Math.cos(a) * (r - 6), gy + Math.sin(a) * (r - 6)); ctx.stroke();
+    text(lbl, gx, gy + r * .45, 8, '#aaa'); if (val) text(val, gx, gy + r * .75, 9, '#fff');
+  };
+  const kmh = speed * .5;
+  gauge(W / 2 - 52, 596, 30, kmh / 120, 'km/h', String(Math.round(kmh)));
+  gauge(W / 2 + 52, 596, 30, .25 + Math.min(1, speed / 240) * .5 + Math.sin(t * 40) * .004, 'x1000 rpm');
+  gauge(W / 2, 588, 16, hp / 100, 'HP');
+  // steering wheel, turning with the steering
+  const wa = steeringSpeed / 160, wx = W / 2, wy = 748, wr = 150;
+  ctx.save(); ctx.translate(wx, wy); ctx.rotate(wa);
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 22; ctx.beginPath(); ctx.arc(0, 0, wr, 0, 7); ctx.stroke();
+  ctx.strokeStyle = '#2d2f33'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(0, 0, wr, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.fillStyle = '#18191b'; for (const a of [Math.PI * 1.15, Math.PI * 1.85]) { ctx.save(); ctx.rotate(a); ctx.fillRect(0, -9, wr, 18); ctx.restore(); }
+  ctx.fillStyle = '#202225'; ctx.beginPath(); ctx.arc(0, 0, 46, 0, 7); ctx.fill();
+  ctx.fillStyle = '#c9ccd0'; ctx.beginPath(); ctx.arc(0, -18, 9, 0, 7); ctx.fill();
+  ctx.restore();
+  // faint glare on the glass
+  ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.moveTo(190, 120); ctx.lineTo(260, 120); ctx.lineTo(150, 560); ctx.lineTo(80, 560); ctx.fill();
 }
 // ---------- parking bay services: fitter visit ----------
 const FIT_BTN = [40, 300, 190, 56, 'FITTER (F)'], CHG_BTN = [250, 300, 190, 56, 'CHANGE OVER (C)'];
@@ -2639,7 +2734,7 @@ function limb(a, b, r, col) {
 }
 function ball(x, y, z, r, col) {
   const [sx, sy] = P(x, y, z), rr = r * sc(y);
-  if (!(rr > 0)) return;
+  if (fpSkip() || !(rr > 0)) return;
   const g = ctx.createRadialGradient(sx - rr * .35, sy - rr * .4, rr * .1, sx, sy, rr);
   g.addColorStop(0, shade(col, 1.2)); g.addColorStop(.6, col); g.addColorStop(1, shade(col, .6));
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, rr, 0, Math.PI * 2); ctx.fill();
@@ -5758,7 +5853,8 @@ function render() {
       text(`${Math.round(speed * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
       text(`${Math.min(100, Math.round(dist / TRIP * 100))}% ${ret ? 'back to the ROM' : 'to the Skyway'}`, W - 10, 48, 14, '#ff6', 'right');
     } else text(state === 'win' ? 'THE ROM' : 'THE SKYWAY', W - 10, 30, 18, '#ff6', 'right');
-    if (isTouch && state === 'drive') { drawStick(); drawBtns(DB); }
+    if (isTouch && state === 'drive') { drawStick(); drawBtns(DB); drawBtn(DRV_VIEW_BTN, fpv ? 'CHASE' : 'CAB', false); }
+    else if (state === 'drive') text(fpv ? 'V: chase view' : 'V: cab view', 10, H - 12, 11, '#ccc', 'left');
     if (state === 'drive' && hurtByStock) drawBtn(WS_BTN, isTouch ? 'WORKSHOP' : 'WORKSHOP (H)', false);
     if (state === 'drive' && grade() === -2) text('▲ STEEP CLIMB', W - 10, 88, 15, '#f90', 'right');
     else if (state === 'drive' && grade() === 2) text('▼ STEEP DESCENT', W - 10, 88, 15, '#f90', 'right');
