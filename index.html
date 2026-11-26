@@ -1183,7 +1183,7 @@ const CP_AISLE = { x0: SH_CARPARK.x1 - CP_BUND - CP_DEPTH, x1: SH_CARPARK.x0 + C
 const CP_BAY_W = (SH_CARPARK.y1 - SH_CARPARK.y0 - 2 * CP_BUND) / CP_BAYS, cpBayY = k => SH_CARPARK.y0 + CP_BUND + CP_BAY_W * (k + .5);
 const CP_ROW = [{ x: SH_CARPARK.x1 - CP_BUND - CP_DEPTH / 2, nose: -1 }, { x: SH_CARPARK.x0 + CP_BUND + CP_DEPTH / 2, nose: 1 }];   // crib room side, wash side
 // who's parked where: [row, bay, kind, colour]; the mechanic's Hiace takes the crib-side bay nearest the courtyard door
-const CP_CARS = [[0, 0, 'ute'], [0, 2, 'ute'], [0, 3, 'ute'], [1, 0, 'ute'], [1, 1, 'lc79'], [1, 2, 'hino'], [1, 4, 'ute']];   // every vehicle white with yellow reflective tape; the breakdown 79 and the Hino live on the wash side
+const CP_CARS = [[0, 0, 'ute'], [0, 2, 'ute', 'toolbox'], [0, 3, 'ute'], [1, 0, 'ute'], [1, 1, 'lc79'], [1, 2, 'hino'], [1, 4, 'ute']];   // every vehicle white with yellow reflective tape; the breakdown 79 and the Hino live on the wash side
 const cpSolids = () => [...CP_CARS.map(([r, k, kind]) => [CP_ROW[r].x, cpBayY(k), kind === 'hino' ? 112 : 100, kind === 'hino' ? 48 : 46]), ...(role === 'mech' ? [[MECH_BUS_PARK.x, MECH_BUS_PARK.y, 104, 50]] : [])];
 const SH_TRUCKLANE = { x0: -832, x1: -722 }, SH_WASH = { x0: -974, x1: -842, y0: 120, y1: 600 };
 // SH_OUT   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
@@ -1515,20 +1515,8 @@ function drawWorkshopFoot() {
   }
   const viaCamp = fn => { const keep = [wCam, WF, WCY, WCH, wCos, wSin]; wCam = { x: CX, y: CY, hx: fx, hy: fy, rx, ry }; WF = focus; WCY = horizon; WCH = eye; wCos = cp; wSin = sp; try { fn(); } finally { [wCam, WF, WCY, WCH, wCos, wSin] = keep; } };
   if (role === 'mech') add(MECH_BUS_PARK.x, MECH_BUS_PARK.y, () => viaCamp(() => hiaceModel(MECH_BUS_PARK.x, MECH_BUS_PARK.y, Math.PI, '#f2c200', 1.75)), outside);   // the bus you came in on
-  // mine-spec utes reversed into their bays, nose to the aisle: tray-back, cab, ROPS with a beacon and flag
-  const parkedUte = (x, y, n, col) => {
-    for (const dx of [-30, 30]) for (const s of [-1, 1]) box(x + dx, y + s * 21, 20, 6, 20, '#151617', '#2a2d30');   // wheels
-    box(x, y, 96, 40, 12, col, shade(col, .95), 10);                                                     // body
-    for (const s of [-1, 1]) { box(x, y + s * 20.2, 96.4, .5, 2, '#f2c200', '#f2c200', 16); box(x + s * 48.2, y, .5, 40.4, 2, '#f2c200', '#f2c200', 16); }   // yellow reflective tape round the body
-    box(x + n * 18, y, 44, 40, 4, col, shade(col, 1.04), 22); box(x + n * 30, y, 20, 40, 1, col, shade(col, 1.04), 22);   // bonnet
-    box(x + n * 2, y, 34, 38, 18, col, shade(col, 1.04), 26); box(x + n * 18.5, y, 1, 34, 14, '#26404f', '#26404f', 28);   // cab, windscreen
-    for (const s of [-1, 1]) box(x + n * 2, y + s * 19.2, 26, 1, 12, '#26404f', '#26404f', 29);           // door windows
-    box(x - n * 30, y, 36, 42, 3, '#5e6468', '#7a8288', 22); box(x - n * 30, y, 22, 18, 12, '#c9ced2', '#dfe3e6', 25);   // tray and toolbox
-    box(x - n * 13, y, 3, 40, 3, '#2b2f33', '#3a3f44', 52); for (const s of [-1, 1]) box(x - n * 13, y + s * 18, 3, 3, 30, '#2b2f33', '#3a3f44', 22);   // ROPS
-    box(x - n * 13, y, 5, 5, 4, '#ff8a00', '#ffb04a', 55); box(x - n * 13, y + 18, 1, 1, 30, '#d62828', '#d62828', 52);   // beacon, flag pole
-  };
-  for (const [r, k, kind] of CP_CARS) { const { x, nose } = CP_ROW[r], y = cpBayY(k), a = nose > 0 ? Math.PI / 2 : -Math.PI / 2;   // models face -v: turn them nose to the aisle
-    add(x, y, kind === 'ute' ? () => parkedUte(x, y, nose, '#f2f3f4') : () => viaCamp(() => (kind === 'hino' ? hinoModel : lc79Model)(x, y, a)), outside); }
+  for (const [r, k, kind, extra] of CP_CARS) { const { x, nose } = CP_ROW[r], y = cpBayY(k), a = nose > 0 ? Math.PI / 2 : -Math.PI / 2;   // every vehicle reversed in, nose to the aisle
+    add(x, y, () => viaCamp(() => kind === 'ute' ? hiluxModel(x, y, a, { toolbox: extra === 'toolbox' }) : (kind === 'hino' ? hinoModel : lc79Model)(x, y, a)), outside); }
   for (let r = 0; r < 2; r++) for (let k = 0; k < CP_BAYS; k++) { const x = CP_ROW[r].x - CP_ROW[r].nose * (CP_DEPTH / 2 - 10), y = cpBayY(k);   // wheel stops at the back of each bay
     add(x, y, () => box(x, y, 6, 26, 4, '#d8d2c4', '#e8e2d4'), outside); }
   { const C = SH_CARPARK, b = CP_BUND, A = CP_AISLE, bund = (x0, y0, x1, y1) => { const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, w = x1 - x0, l = y1 - y0;   // low blue metal windrow
@@ -4399,6 +4387,41 @@ function vehFrame(x, y, ang) {
 }
 // paint a vehicle: every face queued, sorted far to near, then drawn
 function wVehicle(fn) { const outer = polySink; polySink = []; try { fn(); } finally { const faces = polySink; polySink = outer; faces.sort((p, q) => q.d - p.d); for (const f of faces) wPoly(f.pts, f.col); } }
+// A white dual-cab Hilux with a steel tray back, nose to -v: swept headlights and a big grille, four doors, a light bar with a beacon on
+// the roof, yellow reflective tape down the sides, a flag whip on the headboard. o.toolbox: a grey plastic toolbox across the tray.
+function hiluxModel(x, y, ang = 0, o = {}) {
+  const { B, Q, T, R, side } = vehFrame(x, y, ang);
+  const white = '#f3f4f5', glass = '#26404f', blk = '#1d1f22', steel = '#5e666c', t = wT;
+  wVehicle(() => {
+    B(0, 0, 18, 96, 5, 9, '#2b2f33');                                                              // chassis
+    B(0, -38, 28, 20, 9, 18, white, '#fbfbfb'); B(0, -32, 26, 12, 18, 20.5, white, '#fbfbfb');     // bonnet, stepping up to the windscreen
+    for (const s of [-1, 1]) B(s * 12.8, -37, 3.4, 22, 9, 17.5, white, '#f7f8f8');                // front guards
+    B(0, -48.6, 29, 3, 5, 12, white, '#f7f8f8'); B(0, -49.4, 26, 1.6, 5, 8.5, blk);                 // bumper, lower valance
+    Q([[-9, -48.2, 9.5], [9, -48.2, 9.5], [10.5, -48.2, 16.5], [-10.5, -48.2, 16.5]], '#2b2f33');  // big trapezoid grille
+    Q([[-10, -48.3, 13.6], [10, -48.3, 13.6], [10, -48.3, 14.4], [-10, -48.3, 14.4]], '#c9ced2');   // chrome bar across it
+    for (const s of [-1, 1]) Q([[s * 10.8, -48.2, 15], [s * 14.2, -48.2, 15.6], [s * 14.2, -48.2, 17.4], [s * 10.8, -48.2, 17.2]], '#fff6d0');   // swept headlights
+    B(0, -11, 28, 30, 9, 22, white, '#fbfbfb');                                                     // dual cab body
+    B(0, -8, 26.4, 24, 22, 31, white, '#fbfbfb');                                                   // glasshouse and roof
+    Q([[-12.8, -26.05, 21.5], [12.8, -26.05, 21.5], [12.2, -20.05, 30.6], [-12.2, -20.05, 30.6]], glass);   // raked windscreen
+    for (const s of [-1, 1]) { const e = s * 13.25;
+      Q([[e, -19.5, 22.6], [e, -9.4, 22.6], [e, -9.4, 30], [e, -18.5, 30]], glass); Q([[e, -7.8, 22.6], [e, 2.6, 22.6], [e, 2.6, 29.6], [e, -7.8, 30]], glass);   // front and rear door windows
+      Q([[s * 14.05, -9.2, 11], [s * 14.05, -8.6, 11], [s * 14.05, -8.6, 22], [s * 14.05, -9.2, 22]], '#d8dbde');   // door shut line
+      B(s * 15.2, -19, 1.6, 3, 21, 24.5, blk); }                                                    // mirrors
+    Q([[-11.5, 4.05, 23], [11.5, 4.05, 23], [11.5, 4.05, 29.5], [-11.5, 4.05, 29.5]], glass);     // rear window
+    B(0, -12, 22, 2, 31, 32.6, blk); const on = Math.sin(t * 9 + x) > 0; B(0, -12, 4, 3, 32.6, 35, on ? '#ff8a00' : '#a05800', '#ffb04a');   // roof light bar, beacon
+    B(0, 27, 30, 42, 13, 15.5, steel, '#6d757b');                                                   // steel tray deck
+    for (const s of [-1, 1]) B(s * 14.6, 27, 1, 42, 15.5, 19, '#7a8288');                          // dropsides
+    B(0, 47.6, 30, 1, 15.5, 19, '#7a8288'); B(0, 6.6, 30, 1.6, 15.5, 29, '#4f575d');               // tailgate, headboard
+    for (let k = -12; k <= 12; k += 3) B(k, 6.6, .6, 1.8, 19, 29, '#3e464c');                       // headboard mesh
+    if (o.toolbox) { B(0, 15, 27, 13, 15.5, 25, '#8b9197', '#9ba1a7'); B(0, 15, 27.6, 13.6, 25, 26.4, '#7d838a', '#a4aab0');   // grey plastic toolbox, lid
+      Q([[-13.6, 8.4, 21], [13.6, 8.4, 21], [13.6, 8.4, 21.6], [-13.6, 8.4, 21.6]], '#6d7379'); for (const s of [-1, 1]) B(s * 8, 21.75, 3, 1, 22, 24, blk); }   // lid line, latches
+    B(12.6, 6.6, .8, .8, 29, 50, '#333'); Q([[12.6, 6.6, 50], [12.6, 15.6, 49 + Math.sin(t * 7)], [12.6, 15.6, 43 + Math.sin(t * 7)], [12.6, 6.6, 44]], '#ff6a00');   // flag whip
+    for (const s of [-1, 1]) Q([[s * 10, 48.2, 15.5], [s * 13.5, 48.2, 15.5], [s * 13.5, 48.2, 18.5], [s * 10, 48.2, 18.5]], '#e01818');   // tail lights
+    for (const [dx, dy] of [[-13.5, -35], [13.5, -35], [-13.5, 33], [13.5, 33]]) T(dx, dy, 7, 7, 5, 0, '#b8bec4');   // alloys
+  });
+  { const [tx, ty] = R(0, -48.4); wText('TOYOTA', tx, ty, 15.6, 1.8, '#c9ced2'); }
+  for (const sx of [-1, 1]) if (side(sx, 14, 0)) { const e = sx * 14.15; Q([[e, -47, 13], [e, -26.5, 13], [e, -26.5, 14.6], [e, -47, 14.6]], '#f2c200'); Q([[e, -26, 14.8], [e, 3.8, 14.8], [e, 3.8, 16.4], [e, -26, 16.4]], '#f2c200'); Q([[sx * 15.2, 7, 16.4], [sx * 15.2, 47.5, 16.4], [sx * 15.2, 47.5, 18], [sx * 15.2, 7, 18]], '#f2c200'); }   // yellow reflective tape
+}
 // The workshop's breakdown ute: a white single-cab 79 Series tray-back, nose to -y. Black bull bar with a light bar, snorkel up the
 // driver's side, white steel wheels, ROPS with a beacon and flag, alloy tray: a steel truck toolbox slid on down the left side as the
 // mechanic's toolbox, and two spare tyres stood up down the right.
