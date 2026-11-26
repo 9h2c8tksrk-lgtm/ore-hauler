@@ -626,7 +626,7 @@ function drawService() {
   SVC_JOBS.forEach((j, i) => text((i < k ? '✓ ' : i === k ? '› ' : '  ') + j.say, 20, 486 + i * 14.4, 11, i < k ? '#7fdf7f' : i === k ? '#ffea69' : '#9fb0bf', 'left'));
   if (job) { const near = Math.abs(svc.x - job.x) < 16; text(job.auto ? 'Draining...' : near ? `Hold E: ${job.say}` : 'Walk to the flashing ring', W / 2, 682, 14, '#fff'); bar(60, 696, W - 120, 8, svc.prog / job.t, '#7fdf7f'); }
   if (isTouch) { drawStick(); drawBtn(SVC_BTN, 'HOLD', false); }
-  if (msgT > 0) text(msg, W / 2, 96, 14, '#ffef79');
+  if (msgT > 0) msgBox(msg, 96, 14);
 }
 // the breakdown callout: the service ute out the dirt road to the Marble Bar Highway, the repair in the park bay, back for knock-off
 let brk = null;
@@ -1997,7 +1997,7 @@ function drawWorkshopFoot() {
   rect(0, 0, W, 77, '#152633e8'); text('6-BAY WORKSHOP - THIRD PERSON', W / 2, 26, 19, '#ffe568');
   text('W/S walk  A/D turn  |  Keep out of the pits and clear of the crew', W / 2, 52, 13, '#fff');
   if (role === 'mech') text(mechObjective(), W / 2, 102, 15, '#ffe568'); else text(cribReached ? (atCab ? 'PRESS E TO CLIMB INTO YOUR CAB' : 'WALK BACK TO YOUR CAB DOOR (PA233, BAY ' + (L.bay + 1) + ')') : 'OBJECTIVE: WALK TO THE CRIB ROOM', W / 2, 102, 15, cribReached ? '#83f5a3' : '#ffe568');
-  if (msgT > 0) text(msg, W / 2, 133, 13, '#ffe568');
+  if (msgT > 0) msgBox(msg, 133, 13);
   const rm = nearShRoom(), atOff = nearWsOffice() || !!rm; if (atOff) text('PRESS E TO GO INTO THE ' + (rm ? SHR[rm].title : 'WORKSHOP OFFICE'), W / 2, 160, 14, '#83f5a3');
   const mp = role === 'mech' ? mechPrompt() : '', atPre = !!mp; if (atPre && !atOff) text(mp, W / 2, 160, 14, '#83f5a3');
   if (isTouch) { drawStick(); drawBtns(DB); if (atCab || atOff || atPre) drawBtn([340, 570, 132, 52], atOff ? 'GO IN' : atPre ? 'GO' : 'ENTER CAB', false); }
@@ -2215,8 +2215,25 @@ function update(dt) {
 
 // ---------- drawing ----------
 function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+// light text gets a thin dark outline so it stays readable over bright sky, concrete and dust
+const lightCache = {};
+const isLight = c => { let v = lightCache[c]; if (v === undefined) { let r = 255, g = 255, b = 255; if (c[0] === '#') { let h = c.slice(1); if (h.length <= 4) h = h.slice(0, 3).replace(/./g, m => m + m); r = parseInt(h.substr(0, 2), 16); g = parseInt(h.substr(2, 2), 16); b = parseInt(h.substr(4, 2), 16); } else { const n = c.match(/\d+(\.\d+)?/g); if (n) [r, g, b] = n.map(Number); }
+  v = lightCache[c] = .299 * r + .587 * g + .114 * b > 150; } return v; };
 function text(s, x, y, size = 18, col = '#fff', align = 'center') {
-  ctx.fillStyle = col; ctx.font = `bold ${size}px system-ui,sans-serif`; ctx.textAlign = align; ctx.fillText(s, x, y);
+  ctx.font = `bold ${size}px system-ui,sans-serif`; ctx.textAlign = align;
+  if (size >= 9 && isLight(col)) { ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, size * .2); ctx.strokeStyle = 'rgba(0,0,0,.72)'; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = col; ctx.fillText(s, x, y);
+}
+// the game's pop-up messages: wrapped onto as many lines as they need, on a dark panel with a yellow edge
+function msgBox(s, y, size = 16) {
+  size = Math.max(15, Math.min(19, size)); ctx.font = `bold ${size}px system-ui,sans-serif`;
+  const words = String(s).split(' '), lines = []; let line = '';
+  for (const w of words) { const t = line ? line + ' ' + w : w; if (line && ctx.measureText(t).width > W - 56) { lines.push(line); line = w; } else line = t; }
+  lines.push(line);
+  const lh = size + 5, h = lines.length * lh + 12, bw = Math.min(W - 20, Math.max(...lines.map(l => ctx.measureText(l).width)) + 34), x = (W - bw) / 2, top = y - size - 4;
+  ctx.fillStyle = 'rgba(8,18,30,.9)'; ctx.beginPath(); ctx.roundRect(x, top, bw, h, 8); ctx.fill();
+  rect(x, top + 4, 4, h - 8, '#ffd23a');
+  lines.forEach((l, i) => text(l, W / 2, y + i * lh, size, '#fff4b0'));
 }
 function bar(x, y, w, h, f, col) { rect(x, y, w, h, '#000a'); rect(x + 2, y + 2, (w - 4) * Math.max(0, Math.min(1, f)), h - 4, col); }
 function drawBtn(r, label, on) {
@@ -3337,7 +3354,7 @@ function drawUteScreen() {
   text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
   if (uTurnT > 0) rect(0, 0, W, H, `rgba(0,0,0,${uTurnT / .7 * .6})`);   // quick dip as you swing round onto the highway
   if (uPark > 0) bar(W / 2 - 60, 80, 120, 12, uPark / .8, '#4c4');
-  if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
+  if (msgT > 0) msgBox(msg, 110, 22);
   if (state === 'ute' && isTouch) { drawStick(); drawBtns(DB); }
   if (state === 'uteend') {
     rect(30, 200, W - 60, 300, '#000d');
@@ -3669,7 +3686,7 @@ function drawShop() {
   text('W / S walk    A / D turn    E use    exit by the glass doors', W / 2, 55, 13, '#fff');
   const sp = shopNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { desk: 'check in at reception', lollies: 'grab some lollies', chips: 'grab some chips', toiletries: 'grab toiletries', fridge: 'grab a cold drink' }[sp.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
-  if (msgT > 0) text(msg, W / 2, 110, 15, '#ffef79');
+  if (msgT > 0) msgBox(msg, 110, 15);
 }
 // ---------- workshop office (the transportable beside the crib room) ----------
 // Local coordinates: x across (-110..110), y from the back wall (-60) to the door (+60). Main room: two big U-shaped desks with a
@@ -3842,7 +3859,7 @@ function drawWsOffice() {
   text('W / S walk    A / D turn    E use    exit by the door', W / 2, 55, 13, '#fff');
   const sp = wsoNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text('Press E: ' + { boss: 'talk to the supervisor', cctv: 'check the yard cameras', printer: 'grab your service sheet', manager: 'talk to the manager', parts: 'talk to the parts guy', planner: 'talk to the planner' }[sp.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
-  if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
+  if (msgT > 0) msgBox(msg, 110, 14);
 }
 // ---------- walk-in courtyard rooms: the crib room and the female and male toilets ----------
 // Each room has local coordinates: x across, y from the back wall (y0) to the wall with the door (y1), door at x = door.
@@ -4058,7 +4075,7 @@ function drawShRoom() {
   const sp = shrNear(); if (sp) { rect(18, 520, W - 36, 70, '#102337ee'); text(mBreath > 0 ? `Blowing... ${Math.round(mBreath / 2.5 * 100)}%` : 'Press E: ' + shrAct(sp), W / 2, 556, 14, '#fff'); if (mBreath > 0) bar(85, 572, 310, 10, mBreath / 2.5, '#7fdf7f'); }
   if (role === 'mech' && shRoom === 'crib' && mStage <= 4) text(mStage === 3 ? 'OBJECTIVE: CRIB IN THE FRIDGE (RIGHT END)' : 'OBJECTIVE: BREATHO ON THE WALL BY THE DOOR', W / 2, 140, 14, '#ffe568');
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
-  if (msgT > 0) text(msg, W / 2, 110, 14, '#ffef79');
+  if (msgT > 0) msgBox(msg, 110, 14);
 }
 // ---------- camp dining room (inside the kitchen building) ----------
 // Local coordinates: x across (-150..150), y from the back wall (-110) to the double doors (+110). Bain-marie along the back,
@@ -4186,7 +4203,7 @@ function drawKitchen() {
   text('W / S walk    A / D turn    E grab / use    exit by the double doors', W / 2, 55, 13, '#fff');
   const s2 = kitNear(); if (s2) { rect(18, 520, W - 36, 70, '#102337ee'); text(kitDone[s2.name] ? s2.msg : 'Press E: ' + { bain: 'grab a feed', fresh: 'fresh food', crib: 'pack your crib bag', dish: 'return your dishes', coffee: 'make a coffee' }[s2.name], W / 2, 560, 14, '#fff'); }
   if (isTouch) { drawStick(); drawBtns(DB); drawBtn([340, 558, 132, 52], 'USE', false); }
-  if (msgT > 0) text(msg, W / 2, 110, 15, '#ffef79');
+  if (msgT > 0) msgBox(msg, 110, 15);
 }
 // Driver changeover is mandatory before entering the already-loaded road train.
 let handStep=0, handoverLoaded=true, handPos={x:-65,y:75,dir:0};
@@ -4298,7 +4315,7 @@ function drawParkHandover(){
     const step=brk?brk.step:0;
     text(['Walk to the driver by the cab and press E',"Trailer 2's left side (flashing): hold E to swap the airbag","Tell the driver it's fixed: press E by the cab",''][step],W/2,640,13,'#fff');
     if(step===1){text('Chock, dump the air, unbolt, new airbag, air up',W/2,664,13,'#ffe568');bar(60,680,W-120,10,brk.prog/3,'#7fdf7f');}
-    if(msgT>0)text(msg,W/2,150,13,'#ffef79');
+    if(msgT>0)msgBox(msg, 150, 13);
   } else {
   const close=Math.hypot(handPos.x+15,handPos.y-35)<=35;
   text(close?handLines[Math.min(handStep,handLines.length-1)]:'Walk to the other driver beside the truck',W/2,640,13,'#fff');
@@ -4378,7 +4395,7 @@ function drawOffice() {
   text(instruction,W/2,100,14,'#fff');
   if(officeStep===1)bar(150,116,200,9,officeBreath/2.5,'#7de0a3');
   if(isTouch){drawStick();drawBtns(DB);drawBtn([340,558,132,52],'INTERACT',false);}
-  if(msgT>0)text(msg,W/2,140,16,'#ffef79');
+  if(msgT>0)msgBox(msg, 140, 16);
 }
 function updateWalk(dt) {
   wT += dt; msgT -= dt; wWrong = Math.max(0, wWrong - dt);
@@ -5168,7 +5185,7 @@ function drawWalk() {
     if (isTouch) drawBtn([340, 558, 132, 52], 'GO INSIDE', false);
   }
   if (state === 'walk' && isTouch) { drawStick(); drawBtns(DB); }
-  if (msgT > 0) text(msg, W / 2, 110, 20, '#ff6');
+  if (msgT > 0) msgBox(msg, 110, 20);
   if (state === 'walkend') {
     rect(30, 200, W - 60, 300, '#000d');
     text(`ROOM ${rn}`, W / 2, 270, 38, '#4c4');
@@ -5535,7 +5552,7 @@ function drawSkyway() {
     drawBtn(lidBtn(i), lidBtn(i)[4], tr[i].want); drawBtn(tipBtn(i), tipBtn(i)[4], tr[i].dir !== 0 || tr[i].hold > 0);
   }
   if (tug) { rect(0, 0, W, 64, '#142536e8'); text('TIP & TUG: PA236', W / 2, 26, 20, '#ffea69'); text('One trailer at a time: open the lid, tip the bin, close the lid', W / 2, 50, 12, '#fff');
-    if (msgT > 0) text(msg, W / 2, 90, 14, '#ffef79');
+    if (msgT > 0) msgBox(msg, 90, 14);
     if (isTouch) drawBtn(VIEW_BTN, ttView === 'cab' ? 'OUTSIDE' : 'CAB', false); else text(ttView === 'cab' ? 'V: outside view' : 'V: cab view', 12, 82, 11, '#ccc', 'left');
     text(isTouch ? 'Lid, tip, then close the lid before the next trailer' : '1-4 open/close lid · Q W E R tip the bin', W / 2, H - 76, 14, '#fff'); }
   else text(isTouch ? 'Open each lid, then tip the bin over the wall' : '1-4 open/close lid · Q W E R tip bin over the wall', W / 2, H - 76, 14, '#fff');
@@ -6035,7 +6052,7 @@ function drawYard() {
     text(cart.spray && cart.tank > 0 ? 'SPRAYING' : 'Spray off', 210, 40, 12, cart.spray && cart.tank > 0 ? '#8cf' : '#aaa', 'center');
     text(`Rating ${waterRating()}%`, W - 12, 24, 14, '#ff6', 'right');
     text(isTouch ? 'Stick steer · GAS / REV · SPRAY' : '←→ steer · ↑↓ drive · SPACE spray · V view', W - 12, 46, 12, '#ccc', 'right');
-    if (msgT > 0) text(msg, W / 2, 210, 15, '#ff6');
+    if (msgT > 0) msgBox(msg, 210, 15);
     if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, 'SPRAY', cart.spray); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
     return;
   }
@@ -6047,7 +6064,7 @@ function drawYard() {
   text(`Trailers ${trDmg.map(d => 100 - d).join('/')}%`, W - 12, 13, 10, '#aaa', 'right');
   text(carrying ? 'Bucket full: dump it in a trailer' : nearPile() ? 'At the pile: SCOOP' : 'Drive to the pile', W - 12, 24, 13, '#ff6', 'right');
   text(isTouch ? 'Stick to steer · GAS / REV to move' : '←→ / pad stick turn · ↑↓ move · SPACE scoop/dump', W - 12, 46, 12, '#ccc', 'right');
-  if (msgT > 0) text(msg, W / 2, rom.cur ? 210 : 90, 15, '#ff6');
+  if (msgT > 0) msgBox(msg, rom.cur ? 210 : 90, 15);
   if (ore() >= MIN_ORE) { if (isTouch) drawBtn(GO, GO[4], false); else text('Press G / Enter to start driving', W / 2, 620, 18, '#ff6'); }
   else text(`Load at least ${MIN_ORE} t to depart`, W / 2, isTouch ? 615 : 620, 14, '#bbb');
   if (isTouch) { drawStick(); drawBtns(LB); drawBtn(ACT, ACT[4], false); drawBtn(VIEW_BTN, VIEW_BTN[4], false); } else text('V: change view', 12, 76, 11, '#ccc', 'left');
@@ -6431,7 +6448,7 @@ function drawWorkshop() {
   text('HP', 10, 20, 12, '#fff', 'left'); bar(34, 8, 140, 16, hp / 100, hp > 40 ? '#4c4' : '#e44');
   text('WORKSHOP YARD', W - 10, 22, 16, '#ff6', 'right');
   text(wk.auto && !wk.done ? (wk.bay === TYRE_BAY ? 'Fitting new tyres...' : wk.crewReady ? 'Repairing...' : 'Mechanics coming over...') : wk.done ? 'Drive through any bay, or out the yard gate' : workshopParked() ? 'Press E to explore workshop on foot' : 'Drive to any bay - no yard lineup required', W / 2, 52, 14, '#ddd');
-  if (msgT > 0) text(msg, W / 2, 110, 18, '#ff6');
+  if (msgT > 0) msgBox(msg, 110, 18);
   if(workshopParked()) {
     text('TRUCK PARKED - PRESS E TO CLIMB OUT',W/2,120,19,'#ffe36b');
     if(isTouch)drawBtn([340,570,132,52],'CLIMB OUT',false);
@@ -6499,7 +6516,7 @@ function render() {
       drawBtn(FIT_BTN, FIT_BTN[4], false); drawBtn(CHG_BTN, CHG_BTN[4], false);
     }
     if (state === 'drive' && bf) bar(W / 2 - 80, 130, 160, 12, Math.min(1, bf.t / BF_END), '#4c4');
-    if (msgT > 0) text(msg, W / 2, 110, 22, '#ff6');
+    if (msgT > 0) msgBox(msg, 110, 22);
     if (state === 'over' || state === 'win') {
       rect(30, 120, W - 60, 500, '#000d');
       if (state === 'over') { text('WRECKED!', W / 2, 175, 38, '#e44'); text(tons > 0 ? `${tons} t hauled to the Skyway` : `${pctOut()}% of the way to the Skyway`, W / 2, 208, 17); }
