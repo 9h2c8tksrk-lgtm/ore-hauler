@@ -3431,7 +3431,7 @@ function drawShop() {
 // Local coordinates: x across (-110..110), y from the back wall (-60) to the door (+60). Main room: two big U-shaped desks with a
 // a row of four U-shaped desks: the parts guy, two empty workstations and the supervisor, backs to the door; split system, framed tickets, stretch poster, copier, boxes.
 // On the left a partition with an open door into the manager's office: L-shaped desk with him sat behind it, CCTV on the wall.
-const WSO = { x0: -110, x1: 160, y0: -60, y1: 60 }, WSO_PART = -45, WSO_GAP = [8, 32], WSO_U = [-15, 33, 81, 129], WSO_WHO = ['parts', null, null, 'boss'];   // partition x, its doorway, the U desks' centres and who sits at each
+const WSO = { x0: -110, x1: 160, y0: -60, y1: 60 }, WSO_PART = -45, WSO_GAP = [8, 32], WSO_DESKS = [10, 90], WSO_U = [-10, 30, 70, 110], WSO_WHO = ['parts', null, null, 'boss'];   // partition x, its doorway, the two double desks' centres (80 wide, butted together), the four workstations and who sits at each
 const WS_OFF_DOOR = shDoorPt(SH_BLDGS[1]);
 const nearWsOffice = () => state === 'workshopfoot' && Math.hypot(workshopFoot.x - (WS_OFF_DOOR.x - 14), workshopFoot.y - WS_OFF_DOOR.y) < 22;
 const WSO_LINES = ["Supervisor: G'day. PA233: brakes, beacon and a grease.",
@@ -3445,7 +3445,7 @@ const WSO_SPOTS = [
   { name: 'cctv', x: -97, y: 34, r: 14, msg: 'Yard cameras: your rig in the bay, the wash pad clear, a road train at the gate.' },
   { name: 'boss', x: WSO_U[3], y: 4, r: 14 },
   { name: 'parts', x: WSO_U[0], y: 4, r: 15 },
-  { name: 'printer', x: 132, y: 36, r: 11, msg: 'Printed your service sheet off the copier. Signed and in the tray.' }];
+  { name: 'printer', x: 140, y: 36, r: 12, msg: 'Printed your service sheet off the big printer. Signed and in the tray.' }];
 const WSO_PARTS = ["Parts: G'day. Your parts are on the shelf.",
   "Parts: All booked out in Dynaway. Sign at the cage.",
   "Parts: Bring the old beacon back, it's on warranty."];
@@ -3454,8 +3454,9 @@ let wsoMgr = -1;
 let wsoLine = -1;
 const wsoSolids = () => { const P = WSO_PART, [g0, g1] = WSO_GAP, o = [[P, (WSO.y0 + g0) / 2, 4, g0 - WSO.y0], [P, (g1 + WSO.y1) / 2, 4, WSO.y1 - g1], [P - 12, g1 - 1, 22, 3],   // partition and the open door
   [-70, -14, 14, 46], [-84.5, -44, 43, 14], [-88, -14, 14, 14], [-100, 46, 14, 18],   // supervisor's L desk, his chair, filing cabinet
-  [150, 30, 18, 24], [118, 50, 20, 14], [150, -56, 10, 6]];   // copier, boxes, broom
-  for (const c of WSO_U) o.push([c, -42, 40, 12], [c - 15, -22, 10, 28], [c + 15, -22, 10, 28], [c, -15, 12, 12]);   // U desks and chairs
+  [142, 52, 30, 16], [50, 55, 28, 10], [150, -34, 14, 20], [150, -56, 10, 6]];   // printer, bookshelf, boxes, broom
+  for (const c of WSO_DESKS) o.push([c, -42, 80, 12], [c - 35, -22, 10, 28], [c + 35, -22, 10, 28]);   // the double U desks
+  for (const c of WSO_U) o.push([c, -15, 12, 12]);   // chairs
   return o; };
 function wsoBlocked(x, y) {
   if (y > WSO.y1 - 5) return Math.abs(x) > 10;
@@ -3466,7 +3467,7 @@ function enterWsOffice() { state = 'wsoffice'; kit = { x: 0, y: 46, dir: -Math.P
 function leaveWsOffice() { state = 'workshopfoot'; workshopFoot.x = WS_OFF_DOOR.x - 18; workshopFoot.y = WS_OFF_DOOR.y; footFacing = Math.PI; footCamH = footFacing; ptrs.clear(); syncBtns(); flash(cribReached ? 'Back outside. Walk back to your cab door.' : 'Back outside. The crib room is across the courtyard.'); }
 const wsoNear = () => WSO_SPOTS.find(sp => Math.hypot(kit.x - sp.x, kit.y - sp.y) < sp.r);
 function wsoInteract() {
-  const sp = wsoNear(); if (!sp) { flash('Walk up to the supervisor, the manager, the parts guy, the cameras or the copier.'); return; }
+  const sp = wsoNear(); if (!sp) { flash('Walk up to the supervisor, the manager, the parts guy, the cameras or the printer.'); return; }
   if (sp.name === 'boss') { wsoLine = (wsoLine + 1) % WSO_LINES.length; flash(WSO_LINES[wsoLine]); return; }
   if (sp.name === 'parts') { wsoParts = (wsoParts + 1) % WSO_PARTS.length; flash(WSO_PARTS[wsoParts]); return; }
   if (sp.name === 'manager') { wsoMgr = (wsoMgr + 1) % WSO_MGR.length; flash(WSO_MGR[wsoMgr]); return; }
@@ -3557,29 +3558,40 @@ function drawWsOffice() {
     const tiles = ['#5b7fa8', '#8a6447', '#6f8fb0', '#3e5f86', '#a77a52', '#7b9cbc'];
     for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) X(x + .1, 13 + c * 7.6, 20 + c * 7.6, 25 + r * 5.8, 30.4 + r * 5.8, shade(tiles[(r * 3 + c + Math.floor(wT / 4)) % 6], .9 + .1 * Math.sin(wT * 3 + c)));
   }, pre);
-  // four U-shaped desks in a row: a back run with two screens and a return down each side. Parts on the left, two empty
-  // workstations (chairs pushed in), the supervisor on the right
+  // two double U desks butted together: each a long back run with a return at both ends and two workstations. Parts guy and an
+  // empty station on the left desk, an empty station and the supervisor on the right
   const LOOK = { parts: [{ shirt: '#ff7a1a', stripe: '#e4e8e9', pants: '#2b2b2b', hair: 'cap', cap: '#2f2f33', hairCol: '#2e2018', skin: '#c58a62' }, false],
     boss: [{ shirt: '#e7e900', stripe: '#e4e8e9', pants: '#293b56', hair: 'mullet', hairCol: '#b8915e', skin: '#e2ab86' }, true] };   // the supervisor: light brown mullet and a mo
-  WSO_U.forEach((c, i) => add(c, -30, () => {
-    const who = WSO_WHO[i];
-    for (const [x, y] of [[c - 19, -47], [c + 19, -47], [c - 19, -9], [c + 19, -9]]) wBox(x, y, 1.6, 1.6, 0, 13, '#9a9ea2', '#9a9ea2');
-    wBox(c, -42, 40, 12, 13, 15, '#b9925f', '#d8b07a'); for (const sx of [-1, 1]) wBox(c + sx * 15, -22, 10, 28, 13, 15, '#b9925f', '#d8b07a');
-    wBox(c - 15, -18, 9, 12, 0, 13, '#c7a06c', '#d2ab76');                                            // drawer pedestal
-    screen(c - 8, -46, 15); screen(c + 8, -46, 15);
-    wBox(c, -34, 14, 4.5, 15, 15.7, '#25292e', '#3a3f44'); wBox(c + 10, -33, 3, 4, 15, 15.6, '#25292e', '#3a3f44');   // keyboard, mouse
-    if (who === 'boss') { wBox(c + 15, -14, 7, 10, 15, 15.4, '#f4f4f2', '#ffffff'); wBox(c - 15, -28, 6, 6, 15, 21, '#c7d0d6', '#d9e0e4'); wBox(c - 15, -20, 5, 7, 15, 18, '#e8641c', '#f07a34'); }   // job cards, a part box, the new beacon in its box
-    else if (who === 'parts') { wBox(c - 15, -26, 6, 8, 15, 15.6, '#15171a', '#25292e'); wBox(c + 15, -16, 7, 9, 15, 15.4, '#f4f4f2', '#ffffff'); wBox(c + 15, -29, 6, 6, 15, 19, '#b88a55', '#c99a65'); wBox(c - 14, -14, 4, 4, 15, 19.5, '#c62828', '#d84040'); }   // phone, pick slips, a parts box, a mug
-    else wBox(c + 14, -26, 6, 8, 15, 15.6, '#15171a', '#25292e');                                     // just a desk phone
-    if (who) chair(c, -16, -Math.PI / 2, LOOK[who][0], LOOK[who][1]); else chair(c, -12, -Math.PI / 2, null);   // empty chairs sit pushed in a little
+  WSO_DESKS.forEach((c, d) => add(c, -30, () => {
+    for (const [x, y] of [[c - 39, -47], [c + 39, -47], [c - 39, -9], [c + 39, -9]]) wBox(x, y, 1.6, 1.6, 0, 13, '#9a9ea2', '#9a9ea2');
+    wBox(c, -42, 80, 12, 13, 15, '#b9925f', '#d8b07a'); for (const sx of [-1, 1]) wBox(c + sx * 35, -22, 10, 28, 13, 15, '#b9925f', '#d8b07a');
+    for (const sx of [-1, 1]) wBox(c + sx * 35, -18, 9, 12, 0, 13, '#c7a06c', '#d2ab76');              // drawer pedestals under the returns
+    wBox(c, -42.5, 1, 11, 15, 22, '#7d8b96', '#8d9ba6');                                               // low screen between the two stations
+    for (const k of [0, 1]) {
+      const i = d * 2 + k, st = WSO_U[i], who = WSO_WHO[i], out = st + (st < c ? -1 : 1) * 25;   // out: the station's end return
+      screen(st - 8, -46, 15); screen(st + 8, -46, 15);
+      wBox(st, -34, 14, 4.5, 15, 15.7, '#25292e', '#3a3f44'); wBox(st + 10, -33, 3, 4, 15, 15.6, '#25292e', '#3a3f44');   // keyboard, mouse
+      if (who === 'boss') { wBox(out, -14, 7, 10, 15, 15.4, '#f4f4f2', '#ffffff'); wBox(out, -28, 6, 6, 15, 21, '#c7d0d6', '#d9e0e4'); wBox(out, -20, 5, 7, 15, 18, '#e8641c', '#f07a34'); }   // job cards, a part box, the new beacon in its box
+      else if (who === 'parts') { wBox(out, -26, 6, 8, 15, 15.6, '#15171a', '#25292e'); wBox(out, -14, 7, 9, 15, 15.4, '#f4f4f2', '#ffffff'); wBox(st + 14, -38, 5, 4, 15, 19.5, '#c62828', '#d84040'); }   // phone, pick slips, a mug
+      else wBox(out, -26, 6, 8, 15, 15.6, '#15171a', '#25292e');                                     // just a desk phone
+      if (who) chair(st, -16, -Math.PI / 2, LOOK[who][0], LOOK[who][1]); else chair(st, -12, -Math.PI / 2, null);   // empty chairs pushed in
+    }
   }));
-  add(150, 30, () => {   // the big office copier, against the right wall by the front: paper drawers, scanner lid, touch screen, output tray
-    wBox(150, 30, 18, 24, 0, 26, '#26292d', '#2f3337'); for (const z of [5, 10, 15, 20]) X(140.9, 20, 40, z, z + .4, '#4a5056');
-    wBox(151, 30, 16, 22, 26, 31, '#2f3337', '#3a3f44'); wBox(152, 30, 12, 20, 31, 33, '#3a3f44', '#454b51');
-    wBox(143, 36, 3, 7, 30, 31.5, '#1d2023', '#5fb0e8'); wBox(146, 22, 8, 7, 26.5, 27.2, '#f4f4f4', '#ffffff');
+  add(50, 55, () => {   // small bookshelf against the door wall: three shelves of folders, manuals and a hard hat on top
+    wBox(50, 55, 28, 10, 0, 30, '#8a6a44', '#a07c50');
+    const f = 49.9, cols = ['#1d5fb4', '#c62828', '#2f7a46', '#e8b100', '#5b6f86', '#f4f4f4', '#1d3557'];
+    for (let r = 0; r < 3; r++) { Y(37.5, 62.5, f, 2 + r * 9.5, 9.5 + r * 9.5, '#3b2a1a');
+      for (let k = 0; k < 8; k++) if ((k * 7 + r * 3) % 9) Y(38 + k * 3.05, 40.6 + k * 3.05, f - .1, 2.4 + r * 9.5, 8.4 + r * 9.5 - ((k + r) % 3) * .9, cols[(k + r * 2) % cols.length]); }
+    wBox(44, 55, 8, 8, 30, 33, '#f4f4f4', '#ffffff');
+  });
+  add(142, 52, () => {   // the big printer at the end of the door wall: paper drawers, finisher, scanner lid, touch screen, output trays
+    wBox(142, 52, 30, 16, 0, 28, '#e6e8ea', '#f0f1f2'); for (const z of [5, 10, 15, 20]) Y(129, 155, 43.9, z, z + .4, '#a9b0b6');
+    wBox(144, 52, 24, 14, 28, 33, '#d9dcdf', '#e6e8ea'); wBox(144, 53, 22, 12, 33, 35, '#3a3f44', '#454b51');   // scanner and lid
+    wBox(124, 51, 8, 14, 10, 30, '#d9dcdf', '#e6e8ea'); wBox(123, 47, 6, 5, 22, 23, '#f4f4f4', '#ffffff');       // finisher with a sorted stack
+    wBox(138, 44.6, 7, 3, 31, 32.5, '#1d2023', '#5fb0e8'); wBox(134, 47, 9, 7, 28.5, 29.2, '#f4f4f4', '#ffffff');
   });
   add(150, -56, () => { wBox(150, -56, 1, 1, 0, 34, '#3fae3a', '#55c450'); wBox(150, -55, 9, 3, 0, 3, '#3fae3a', '#55c450'); });   // broom
-  add(118, 50, () => { wBox(118, 50, 20, 14, 0, 12, '#b88a55', '#c99a65'); wBox(122, 50, 11, 13, 12, 21, '#c09260', '#d2a470'); });   // boxes
+  add(150, -34, () => { wBox(150, -34, 14, 20, 0, 12, '#b88a55', '#c99a65'); wBox(150, -30, 13, 11, 12, 21, '#c09260', '#d2a470'); });   // boxes
   add(kit.x, kit.y, () => campHuman(kit.x, kit.y, false, true));
   for (const L of [pre, ents]) { L.sort((p, q) => q.f - p.f); for (const e of L) if (e.f > -30 || L === pre) e.fn(); }
   rect(0, 0, W, 80, '#142536dd'); text('WORKSHOP OFFICE', W / 2, 27, 22, '#ffea69');
