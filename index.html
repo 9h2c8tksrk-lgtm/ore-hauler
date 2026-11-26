@@ -2595,7 +2595,7 @@ function drawWorld3DInner(playerX, menu) {
       withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, menu ? .8 : fills[i] / TRAILER_CAP, menu ? 1 : tr[i].lid));
     } });
   }
-  if (bf && !menu) { const fp = fitPose(); if (fp.ute) list.push({ y: fp.ute.y, fn: () => ute3(fp.ute.x, fp.ute.y, '#f4f4f4', -1, { toolbox: true }) }); if (fp.man) list.push({ y: fp.man.y, fn: () => person3(fp.man) }); }
+  if (bf && !menu) { const fp = fitPose(); if (fp.ute) list.push({ y: fp.ute.y, fn: () => ute3(fp.ute.x, fp.ute.y, '#f4f4f4', -1, { svc: true }) }); if (fp.man) list.push({ y: fp.man.y, fn: () => person3(fp.man) }); }
   list.sort((a, b) => a.y - b.y);
   for (const o of list) { if (fpOn && o.y > fpE.y - 6) continue; fpBehind = false; o.fn(); }
   if (bf && !menu) {   // fitter signs off the job
@@ -2805,7 +2805,8 @@ function ladderGuy(list, vx, vy, bx, by) {
   } });
 }
 // tray-back dual cab with a mine-site ROPS frame behind the cab: beacon, short flag and tail lights on the frame.
-// face -1: nose up the screen. o.toolbox adds a steel service toolbox on the tray.
+// face -1: nose up the screen. o.toolbox adds a steel service toolbox on the tray. o.svc: the workshop's breakdown ute, a single-cab
+// 79 Series with a long tray: a truck toolbox slid on down one side as the mechanic's toolbox, two spare tyres down the other.
 // wheel prism turned by angle a about its own centre (used for the steering front wheels)
 function wheelBox(cx, cy, hw, hl, z0, z1, a, col, side) {
   const c = Math.cos(a), s = Math.sin(a), q = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]].map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c]);
@@ -2838,7 +2839,7 @@ function waterTruck3(x, y) {
   }
 }
 function ute3(x, y, col, face, o = {}) {
-  const w = 22, t = beaconClock(), f = face, fy = d => y + f * d, glass = '#27323d', rops = '#dcdfe2', parts = [];
+  const w = 22, t = beaconClock(), f = face, fy = d => y + f * d, glass = '#27323d', rops = '#dcdfe2', parts = [], rd = o.svc ? -1 : -11;   // rd: where the ROPS frame stands
   const add = (d, fn) => parts.push([fy(d), fn]);
   shadow(x, y, w + 6, 68);
   box(x, y, w - 5, 66, 3, 9, '#202020');
@@ -2857,11 +2858,24 @@ function ute3(x, y, col, face, o = {}) {
     for (const sx of [-1, 1]) box(x + sx * 5, fy(34), 1.5, 1.5, 7, 19, '#1b1b1b');
     box(x, fy(34), 12, 1.5, 17, 19, '#1b1b1b');
   });
-  add(3, () => {
+  if (o.svc) add(8.5, () => {   // single cab with a snorkel up the driver's side
+    box(x, fy(8.5), w, 14, 8, 20, col); box(x, fy(8.5), w - 1.6, 12, 20, 25, glass); box(x, fy(8.5), w - 3, 9, 25, 27, col);
+    for (const sx of [-1, 1]) box(x + sx * (w / 2 + 2), fy(13), 2.2, 3, 17, 20.5, '#222');
+    box(x + w / 2 + .8, fy(15), 2, 2, 12, 28, '#1d1f22'); box(x + w / 2 + .8, fy(15.8), 2.4, 3.2, 27, 29, '#1d1f22');
+  });
+  else add(3, () => {
     box(x, fy(3), w, 25, 8, 20, col); box(x, fy(3), w - 1.6, 23, 20, 25, glass); box(x, fy(3), w - 3, 17, 25, 27, col);
     for (const sx of [-1, 1]) box(x + sx * (w / 2 + 2), fy(10), 2.2, 3, 17, 20.5, '#222');
   });
-  add(-21, () => {
+  if (o.svc) add(-17, () => {   // the long alloy tray: truck toolbox down the left, two spares stood up down the right
+    box(x, fy(-17), w + 1, 34, 8, 10, '#9aa1a7');
+    for (const sx of [-1, 1]) box(x + sx * (w / 2), fy(-17), 1.4, 34, 10, 13, '#b8bec4');
+    box(x, fy(-33.6), w + 1, 1.4, 10, 13, '#b8bec4'); box(x, fy(0), w + 1, 1.6, 10, 19, '#8d949a');
+    box(x - 5, fy(-17), 10, 28, 10, 18.5, '#c9ced2'); box(x - 5, fy(-17), 10.4, 28.4, 18.5, 19.3, '#e6e9eb');   // the truck box, checker-plate lid
+    box(x - 5, fy(-17), 10.6, 1, 13, 18, '#7d858b'); for (const d of [-9, -25]) box(x - 10.3, fy(d), .6, 2.4, 15, 16.5, '#2b2f33');   // lid seam, latches
+    for (const d of [-9, -24]) { box(x + 5.5, fy(d), 4.6, 10.5, 10, 20.5, '#151515'); box(x + 8, fy(d), 1, 5.5, 12.5, 18, '#e9ebec'); }   // two spare tyres on white steel rims
+  });
+  else add(-21, () => {
     box(x, fy(-21), w, 26, 8, 10, '#2b2b2b');
     for (const sx of [-1, 1]) box(x + sx * (w / 2 - .9), fy(-21), 1.8, 26, 10, 16, col);
     box(x, fy(-33), w, 1.8, 10, 16, col); box(x, fy(-9), w, 1.8, 10, 17, col);
@@ -2873,16 +2887,16 @@ function ute3(x, y, col, face, o = {}) {
       box(x, fy(-17), w - 4.8, 2, 15, 16.4, '#e07a10');
     } else box(x + 4, fy(-20), 9, 9, 10, 12.5, '#1a1a1a');
   });
-  add(-11, () => {
-    for (const sx of [-1, 1]) { box(x + sx * (w / 2 - 2.5), fy(-11), 2, 2, 16, 41, rops); box(x + sx * (w / 2 - 2.5), fy(-19), 1.6, 1.6, 10, 30, rops); }
-    box(x, fy(-11), w - 3, 2, 39, 41, rops);
+  add(rd, () => {
+    for (const sx of [-1, 1]) { box(x + sx * (w / 2 - 2.5), fy(rd), 2, 2, 16, 41, rops); box(x + sx * (w / 2 - 2.5), fy(rd - 8), 1.6, 1.6, 10, 30, rops); }
+    box(x, fy(rd), w - 3, 2, 39, 41, rops);
   });
   parts.sort((a, b) => a[0] - b[0]).forEach(p => p[1]());
   const nr = y + 34;
   if (f > 0) for (const sx of [-1, 1]) { rearRect(nr, x + sx * 7 - 2.2, x + sx * 7 + 2.2, 9, 12.5, '#fff4c0'); glow(x + sx * 7, nr, 11, 14, 'rgba(255,245,200,.55)'); }
   else { for (const sx of [-1, 1]) { rearRect(nr - 1, x + sx * 8.4 - 2.4, x + sx * 8.4 + 2.4, 10.5, 15, '#ff2a20'); glow(x + sx * 8.4, nr - 1, 12.5, 14, 'rgba(255,50,40,.6)'); } rearRect(nr - 1, x - 4, x + 4, 10, 13, '#e8e8e8'); }
-  box(x, fy(-11), 5, 5, 41, 43, '#444'); beaconAt(x, fy(-11), 45);
-  const px = x + w / 2 - 2.5, py = fy(-11), wv = Math.sin(t * 7 + x) * 1.2;
+  box(x, fy(rd), 5, 5, 41, 43, '#444'); beaconAt(x, fy(rd), 45);
+  const px = x + w / 2 - 2.5, py = fy(rd), wv = Math.sin(t * 7 + x) * 1.2;
   box(px, py, 1, 1, 41, 58, '#333');
   poly([P(px + .5, py, 58), P(px + 9, py, 58 + wv), P(px + 9, py, 51 + wv), P(px + .5, py, 51)], '#ff6a00');
   poly([P(px + .5, py, 56), P(px + 9, py, 56 + wv), P(px + 9, py, 53.5 + wv), P(px + .5, py, 53.5)], '#fff');
@@ -3036,7 +3050,7 @@ function drawUteWorld() {
     box(x, yS, 3, 3, 0, 30, '#ccc'); box(x, yS, 44, 3, 30, 44, '#1d5fb4');
     const [sx, sy] = P(x, yS + 1.6, 37), k = sc(yS); text('CAR PARK', sx, sy + 3 * k, 8 * k, '#fff');
   } });
-  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud })) });
+  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud, svc: role === 'mech' })) });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) o.fn();
   for (const d of udust) {
@@ -3082,7 +3096,7 @@ function drawUteHighway() {
     for (let i = 0; i < NT; i++) { const p = chainPose(J, i); if (p.y > -115 && p.y < H + 80) list.push({ y: p.y - 1, fn: () => withFrame(p.x, p.y, p.a, () => trailer3(p.x, p.y, i, .9, 0)) }); }
   }
   for (const o of uoncoming) { const y = ys(o.s); if (y > -115 && y < H + 60) list.push({ y, fn: () => o.tank ? waterTruck3(o.x, y) : ute3(o.x, y, '#f4f4f4', 1, { toolbox: o.tb }) }); }
-  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud })) });
+  list.push({ y: UTE_Y, fn: () => withFrame(ux, UTE_Y, uh, () => ute3(ux, UTE_Y, '#f4f4f4', -1, { steer: ud, svc: role === 'mech' })) });
   list.sort((a, b) => a.y - b.y); for (const o of list) o.fn();
   atmosphere();
 }
@@ -3980,7 +3994,7 @@ function updateParkHandover(dt){
   const fwd=(keys.KeyW||keys.ArrowUp||keys.TG?1:0)-(keys.KeyS||keys.ArrowDown||keys.TB?.65:0);
   const nx=handPos.x+Math.cos(handPos.dir)*38*fwd*dt;
   const ny=handPos.y+Math.sin(handPos.dir)*38*fwd*dt;
-  const rigHit=(x,y)=>Math.abs(x-28)<24&&y>-164&&y<250;   // PA219 / the changeover truck
+  const rigHit=(x,y)=>(Math.abs(x-28)<24&&y>-164&&y<250)||(role==='mech'&&Math.abs(x+60)<20&&y>84&&y<190);   // PA219 / the changeover truck, and the breakdown ute
   if(nx>-115&&nx<55&&!rigHit(nx,handPos.y))handPos.x=nx;
   if(ny>-190&&ny<135&&!rigHit(handPos.x,ny))handPos.y=ny;
 }
@@ -4040,11 +4054,8 @@ function drawParkHandover(){
       if(fixed){wBox(-14,14,8,10,0,3,'#151617','#202224');}                                         // the old airbag on the ground
       if(st===1){const on=Math.sin(wT*6)>0;wBox(BRK_BAG.x,BRK_BAG.y,2,2,0,40,on?'#ffe040':'#9a8a30',on?'#ffe040':'#9a8a30');}});
     for(const ty of [300,340])add(30,ty,()=>{wPoly([[24,ty,0],[36,ty,0],[30,ty,11]],'#e8401c');wPoly([[26.5,ty-.1,2],[33.5,ty-.1,2],[30,ty-.1,8]],'#f4f4f4');});   // warning triangles behind the truck
-    add(-60,140,()=>{   // your service ute: white tray-back, ROPS, beacon, flag, toolboxes, compressor
-      wBox(-60,140,30,64,4,16,'#f2f3f4','#e6e8ea');wBox(-60,120,28,24,16,30,'#f2f3f4','#26404f');
-      for(const [wx,wy] of [[-75,118],[-45,118],[-75,160],[-45,160]])wBox(wx,wy,4,12,0,10,'#151617','#202224');
-      wBox(-60,152,30,34,16,18,'#4a5056','#5e6468');wBox(-70,152,8,30,18,26,'#c9ced2','#dfe3e6');wBox(-50,158,8,14,18,24,'#c62828','#d44');   // tray, toolbox, compressor
-      wBox(-60,134,30,2,16,36,'#2b2f33','#3a3f44');const on=Math.sin(wT*9)>0;wBox(-60,134,4,4,36,39,on?'#ff8a00':'#a05800','#ffb04a');wBox(-75,134,1,1,16,52,'#d62828','#d62828');});
+    add(-60,140,()=>lc79Model(-60,140));    // your breakdown ute: 79 Series, truck toolbox and two spares on the tray
+    add(-58,262,()=>hinoModel(-58,262));    // the Hino service truck came out too: toolboxes, fuel tank, compressor, Hiab, yellow gates
     add(BRK_DRIVER.x,BRK_DRIVER.y,()=>campHuman(BRK_DRIVER.x,BRK_DRIVER.y,false,false,{dir:Math.PI/2,shirt:'#ff8a1c',hair:'cap',cap:'#1b1d20',hairCol:'#3a2a20',skin:'#c58a62'}));
   } else add(-15,35,()=>campHuman(-15,35,false,false));
   add(-105,80,()=>{wBox(-105,80,2,2,0,33,'#ddd','#ddd');wBox(-105,80,32,2,33,45,'#1d5fb4','#1d5fb4');wText('P',-105,80,39,9,'#fff');});
@@ -4334,6 +4345,96 @@ function wWheel(x, y, r, w, rim = '#e9ebec') {
   const disc = (k, col, dy) => wPoly(Array.from({ length: N }, (_, i) => [x + Math.cos(i / N * 2 * Math.PI) * r * k, sy + dy, r + Math.sin(i / N * 2 * Math.PI) * r * k]), col);
   const o = Math.sign(sy - y);
   disc(1, '#161718', 0); disc(.6, rim, o * .15); disc(.22, shade(rim, .62), o * .3);
+}
+// tyre with its axle along x (ax = 0) or y (ax = 1), centre height z; tread facets toward the camera, then the outer face and rim
+function wTyre(x, y, z, r, w, ax, rim = '#e9ebec') {
+  const N = 12, P3 = (a, s) => ax ? [x + Math.cos(a) * r, y + s, z + Math.sin(a) * r] : [x + s, y + Math.cos(a) * r, z + Math.sin(a) * r];
+  for (let k = 0; k < N; k++) {
+    const a0 = k / N * 2 * Math.PI, a1 = (k + 1) / N * 2 * Math.PI, nc = Math.cos((a0 + a1) / 2), ns = Math.sin((a0 + a1) / 2);
+    if ((ax ? wCam.x - x : wCam.y - y) * nc + (WCH - z) * ns <= 0) continue;
+    wPoly([P3(a0, -w / 2), P3(a1, -w / 2), P3(a1, w / 2), P3(a0, w / 2)], k % 2 ? '#1c1d1f' : '#26282a');
+  }
+  const c = ax ? wCam.y - y : wCam.x - x; if (Math.abs(c) < w / 2) return;
+  const sd = Math.sign(c) * w / 2, disc = (k, col, e) => wPoly(Array.from({ length: N }, (_, i) => { const a = i / N * 2 * Math.PI, q = P3(a, sd + Math.sign(c) * e); return ax ? [x + (q[0] - x) * k, q[1], z + (q[2] - z) * k] : [q[0], y + (q[1] - y) * k, z + (q[2] - z) * k]; }), col);
+  disc(1, '#161718', 0); disc(.62, rim, .15); disc(.22, shade(rim, .62), .3);
+}
+// paint a vehicle: every face queued, sorted far to near, then drawn
+function wVehicle(fn) { const outer = polySink; polySink = []; try { fn(); } finally { const faces = polySink; polySink = outer; faces.sort((p, q) => q.d - p.d); for (const f of faces) wPoly(f.pts, f.col); } }
+// The workshop's breakdown ute: a white single-cab 79 Series tray-back, nose to -y. Black bull bar with a light bar, snorkel up the
+// driver's side, white steel wheels, ROPS with a beacon and flag, alloy tray: a steel truck toolbox slid on down the left side as the
+// mechanic's toolbox, and two spare tyres stood up down the right.
+function lc79Model(x, y) {
+  const B = (dx, dy, w, l, z0, z1, c, r = c) => wBox(x + dx, y + dy, w, l, z0, z1, c, r), Q = (pts, c) => wPoly(pts.map(([a, b, z]) => [x + a, y + b, z]), c);
+  const white = '#f3f4f5', glass = '#26404f', blk = '#1d1f22', alloy = '#b8bec4', t = wT;
+  wVehicle(() => {
+    B(0, 0, 18, 96, 5, 9, '#2b2f33');                                                              // chassis
+    B(0, -36, 28, 22, 9, 20, white, '#fbfbfb'); B(0, -36, 24, 20, 20, 21.2, '#eceef0');               // bonnet
+    for (const s of [-1, 1]) B(s * 12.5, -36, 4, 22, 9, 17, white, '#f7f8f8');                     // front guards
+    Q([[-12, -47.1, 11], [12, -47.1, 11], [12, -47.1, 19.5], [-12, -47.1, 19.5]], '#2b2f33');        // grille
+    for (const s of [-1, 1]) Q([[s * 7.5, -47.2, 13], [s * 11.5, -47.2, 13], [s * 11.5, -47.2, 17], [s * 7.5, -47.2, 17]], '#fff6d0');   // round headlights
+    B(0, -49, 30, 3, 7, 11, blk); for (const s of [-1, 0, 1]) B(s * 11, -49, 2.4, 2.4, 11, 21, blk); B(0, -49, 30, 2.4, 19, 21, blk);   // bull bar
+    B(0, -49.5, 18, 1.6, 21, 23, '#2b2f33'); Q([[-8, -50.4, 21.4], [8, -50.4, 21.4], [8, -50.4, 22.6], [-8, -50.4, 22.6]], '#fff8d8');   // light bar
+    B(0, -15, 28, 20, 9, 22, white, '#fbfbfb'); B(0, -14, 28, 18, 22, 31, white, '#fbfbfb');         // single cab
+    Q([[-13, -24.6, 22], [13, -24.6, 22], [13, -22.6, 30.6], [-13, -22.6, 30.6]], glass);            // windscreen
+    for (const s of [-1, 1]) Q([[s * 14.05, -21.5, 22.5], [s * 14.05, -8, 22.5], [s * 14.05, -8, 30], [s * 14.05, -21, 30]], glass);   // door windows
+    Q([[-12, -4.9, 23], [12, -4.9, 23], [12, -4.9, 30], [-12, -4.9, 30]], glass);                    // rear window
+    for (const s of [-1, 1]) B(s * 15.5, -20, 1.6, 3, 21, 25, blk);                                 // mirrors
+    B(14.6, -27, 2.2, 2.2, 14, 33, blk); B(14.6, -27.6, 2.6, 3.4, 32, 34.5, blk);                   // snorkel, driver's side
+    B(0, 22, 30, 50, 13, 15.5, '#9aa1a7', '#a9b0b6');                                                // alloy tray deck
+    for (const s of [-1, 1]) B(s * 14.6, 22, 1, 50, 15.5, 19, alloy);                               // dropsides
+    B(0, 46.6, 30, 1, 15.5, 19, alloy); B(0, -2.4, 30, 1.6, 15.5, 30, '#8d949a');                  // tailgate, headboard
+    for (let k = -12; k <= 12; k += 3) B(k, -2.4, .6, 1.8, 19, 30, '#6d747a');                      // headboard mesh
+    // truck toolbox slid on down the left: drop-down lid, checker-plate top, two T-handle latches
+    B(-7.5, 24, 13, 40, 15.5, 27, '#c9ced2', '#dfe3e6'); B(-7.5, 24, 13.4, 40.4, 27, 27.8, '#e6e9eb');
+    Q([[-14.05, 4.5, 21.5], [-14.05, 43.5, 21.5], [-14.05, 43.5, 22], [-14.05, 4.5, 22]], '#7d858b');
+    for (const d of [12, 36]) Q([[-14.1, d - 1.5, 23], [-14.1, d + 1.5, 23], [-14.1, d + 1.5, 25], [-14.1, d - 1.5, 25]], '#2b2f33');
+    for (const d of [14, 34]) wTyre(7.5 + x, d + y, 15.5 + 7, 7, 5, 0);                             // two spare tyres stood up down the right
+    B(7.5, 24, 2, 34, 15.5, 17, '#3a3f44');                                                           // tie-down rail under them
+    for (const s of [-1, 1]) { B(s * 12.5, -2, 2, 2, 19, 42, '#dcdfe2'); B(s * 12.5, 6, 1.6, 1.6, 15.5, 32, '#dcdfe2'); } B(0, -2, 27, 2, 40, 42, '#dcdfe2');   // ROPS
+    const on = Math.sin(t * 9) > 0; B(0, -2, 4, 4, 42, 45, on ? '#ff8a00' : '#a05800', '#ffb04a');  // beacon
+    B(12.5, -2, .8, .8, 42, 62, '#333'); Q([[12.5, -2, 62], [12.5, -2 + 9, 61 + Math.sin(t * 7)], [12.5, -2 + 9, 55 + Math.sin(t * 7)], [12.5, -2, 56]], '#ff6a00');   // flag
+    for (const s of [-1, 1]) Q([[s * 10, 47.2, 15.5], [s * 13.5, 47.2, 15.5], [s * 13.5, 47.2, 18.5], [s * 10, 47.2, 18.5]], '#e01818');   // tail lights
+    for (const [dx, dy] of [[-13.5, -34], [13.5, -34], [-13.5, 32], [13.5, 32]]) wTyre(x + dx, y + dy, 7, 7, 5, 0);   // wheels, white steelies
+  });
+  wText('TOYOTA', x, y - 47.4, 18.2, 2.2, '#e9ebec');
+}
+// The workshop's service truck: a small single-axle Hino cab-over, nose to -y. Two big toolboxes across the front of the tray, a portable
+// fuel tank with its hose reel, an air compressor, a Hiab knuckle-boom crane on the rear, and yellow removable gates round the tray.
+function hinoModel(x, y) {
+  const B = (dx, dy, w, l, z0, z1, c, r = c) => wBox(x + dx, y + dy, w, l, z0, z1, c, r), Q = (pts, c) => wPoly(pts.map(([a, b, z]) => [x + a, y + b, z]), c);
+  const white = '#f4f5f6', glass = '#26404f', blk = '#1d1f22', yel = '#f2c200', t = wT, L0 = -24, L1 = 56;   // tray from L0 to L1
+  wVehicle(() => {
+    B(0, 6, 20, 110, 6, 11, '#2b2f33');                                                              // chassis rails
+    B(0, -40, 34, 26, 8, 40, white, '#fbfbfb');                                                      // cab-over
+    Q([[-15.5, -53.1, 25], [15.5, -53.1, 25], [15.5, -52.4, 37], [-15.5, -52.4, 37]], glass);        // windscreen
+    Q([[-13, -53.15, 12], [13, -53.15, 12], [13, -53.15, 20], [-13, -53.15, 20]], '#3a3f44');        // grille
+    Q([[-5, -53.2, 21], [5, -53.2, 21], [5, -53.2, 23.6], [-5, -53.2, 23.6]], '#c9ced2');            // badge plate
+    for (const s of [-1, 1]) Q([[s * 10.5, -53.2, 12], [s * 16, -53.2, 12], [s * 16, -53.2, 15.5], [s * 10.5, -53.2, 15.5]], '#fff6d0');   // headlights
+    B(0, -54, 35, 2.5, 6, 11, '#c9ced2');                                                            // bumper
+    for (const s of [-1, 1]) { Q([[s * 17.05, -50, 24], [s * 17.05, -36, 24], [s * 17.05, -36, 36], [s * 17.05, -50, 36]], glass); B(s * 19.5, -50, 1.6, 4, 22, 30, blk); B(s * 18.5, -46, 3, 1, 26, 27, blk); }   // door windows, mirrors
+    B(0, -40, 26, 16, 40, 41.4, '#d9dcdf'); const on = Math.sin(t * 9) > 0; B(0, -36, 4, 4, 41.4, 44, on ? '#ff8a00' : '#a05800', '#ffb04a');   // roof, beacon
+    B(0, (L0 + L1) / 2, 34, L1 - L0, 13, 15.5, '#6f777d', '#8a9298');                                // steel tray deck
+    B(0, L0 - 1, 34, 2, 15.5, 38, '#8d949a'); for (let k = -15; k <= 15; k += 3) B(k, L0 - 1, .6, 2.4, 18, 37, '#5e666c');   // headboard with mesh
+    // yellow removable gates: posts and two rails down each side and across the back, lifting out of pockets on the tray edge
+    for (const s of [-1, 1]) { for (let d = L0 + 2; d <= L1; d += 13.5) B(s * 16.6, d, 1.4, 1.4, 15.5, 27, yel); for (const z of [20.5, 26]) B(s * 16.6, (L0 + L1) / 2, 1, L1 - L0, z, z + 1.2, yel); }
+    for (const z of [20.5, 26]) B(0, L1 - .6, 34, 1, z, z + 1.2, yel); for (const s of [-1, 1]) B(s * 8, L1 - .6, 1.2, 1.2, 15.5, 27, yel);
+    // two big toolboxes across the front of the tray
+    for (const s of [-1, 1]) { B(s * 8.2, -14, 15, 16, 15.5, 30, '#c9ced2', '#e3e7ea'); Q([[s * 8.2 - 7, -22.05, 22], [s * 8.2 + 7, -22.05, 22], [s * 8.2 + 7, -22.05, 22.6], [s * 8.2 - 7, -22.05, 22.6]], '#7d858b'); }
+    // portable fuel tank with pump and hose reel (left), air compressor with its receiver tank (right)
+    B(-8.5, 8, 14, 18, 15.5, 27, '#2b2f33', '#3a3f44'); B(-8.5, 1, 6, 4, 27, 30, '#d62828'); B(-12, 14, 3, 3, 27, 29, '#e8b100');
+    wTyre(x - 8.5, y + 21, 22, 4, 3, 1, '#c62828');                                                    // hose reel
+    B(8.5, 4, 13, 12, 15.5, 25, '#e8641c', '#f07a34'); B(8.5, 4, 9, 8, 25, 28, '#2b2f33');            // compressor and motor
+    wTyre(x + 8.5, y + 17, 20.5, 4, 12, 1, '#c9ced2');                                                // receiver tank
+    // Hiab knuckle-boom on the rear: base with stabiliser legs out each side, column, main boom folded forward, jib folded back
+    B(0, 46, 30, 8, 15.5, 19, '#3a3f44'); for (const s of [-1, 1]) { B(s * 19, 46, 8, 3, 13, 16, '#c62828'); B(s * 22, 46, 2, 2, 2, 16, '#c62828'); B(s * 22, 46, 4, 4, 0, 2, '#2b2f33'); }
+    B(4, 46, 6, 6, 19, 36, '#c62828', '#d84040'); B(4, 34, 4, 26, 34, 38, '#c62828', '#d84040'); B(4, 30, 3.4, 22, 38.5, 41.5, '#c62828', '#d84040');
+    B(4, 20, 1.2, 1.2, 26, 34, '#3a3f44'); B(4, 20, 3, 2, 24, 26, '#2b2f33');                         // hook block
+    Q([[-1, 48.6, 30], [9, 48.6, 30], [9, 48.6, 33], [-1, 48.6, 33]], '#f4f4f4');                   // HIAB plate
+    for (const s of [-1, 1]) Q([[s * 12, 56.6, 15.5], [s * 15.5, 56.6, 15.5], [s * 15.5, 56.6, 18.5], [s * 12, 56.6, 18.5]], '#e01818');   // tail lights
+    for (const s of [-1, 1]) B(s * 15, 57, 6, 1, 3, 12, blk);                                         // mudflaps
+    for (const s of [-1, 1]) { wTyre(x + s * 14, y - 36, 7.5, 7.5, 5, 0); wTyre(x + s * 12, y + 34, 7.5, 7.5, 5, 0, '#c9ced2'); wTyre(x + s * 17.5, y + 34, 7.5, 7.5, 5, 0, '#c9ced2'); }   // single front, duals on the rear axle
+  });
+  wText('HINO', x, y - 53.4, 22.3, 2.2, '#2b2f33'); wText('HIAB', x + 4, y + 48.8, 31.5, 1.8, '#c62828');
 }
 // white mine-spec dual-cab ute, nose towards +x (out to the car park aisle): about as tall as the walker
 function campUteModel(x, y, col, low) {
