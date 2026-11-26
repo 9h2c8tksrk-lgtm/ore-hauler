@@ -446,10 +446,10 @@ function drawBus() {
 function arriveWorkshopMech() {
   state = 'workshopfoot'; workshopOnFoot = true; footTime = 0; cribReached = false; mStage = 3; bus = null;
   wk = wkFresh(); marks = []; yard = makeYard(); particles = []; wk.auto = true; wk.bay = 2; wk.v = 0; shopL = shopLayout(); shopCrewInit();
-  workshopFoot = { x: MECH_BUS_PARK.x + 34, y: MECH_BUS_PARK.y }; footFacing = 0; footCamH = 0; ptrs.clear(); syncBtns();
+  workshopFoot = { x: MECH_BUS_PARK.x - 70, y: MECH_BUS_PARK.y }; footFacing = Math.PI / 2; footCamH = footFacing;   // out by the van's nose, in the aisle ptrs.clear(); syncBtns();
   flash('Out of the bus. Put your crib in the crib room fridge and do your breatho.');
 }
-const MECH_BUS_PARK = { x: -470, y: 300 };   // the Hiace's spot in the small car park behind the crib room
+const MECH_BUS_PARK = { x: -472, y: 300.4 };   // the Hiace's bay in the car park behind the crib room (crib-side row, second bay), reversed in
 function mechObjective() {
   return { 3: 'OBJECTIVE: PUT YOUR CRIB IN THE CRIB ROOM FRIDGE', 4: 'OBJECTIVE: BREATHO ON THE CRIB ROOM WALL', 5: 'OBJECTIVE: PRESTART IN THE WORKSHOP (BAY 6)',
     6: 'OBJECTIVE: TIP AND TUG PA236, OUT THE FRONT OF BAY 5', 8: 'OBJECTIVE: SERVICE PA236: DOWN THE PIT STAIRS, FRONT OF BAY 5', 10: 'CALLOUT: GRAB THE SERVICE UTE IN THE CAR PARK',
@@ -461,7 +461,7 @@ const SVC_STAIRS = { x: 702, y: 780 - 54 }, SVC_UTE = { x: -440, y: 412 };
 const nearTipTug = () => Math.hypot(workshopFoot.x - TT_PANEL.x, workshopFoot.y - TT_PANEL.y) < 34;
 const nearPitStairs = () => Math.hypot(workshopFoot.x - SVC_STAIRS.x, workshopFoot.y - SVC_STAIRS.y) < 26;
 const nearServiceUte = () => Math.hypot(workshopFoot.x - SVC_UTE.x, workshopFoot.y - SVC_UTE.y) < 34;
-const nearHiace = () => Math.hypot(workshopFoot.x - MECH_BUS_PARK.x - 36, workshopFoot.y - MECH_BUS_PARK.y) < 34;
+const nearHiace = () => Math.hypot(workshopFoot.x - MECH_BUS_PARK.x + 70, workshopFoot.y - MECH_BUS_PARK.y) < 34;   // at its nose, in the aisle
 function mechPrompt() {
   if (mStage <= 5 && nearPrestart()) return mStage >= 5 ? 'PRESS E: LISTEN TO THE PRESTART' : 'PRESTART: CRIB IN THE FRIDGE AND BREATHO FIRST';
   if (mStage === 6 && nearTipTug()) return 'PRESS E: START THE TIP AND TUG';
@@ -1174,8 +1174,18 @@ const SB = 156, SH_W = SB * 6, SH_D = 780, SH_H = 230, sbx = i => SB / 2 + i * S
 const SH_DOORS = [{ y0: 150, y1: 186 }, { y0: 664, y1: 700 }];   // clear of the wall's portal frame columns (every 130)   // two PA doors in the left (Bay 1, tyre bay) wall, one at each end, opening towards the crib room
 const shInDoor = (y, pad = 0) => SH_DOORS.some(d => y > d.y0 - pad && y < d.y1 + pad);
 const shWallSegs = () => { const o = []; let a = 0; for (const d of SH_DOORS) { o.push([a, d.y0]); a = d.y1; } o.push([a, SH_D]); return o; };   // solid stretches of the Bay 1 wall
-const SH_OUT = { x0: -650, y0: -90, y1: SH_D + 300 };   // x0: out past the small car park to the truck lane beside the truck wash
-const SH_CARPARK = { x0: -540, x1: -424, y0: 236, y1: 470 }, SH_TRUCKLANE = { x0: -650, x1: -545 }, SH_WASH = { x0: -800, x1: -668, y0: 120, y1: 600 };   // behind (west of) the crib room
+const SH_OUT = { x0: -840, y0: -90, y1: SH_D + 300 };   // x0: out past the car park to the truck lane beside the truck wash
+// 10-bay car park behind (west of) the crib room, inside a low blue metal bund: 5 bays along the crib room, the aisle down the middle
+// (open at both ends to drive in and out), 5 bays on the truck wash side. Everything reverses in, nose to the aisle.
+// Then the truck lane (room for a road train between the car park and the wash) and the drive-through truck wash.
+const SH_CARPARK = { x0: -712, x1: -414, y0: 214, y1: 494 }, CP_BUND = 8, CP_DEPTH = 110, CP_BAYS = 5;
+const CP_AISLE = { x0: SH_CARPARK.x1 - CP_BUND - CP_DEPTH, x1: SH_CARPARK.x0 + CP_BUND + CP_DEPTH };   // -532 .. -594
+const CP_BAY_W = (SH_CARPARK.y1 - SH_CARPARK.y0 - 2 * CP_BUND) / CP_BAYS, cpBayY = k => SH_CARPARK.y0 + CP_BUND + CP_BAY_W * (k + .5);
+const CP_ROW = [{ x: SH_CARPARK.x1 - CP_BUND - CP_DEPTH / 2, nose: -1 }, { x: SH_CARPARK.x0 + CP_BUND + CP_DEPTH / 2, nose: 1 }];   // crib room side, wash side
+// who's parked where: [row, bay, kind, colour]; the mechanic's Hiace takes the crib-side bay nearest the courtyard door
+const CP_CARS = [[0, 0, 'ute', '#f2f3f4'], [0, 2, 'ute', '#f2f3f4'], [0, 3, 'ute', '#c62828'], [1, 0, 'ute', '#f2f3f4'], [1, 1, 'ute', '#2f2f33'], [1, 3, 'ute', '#f2f3f4'], [1, 4, 'ute', '#1d5fb4']];
+const cpSolids = () => [...CP_CARS.map(([r, k]) => [CP_ROW[r].x, cpBayY(k), 100, 46]), ...(role === 'mech' ? [[MECH_BUS_PARK.x, MECH_BUS_PARK.y, 104, 50]] : [])];
+const SH_TRUCKLANE = { x0: -832, x1: -722 }, SH_WASH = { x0: -974, x1: -842, y0: 120, y1: 600 };
 // SH_OUT   // walkable ground outside: the courtyard side plus an apron off the front and back of the bays
 // Four transportables in a pinwheel round a courtyard beside Bay 1, laid out like the yard's aerial map. Each has its door
 // on the courtyard side (face N/S/E/W); the crib room is the one you head for.
@@ -1228,8 +1238,7 @@ function shopBlocked(x, y) {
   const L = shopL;   // the rest of each rig's trailers run out the open back of its bay
   for (const [bay, T0] of [[L.bay, L.T0], ...L.pms.map(pm => [pm.bay, pm.F - 230])]) if (Math.abs(x - sbx(bay)) < 42 && y < T0 - 290) return true;
   if (x < 0) {   // the courtyard side: transportables and the tank, and the vehicles in the car park behind the crib room
-    if (role === 'mech' && Math.abs(x - MECH_BUS_PARK.x) < 27 && Math.abs(y - MECH_BUS_PARK.y) < 60) return true;
-    if (x > -495 && x < -445 && y > 360 && y < 464) return true;
+    if (cpSolids().some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 && Math.abs(y - cy) < l / 2)) return true;   // parked vehicles
     if (Math.hypot(x - SH_TANK.x, y - SH_TANK.y) < SH_TANK.r + 5) return true;
     return SH_BLDGS.some(b => x > b.x0 - SH_BLD_PAD && x < b.x1 + SH_BLD_PAD && y > b.y0 - SH_BLD_PAD && y < b.y1 + SH_BLD_PAD);
   }
@@ -1291,7 +1300,7 @@ function drawWorkshopFoot() {
   const fx = Math.cos(footCamH), fy = Math.sin(footCamH), rx = -fy, ry = fx, me = workshopFoot;
   // pull the camera in if a truck, column or wall is behind you, so it never ends up inside something
   const sol = [...shopSolids().filter(([, cy, w]) => !(w === 14 && cy > SH_D - 10)),   // columns only clip a sliver, so they don't pull the camera in
-    ...SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]), [-470, 412, 50, 104], ...(role === 'mech' ? [[MECH_BUS_PARK.x, MECH_BUS_PARK.y, 54, 120]] : []),
+    ...SH_BLDGS.map(b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0]), ...cpSolids(),
     ...[[shopL.bay, shopL.T0], ...shopL.pms.map(pm => [pm.bay, pm.F - 230])].map(([bay, T0]) => [sbx(bay), T0 - 290 - 600, 80, 1200])];   // trailers out the back of each bay
   const camBlocked = (x, y) => x < SH_OUT.x0 + 5 || x > SH_W - 6 || y < SH_OUT.y0 - 60 || y > SH_OUT.y1 + 60 || (Math.abs(x) < 6 && y > 0 && y < SH_D && (!shInDoor(y) || Math.abs(me.x) > 8)) || sol.some(([cx, cy, w, l]) => Math.abs(x - cx) < w / 2 + 4 && Math.abs(y - cy) < l / 2 + 4);
   let dist = 90; for (let t = 8; t <= 90; t += 3) if (camBlocked(me.x - fx * t, me.y - fy * t)) { dist = Math.max(22, t - 6); break; }
@@ -1462,10 +1471,14 @@ function drawWorkshopFoot() {
   // ----- outside: sky, red-dirt yard, crib room
   rect(0, 0, W, horizon, '#a7c3d9'); rect(0, horizon - 14, W, 14, '#8b9d7a'); rect(0, horizon, W, H - horizon, '#9c5634');
   flat(-1300, -400, SH_W + 600, SH_D + 900, -.05, '#a35a36');
-  // behind the crib room: the small car park, the truck lane past it and the drive-through truck wash beyond
-  flat(SH_CARPARK.x0, SH_CARPARK.y0, SH_CARPARK.x1, SH_CARPARK.y1, .02, '#4c5156');
-  for (let y = SH_CARPARK.y0 + 6; y < SH_CARPARK.y1; y += 58) flat(SH_CARPARK.x0 + 70, y, SH_CARPARK.x1 - 4, y + 2, .03, '#e8e8e8');   // bay lines
-  flat(SH_CARPARK.x0 + 66, SH_CARPARK.y0 + 4, SH_CARPARK.x0 + 68, SH_CARPARK.y1 - 4, .03, '#e8e8e8');
+  // behind the crib room: the 10-bay car park, the truck lane past it and the drive-through truck wash beyond
+  { const C = SH_CARPARK, b = CP_BUND, A = CP_AISLE;
+    flat(C.x0 + b, C.y0 + b, C.x1 - b, C.y1 - b, .02, '#4c5156');                                                  // sealed car park
+    flat(A.x1, C.y0 - 70, A.x0, C.y0 + b, .018, '#8a6a50'); flat(A.x1, C.y1 - b, A.x0, C.y1 + 70, .018, '#8a6a50');   // the aisle's dirt approaches, in and out
+    for (let k = 0; k <= CP_BAYS; k++) { const y = C.y0 + b + k * CP_BAY_W; flat(A.x0, y - 1, C.x1 - b - 4, y + 1, .03, '#e8e8e8'); flat(C.x0 + b + 4, y - 1, A.x1, y + 1, .03, '#e8e8e8'); }   // bay lines
+    for (const x of [A.x0, A.x1]) flat(x - 1, C.y0 + b, x + 1, C.y1 - b, .03, '#e8e8e8');                         // bay ends along the aisle
+    for (let y = C.y0 + 14; y < C.y1 - 20; y += 28) flat((A.x0 + A.x1) / 2 - 1, y, (A.x0 + A.x1) / 2 + 1, y + 14, .03, '#f2c200');   // aisle centre dashes
+  }
   flat(SH_TRUCKLANE.x0, -400, SH_TRUCKLANE.x1, SH_D + 400, .015, '#b07a52');
   flat(sbx(4) - 110, SH_D + 30, sbx(4) + 110, SH_D + 1700, .015, '#b3aea4');   // the wash pad out the front of bay 5
   for (const x of [SH_TRUCKLANE.x0 + 22, SH_TRUCKLANE.x1 - 22]) flat(x - 6, -400, x + 6, SH_D + 400, .02, '#9c6745');   // wheel ruts
@@ -1501,13 +1514,26 @@ function drawWorkshopFoot() {
     }, outside);
   }
   const viaCamp = fn => { const keep = [wCam, WF, WCY, WCH, wCos, wSin]; wCam = { x: CX, y: CY, hx: fx, hy: fy, rx, ry }; WF = focus; WCY = horizon; WCH = eye; wCos = cp; wSin = sp; try { fn(); } finally { [wCam, WF, WCY, WCH, wCos, wSin] = keep; } };
-  if (role === 'mech') add(MECH_BUS_PARK.x, MECH_BUS_PARK.y, () => viaCamp(() => hiaceModel(MECH_BUS_PARK.x, MECH_BUS_PARK.y, -Math.PI / 2, '#1d5fb4', 1.9)), outside);   // the bus you came in on
-  add(-470, 412, () => {   // a mine-spec ute in the next bay: white tray-back, ROPS, beacon, flag
-    box(-470, 412, 44, 100, 16, '#f2f3f4', '#e6e8ea', 10); box(-470, 384, 42, 40, 18, '#f2f3f4', '#26404f', 26); box(-470, 440, 44, 44, 4, '#4a5056', '#5e6468', 22);
-    for (const [wx, wy] of [[-492, 382], [-448, 382], [-492, 444], [-448, 444]]) box(wx, wy, 6, 20, 20, '#151617', '#2a2d30');
-    box(-470, 418, 40, 3, 30, '#2b2f33', '#3a3f44', 26); box(-470, 418, 5, 5, 5, '#ff8a00', '#ffb04a', 56); box(-488, 418, 1, 1, 50, '#d62828', '#d62828', 26);
-  }, outside);
-  for (const y of [264, 322, 380, 438]) add(SH_CARPARK.x0 + 74, y + 8, () => box(SH_CARPARK.x0 + 74, y + 8, 6, 26, 4, '#d8d2c4', '#e8e2d4'), outside);   // wheel stops
+  if (role === 'mech') add(MECH_BUS_PARK.x, MECH_BUS_PARK.y, () => viaCamp(() => hiaceModel(MECH_BUS_PARK.x, MECH_BUS_PARK.y, Math.PI, '#1d5fb4', 1.75)), outside);   // the bus you came in on
+  // mine-spec utes reversed into their bays, nose to the aisle: tray-back, cab, ROPS with a beacon and flag
+  const parkedUte = (x, y, n, col) => {
+    for (const dx of [-30, 30]) for (const s of [-1, 1]) box(x + dx, y + s * 21, 20, 6, 20, '#151617', '#2a2d30');   // wheels
+    box(x, y, 96, 40, 12, col, shade(col, .95), 10);                                                     // body
+    box(x + n * 18, y, 44, 40, 4, col, shade(col, 1.04), 22); box(x + n * 30, y, 20, 40, 1, col, shade(col, 1.04), 22);   // bonnet
+    box(x + n * 2, y, 34, 38, 18, col, shade(col, 1.04), 26); box(x + n * 18.5, y, 1, 34, 14, '#26404f', '#26404f', 28);   // cab, windscreen
+    for (const s of [-1, 1]) box(x + n * 2, y + s * 19.2, 26, 1, 12, '#26404f', '#26404f', 29);           // door windows
+    box(x - n * 30, y, 36, 42, 3, '#5e6468', '#7a8288', 22); box(x - n * 30, y, 22, 18, 12, '#c9ced2', '#dfe3e6', 25);   // tray and toolbox
+    box(x - n * 13, y, 3, 40, 3, '#2b2f33', '#3a3f44', 52); for (const s of [-1, 1]) box(x - n * 13, y + s * 18, 3, 3, 30, '#2b2f33', '#3a3f44', 22);   // ROPS
+    box(x - n * 13, y, 5, 5, 4, '#ff8a00', '#ffb04a', 55); box(x - n * 13, y + 18, 1, 1, 30, '#d62828', '#d62828', 52);   // beacon, flag pole
+  };
+  for (const [r, k, , col] of CP_CARS) { const { x, nose } = CP_ROW[r], y = cpBayY(k); add(x, y, () => parkedUte(x, y, nose, col), outside); }
+  for (let r = 0; r < 2; r++) for (let k = 0; k < CP_BAYS; k++) { const x = CP_ROW[r].x - CP_ROW[r].nose * (CP_DEPTH / 2 - 10), y = cpBayY(k);   // wheel stops at the back of each bay
+    add(x, y, () => box(x, y, 6, 26, 4, '#d8d2c4', '#e8e2d4'), outside); }
+  { const C = SH_CARPARK, b = CP_BUND, A = CP_AISLE, bund = (x0, y0, x1, y1) => { const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, w = x1 - x0, l = y1 - y0;   // low blue metal windrow
+      add(cx, cy, () => { box(cx, cy, w, l, 3, '#5f6973', '#6f7a84'); box(cx, cy, w - (w < l ? 4 : 0), l - (l < w ? 4 : 0), 3, '#6a747e', '#7d8892', 3);
+        for (let u = 0; u < Math.max(w, l); u += 9) { const px = w > l ? x0 + u + 3 : cx + (u % 2 ? 1.2 : -1.2), py = w > l ? cy + (u % 18 ? 1.2 : -1.2) : y0 + u + 3; box(px, py, 1.6, 1.6, .5, '#9aa4ad', '#a9b3bc', 6); } }, outside); };
+    bund(C.x0, C.y0, A.x1, C.y0 + b); bund(A.x0, C.y0, C.x1, C.y0 + b); bund(C.x0, C.y1 - b, A.x1, C.y1); bund(A.x0, C.y1 - b, C.x1, C.y1);   // ends, with the aisle open
+    bund(C.x0, C.y0 + b, C.x0 + b, C.y1 - b); bund(C.x1 - b, C.y0 + b, C.x1, C.y1 - b); }                     // the long sides
   add((SH_WASH.x0 + SH_WASH.x1) / 2, (SH_WASH.y0 + SH_WASH.y1) / 2, () => {   // truck wash: steel portal frames, a roof, the gantry, sign, spray
     const x0 = SH_WASH.x0, x1 = SH_WASH.x1, y0 = SH_WASH.y0, y1 = SH_WASH.y1;
     for (let y = y0; y <= y1; y += (y1 - y0) / 4) for (const x of [x0, x1]) box(x, y, 6, 6, 120, '#5f7a8a', '#6f8c9c');
