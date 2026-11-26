@@ -128,7 +128,7 @@ function syncBtns() {
 function cpos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
 
 addEventListener('keydown', e => {
-  if (e.target === nameIn) { if (e.code === 'Enter') onKey('Enter'); return; }
+  if (e.target === nameIn) { if (e.code === 'Enter') { const n = nameIn.value.trim().slice(0, 12); if (n) { playerName = n; localStorage.oreName = n; nameEdit = false; nameIn.blur(); } } return; }
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
   if (!e.repeat) onKey(e.code);
@@ -170,14 +170,9 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   if (state === 'parkhandover') { if(inR(p,[15,610,450,100])) advanceHandover(); else {cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,p);syncBtns();} return; }
-  if (state === 'menu' && inR(p, SKIP_BTN)) { homeRoom = -1; skipLoad(); return; }
-
-  if (state === 'menu' && inR(p, CAMP_BTN)) { startAtCamp(); return; }
-  if (state === 'menu' && inR(p, MECH_BTN)) { startMechanic(); return; }
-  if (state === 'menu' && inR(p, WATER_BTN)) { startWaterCart(); return; }
   if (state === 'busride') { if (bus && bus.home) { mStage = 14; state = 'mechend'; bus = null; } else arriveWorkshopMech(); return; }
   if (state === 'mechend') { reset(); state = 'menu'; return; }
-  if (state === 'menu') { if (inR(p, LOAD_BTN)) { startLoad(); return; } for (let i = 0; i < DIFFS.length; i++) if (inR(p, diffBtn(i))) { setDiff(i); return; } nameIn.blur(); return; }   // no tap-anywhere start
+  if (state === 'menu') { menuTap(p); return; }   // no tap-anywhere start
   onKey('Space');
 });
 cv.addEventListener('pointerup', () => { officeTouchHeld = false; });
@@ -209,7 +204,6 @@ const DIFFS = [
   { n: 'KIDS', spawn: 5, dmg: .5, vel: .85, mult: .5, noWildlife: true }];
 let diff = [0, 1, 2, 3].includes(+localStorage.oreDiff) && localStorage.oreDiff !== undefined ? +localStorage.oreDiff : 1;
 const D = () => DIFFS[diff];
-const diffBtn = i => [14 + i * 114, 516, 108, 38, DIFFS[i].n];
 function setDiff(i) { diff = (i + DIFFS.length) % DIFFS.length; localStorage.oreDiff = diff; }
 let board = [];
 try { board = JSON.parse(localStorage.oreBoard || '[]'); } catch (e) { board = []; }
@@ -277,18 +271,14 @@ function onKey(code) {
   if (state === 'walkend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
   if (state === 'drive' && code === 'KeyH' && hurtByStock) { toWorkshop(); return; }
   if (state === 'drive' && code === 'KeyV') { fpv = !fpv; return; }
-  if (state === 'menu' && (code === 'ArrowLeft' || code === 'ArrowRight')) { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
-  if (state === 'menu' && code === 'KeyL') { homeRoom = -1; skipLoad(); return; }
   if (state === 'kitcheninside' && code === 'KeyE') { kitchenInteract(); return; }
   if (state === 'shopinside' && code === 'KeyE') { shopInteract(); return; }
   if (state === 'wsoffice' && code === 'KeyE') { wsoInteract(); return; }
   if (state === 'shroom' && code === 'KeyE') { shrInteract(); return; }
   if ((state === 'walk' || state === 'officeinside') && code === 'KeyE') { officeInteract(); return; }
-  if (state === 'menu' && code === 'KeyC') { startAtCamp(); return; }
-  if (state === 'menu' && code === 'KeyM') { startMechanic(); return; }
   if (state === 'busride' && (code === 'Space' || code === 'Enter')) { if (bus && bus.home) { mStage = 14; state = 'mechend'; bus = null; } else arriveWorkshopMech(); return; }
   if (state === 'mechend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
-  if (state === 'menu' && (code === 'Space' || code === 'Enter')) { startLoad(); return; }
+  if (state === 'menu') { menuKey(code); return; }
   if (state==='workshop' && code==='KeyE') {
     enterWorkshopFoot(); return;
   }
@@ -304,7 +294,6 @@ function onKey(code) {
   if (state === 'workshop' && code === 'KeyV') { chaseView = !chaseView; return; }
   if (state === 'water') { if (code === 'Space') { if (cart.tank > 0) cart.spray = !cart.spray; else flash('Tank empty: fill up at the standpipe'); } else if (code === 'KeyV') chaseView = !chaseView; return; }
   if (state === 'waterend' && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; return; }
-  if (state === 'menu' && code === 'KeyW') { startWaterCart(); return; }
   if (state === 'load') {
     if (code === 'Space') action();
     else if (code === 'KeyV') chaseView = !chaseView;
@@ -319,12 +308,11 @@ function onKey(code) {
   }
   if ((state === 'over' || state === 'win') && (code === 'Space' || code === 'Enter')) { reset(); state = 'menu'; }
 }
-const LOAD_BTN = [110, 560, 260, 25, 'TRUCK DRIVER: LOAD (ENTER)'], SKIP_BTN = [110, 587, 260, 25, 'SKIP LOADING (L)'], CAMP_BTN = [110, 614, 260, 25, 'TRUCK DRIVER: START AT CAMP (C)'], WATER_BTN = [110, 668, 260, 25, 'ROM WATER CART (W)'], MECH_BTN = [110, 641, 260, 25, 'WORKSHOP MECHANIC (M)'];
 let nameErrT = 0;   // a name is required before any storyline starts
 function takeName() {
   const n = nameIn.value.trim().slice(0, 12);
   if (!n) { nameErrT = 2.5; setTimeout(() => nameIn.focus()); return false; }   // deferred, or the shortcut key gets typed in as the name
-  playerName = n; localStorage.oreName = playerName; nameIn.blur(); reset(); return true;
+  playerName = n; localStorage.oreName = playerName; nameEdit = false; nameIn.blur(); reset(); return true;
 }
 function startLoad() { if (!takeName()) return; homeRoom = -1; state = 'load'; flash('Fill trailers 1 and 2: the second loader does 3 and 4'); }
 let role = 'driver', mStage = 0, mBreath = 0, prestartLine = -1;   // which storyline, and how far through the mechanic's day
@@ -6457,6 +6445,139 @@ function drawWorkshop() {
   else text('V: change view', 10, 82, 11, '#ccc', 'left');
 }
 
+// ---------- home screen: pick who you are, then how your shift starts ----------
+// menuPage: 'home' (name + three role cards), 'driver' (where to start + difficulty), 'mech', 'water', 'scores', 'controls'
+let menuPage = 'home', menuSel = 0, driverStart = +(localStorage.oreStart ?? 1) || 0, nameEdit = false;
+const MENU_CARDS = [
+  { id: 'driver', t: 'TRUCK DRIVER', s: 'Load at the ROM, haul to the Skyway', col: '#f062a4' },
+  { id: 'mech', t: 'WORKSHOP MECHANIC', s: 'Tip and tug, pit service, breakdown callout', col: '#f2c200' },
+  { id: 'water', t: 'ROM WATER CART', s: 'Mini game: keep the dust down', col: '#4a93dc' }];
+const DRIVER_STARTS = [
+  { t: 'Start at camp', s: 'Wake up, brekkie, the ute out to the highway' },
+  { t: 'Load at the ROM', s: 'Fill the trailers with the loader' },
+  { t: 'Straight to the highway', s: 'Trailers already loaded, hit the road' }];
+const cardR = i => [36, 272 + i * 104, W - 72, 90];
+const startR = i => [36, 150 + i * 82, W - 72, 70];
+const chipR = i => [36 + i * ((W - 72) / 4), 438, (W - 72) / 4 - 8, 40];
+const BACK_R = [14, 14, 84, 34], GO_R = [60, 596, W - 120, 60], SCORES_R = [36, 620, (W - 84) / 2, 44], CTRL_R = [W / 2 + 6, 620, (W - 84) / 2, 44];
+const nameR = () => [W / 2 - 120, 196, 240, 38];
+function rrect(r, fill, stroke, rad = 10, lw = 2) { ctx.fillStyle = fill; ctx.beginPath(); ctx.roundRect(r[0], r[1], r[2], r[3], rad); ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+function needName() {   // every start needs a name: back to the home page with the box open if there isn't one
+  if (nameIn.value.trim()) return false;
+  menuPage = 'home'; nameEdit = true; nameErrT = 2.5; setTimeout(() => nameIn.focus()); return true;
+}
+function menuStart() {
+  if (needName()) return;
+  if (menuPage === 'driver') { localStorage.oreStart = driverStart; homeRoom = -1; [startAtCamp, startLoad, skipLoad][driverStart](); }
+  else if (menuPage === 'mech') startMechanic();
+  else if (menuPage === 'water') startWaterCart();
+}
+function openCard(i) {
+  menuSel = i; if (needName()) return;
+  const n = nameIn.value.trim().slice(0, 12); playerName = n; localStorage.oreName = n;   // whatever's in the box is the name
+  menuPage = MENU_CARDS[i].id; nameEdit = false; nameIn.blur();
+}
+function menuTap(p) {
+  if (menuPage === 'home') {
+    if ((!playerName || nameEdit) && inR(p, nameR())) return;   // the name box itself
+    if (playerName && !nameEdit && inR(p, [W / 2 - 150, 196, 300, 38])) { nameEdit = true; setTimeout(() => { nameIn.focus(); nameIn.select(); }); return; }
+    for (let i = 0; i < MENU_CARDS.length; i++) if (inR(p, cardR(i))) { openCard(i); return; }
+    if (inR(p, SCORES_R)) { menuPage = 'scores'; return; }
+    if (inR(p, CTRL_R)) { menuPage = 'controls'; return; }
+    nameIn.blur(); return;
+  }
+  if (inR(p, BACK_R)) { menuPage = 'home'; return; }
+  if (menuPage === 'driver') {
+    for (let i = 0; i < 3; i++) if (inR(p, startR(i))) { driverStart = i; return; }
+    for (let i = 0; i < DIFFS.length; i++) if (inR(p, chipR(i))) { setDiff(i); return; }
+  }
+  if ((menuPage === 'driver' || menuPage === 'mech' || menuPage === 'water') && inR(p, GO_R)) menuStart();
+}
+function menuKey(code) {
+  if (menuPage === 'home') {
+    if (code === 'ArrowDown' || code === 'KeyS') menuSel = (menuSel + 1) % 3;
+    else if (code === 'ArrowUp' || code === 'KeyW') menuSel = (menuSel + 2) % 3;
+    else if (code === 'Enter' || code === 'Space' || code === 'ArrowRight') openCard(menuSel);
+    else if (code === 'Digit1' || code === 'Digit2' || code === 'Digit3') openCard(+code.slice(5) - 1);
+    return;
+  }
+  if (code === 'Escape' || code === 'Backspace' || (code === 'ArrowLeft' && menuPage !== 'driver')) { menuPage = 'home'; return; }
+  if (menuPage === 'driver') {
+    if (code === 'ArrowDown' || code === 'KeyS') { driverStart = (driverStart + 1) % 3; return; }
+    if (code === 'ArrowUp' || code === 'KeyW') { driverStart = (driverStart + 2) % 3; return; }
+    if (code === 'ArrowLeft' || code === 'ArrowRight') { setDiff(diff + (code === 'ArrowRight' ? 1 : -1)); return; }
+  }
+  if ((code === 'Enter' || code === 'Space') && menuPage !== 'scores' && menuPage !== 'controls') menuStart();
+  else if (code === 'Enter' || code === 'Space') menuPage = 'home';
+}
+// little line drawings for the cards
+function menuIcon(id, x, y) {
+  ctx.save(); ctx.translate(x, y);
+  if (id === 'driver') { rect(-26, -4, 18, 16, '#f062a4'); rect(-26, -10, 12, 8, '#26404f'); rect(-6, -8, 34, 20, '#c93a8a'); for (const wx of [-20, 4, 20]) { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(wx, 14, 5, 0, 7); ctx.fill(); } }
+  else if (id === 'mech') { ctx.rotate(-.7); rect(-4, -18, 8, 30, '#d9dce0'); ctx.fillStyle = '#d9dce0'; ctx.beginPath(); ctx.arc(0, -20, 10, 0, 7); ctx.fill(); ctx.fillStyle = '#1b2733'; ctx.fillRect(-4, -32, 8, 12); }
+  else { rect(-24, -6, 40, 18, '#2f78c4'); rect(16, -8, 12, 20, '#f4f4f4'); ctx.fillStyle = 'rgba(190,225,255,.9)'; for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.arc(-30 - (k % 3) * 5, -2 + k * 3, 2, 0, 7); ctx.fill(); } for (const wx of [-14, 18]) { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(wx, 14, 5, 0, 7); ctx.fill(); } }
+  ctx.restore();
+}
+function drawMenu() {
+  drawWorld3D(W / 2, true);
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(10,16,24,.55)'); g.addColorStop(.35, 'rgba(10,16,24,.15)'); g.addColorStop(.7, 'rgba(10,16,24,.45)'); g.addColorStop(1, 'rgba(10,16,24,.8)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (menuPage === 'home') {
+    text("LET'S HAUL", W / 2, 116, 54, '#ff7a1a');
+    text('Road trains, the ROM and the workshop', W / 2, 152, 15, '#fff');
+    if (playerName && !nameEdit) { rrect([W / 2 - 150, 196, 300, 38], 'rgba(8,18,30,.75)'); text(`G'day, ${playerName}  ✎`, W / 2, 221, 17, '#ffe568'); }
+    else if (nameErrT > 0) text('Enter your name to start', W / 2, 256, 15, '#ff5a4a');
+    MENU_CARDS.forEach((c, i) => {
+      const r = cardR(i), on = i === menuSel && !isTouch;
+      rrect(r, on ? 'rgba(20,34,50,.92)' : 'rgba(8,18,30,.82)', on ? '#ff7a1a' : 'rgba(255,255,255,.25)', 12, on ? 3 : 1.5);
+      rect(r[0] + 1, r[1] + 10, 6, r[3] - 20, c.col);
+      rrect([r[0] + 18, r[1] + 14, 76, 62], 'rgba(255,255,255,.07)', null, 8); menuIcon(c.id, r[0] + 56, r[1] + 45);
+      text(c.t, r[0] + 110, r[1] + 40, 21, '#fff', 'left'); text(c.s, r[0] + 110, r[1] + 64, 13, '#c8d2dc', 'left');
+      text('›', r[0] + r[2] - 22, r[1] + 56, 34, '#ff7a1a', 'center');
+    });
+    rrect(SCORES_R, 'rgba(8,18,30,.82)', 'rgba(255,255,255,.3)', 10, 1.5); text('🏆  SCORES', SCORES_R[0] + SCORES_R[2] / 2, SCORES_R[1] + 28, 16, '#fff');
+    rrect(CTRL_R, 'rgba(8,18,30,.82)', 'rgba(255,255,255,.3)', 10, 1.5); text('🎮  CONTROLS', CTRL_R[0] + CTRL_R[2] / 2, CTRL_R[1] + 28, 16, '#fff');
+    if (!isTouch) text('↑↓ choose · Enter to open', W / 2, 698, 12, '#c8d2dc');
+    return;
+  }
+  rrect(BACK_R, 'rgba(8,18,30,.85)', 'rgba(255,255,255,.35)', 8, 1.5); text('‹ BACK', BACK_R[0] + BACK_R[2] / 2, BACK_R[1] + 23, 15, '#fff');
+  const page = (title, sub) => { text(title, W / 2, 92, 30, '#ff7a1a'); if (sub) text(sub, W / 2, 120, 14, '#fff'); };
+  const goBtn = label => { rrect(GO_R, '#ff7a1a', '#ffd0a8', 14, 2); text(label, W / 2, GO_R[1] + 39, 24, '#fff'); if (!isTouch) text('Enter to start · Esc to go back', W / 2, 690, 12, '#c8d2dc'); };
+  if (menuPage === 'driver') {
+    page('TRUCK DRIVER', 'Where does your shift start?');
+    DRIVER_STARTS.forEach((o, i) => { const r = startR(i), on = i === driverStart;
+      rrect(r, on ? 'rgba(40,24,12,.92)' : 'rgba(8,18,30,.82)', on ? '#ff7a1a' : 'rgba(255,255,255,.25)', 12, on ? 3 : 1.5);
+      ctx.strokeStyle = on ? '#ff7a1a' : '#8a96a2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r[0] + 30, r[1] + r[3] / 2, 11, 0, 7); ctx.stroke();
+      if (on) { ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.arc(r[0] + 30, r[1] + r[3] / 2, 6, 0, 7); ctx.fill(); }
+      text(o.t, r[0] + 56, r[1] + 30, 19, '#fff', 'left'); text(o.s, r[0] + 56, r[1] + 52, 13, '#c8d2dc', 'left'); });
+    text('DIFFICULTY', W / 2, 426, 14, '#c8d2dc');
+    DIFFS.forEach((d, i) => { const r = chipR(i), on = i === diff; rrect(r, on ? '#ff7a1a' : 'rgba(8,18,30,.82)', on ? '#ffd0a8' : 'rgba(255,255,255,.3)', 20, 1.5); text(d.n, r[0] + r[2] / 2, r[1] + 26, 15, '#fff'); });
+    text(['Fewer cars, gentle knocks', 'The full road', 'Busy road, hard knocks, big scores', 'No wildlife, slow traffic'][diff], W / 2, 506, 13, '#c8d2dc');
+    goBtn('START SHIFT');
+  } else if (menuPage === 'mech') {
+    page('WORKSHOP MECHANIC', 'A day on the tools');
+    ['Hiace from camp to the workshop', 'Crib in the fridge, breatho, prestart', 'Tip and tug PA236 from the cab', '500-hour service down in the pit', 'Breakdown callout in the 79 Series'].forEach((l, i) => {
+      const y = 170 + i * 66; rrect([36, y, W - 72, 54], 'rgba(8,18,30,.82)', 'rgba(255,255,255,.2)', 10, 1.5);
+      ctx.fillStyle = '#f2c200'; ctx.beginPath(); ctx.arc(64, y + 27, 13, 0, 7); ctx.fill(); text(String(i + 1), 64, y + 33, 15, '#1b2733'); text(l, 90, y + 33, 16, '#fff', 'left'); });
+    goBtn('START SHIFT');
+  } else if (menuPage === 'water') {
+    page('ROM WATER CART', 'Two minutes to keep the dust down');
+    ['Spray the loading lanes: SPACE or SPRAY', 'Refill at the standpipe by the gate', 'Stay clear of the loaders and haul trucks', 'Stop for the LV if one turns up', 'Rated on dust control: up to three stars'].forEach((l, i) => {
+      const y = 170 + i * 66; rrect([36, y, W - 72, 54], 'rgba(8,18,30,.82)', 'rgba(255,255,255,.2)', 10, 1.5);
+      ctx.fillStyle = '#4a93dc'; ctx.beginPath(); ctx.arc(64, y + 27, 13, 0, 7); ctx.fill(); text('✓', 64, y + 33, 15, '#fff'); text(l, 90, y + 33, 16, '#fff', 'left'); });
+    goBtn('START');
+  } else if (menuPage === 'scores') {
+    page('SCORES', ''); rrect([30, 140, W - 60, 300], 'rgba(8,18,30,.85)', null, 12); drawBoard(176, 10, 0);
+    text(`Best: ${best}`, W / 2, 476, 15, '#ffe568');
+  } else if (menuPage === 'controls') {
+    page('CONTROLS', isTouch ? 'On screen: stick to steer, GAS / BRAKE, action buttons' : 'Keyboard or gamepad');
+    const rows = isTouch ? [['Steer', 'Left stick'], ['Drive', 'GAS / BRAKE or REV'], ['Act', 'The action button for each job'], ['Views', 'VIEW / CAB buttons']]
+      : [['Steer / turn', '← → or A D'], ['Throttle / walk', '↑ or W'], ['Brake / back up', '↓ or S'], ['Scoop, dump, spray', 'SPACE'], ['Use, talk', 'E'], ['Change view', 'V'], ['Lids / tip bins', '1–4 · Q W E R']];
+    rrect([30, 150, W - 60, 40 + rows.length * 42], 'rgba(8,18,30,.85)', null, 12);
+    rows.forEach(([a, b2], i) => { text(a, 54, 192 + i * 42, 16, '#c8d2dc', 'left'); text(b2, W - 54, 192 + i * 42, 16, '#fff', 'right'); });
+  }
+}
+
 function render() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
@@ -6476,23 +6597,8 @@ function render() {
   else if (state === 'service') drawService();
   else if (state === 'mechend') (mStage >= 14 ? drawMechDayEnd : drawMechEnd)();
   else if (state === 'walk' || state === 'walkend') drawWalk();
-  else if (state === 'menu') {
-    drawWorld3D(W / 2, true);
-    rect(40, 70, W - 80, 180, '#000b'); rect(40, 316, W - 80, 190, '#000b');
-    drawBoard(344, 5, 0);
-    for (let i = 0; i < DIFFS.length; i++) { const b = diffBtn(i); rect(b[0], b[1], b[2], b[3], i === diff ? '#f60' : '#000b'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(b[0], b[1], b[2], b[3]); text(b[4], b[0] + b[2] / 2, b[1] + 25, 16); }
-    text("LET'S HAUL", W / 2, 130, 44, '#f60');
-    text('Haul some dirt, dodge the wildlife, chase some tons', W / 2, 175, 14, '#ddd');
-    text('Two storylines: Truck Driver or Workshop Mechanic', W / 2, 200, 14, '#ff6');
-    drawBtn(LOAD_BTN, isTouch ? 'TRUCK DRIVER: LOAD AT ROM' : LOAD_BTN[4], false);
-    drawBtn(SKIP_BTN, isTouch ? 'SKIP LOADING' : SKIP_BTN[4], false);
-    drawBtn(CAMP_BTN, isTouch ? 'TRUCK DRIVER: START AT CAMP' : CAMP_BTN[4], false);
-    drawBtn(MECH_BTN, isTouch ? 'WORKSHOP MECHANIC' : MECH_BTN[4], false);
-    drawBtn(WATER_BTN, isTouch ? 'ROM WATER CART' : WATER_BTN[4], false);
-    if (nameErrT > 0) text('Enter your name to start', W / 2, 236, 16, '#f44');
-    text('←→ difficulty (menu) · ↑/W throttle  ↓/S brake  ←→/A D steer', W / 2, 705, 11, '#ccc');
-    text(`Best: ${best}`, W / 2, 718, 11, '#ccc');
-  } else {
+  else if (state === 'menu') drawMenu();
+else {
     if (state === 'skyway') drawSkyway();
     else {
       drawWorld3D(qx);
@@ -6534,11 +6640,11 @@ function render() {
 
 let last = performance.now();
 function placeName() {
-  const show = state === 'menu', r = cv.getBoundingClientRect(), k = r.width / W;
+  const show = state === 'menu' && menuPage === 'home' && (!playerName || nameEdit), r = cv.getBoundingClientRect(), k = r.width / W;
   nameIn.style.display = show ? 'block' : 'none';
   nameIn.style.borderColor = show && nameErrT > 0 ? '#f44' : '#fff';
   if (!show) return;
-  Object.assign(nameIn.style, { left: r.left + (W / 2 - 120) * k + 'px', top: r.top + 262 * k + 'px', width: 240 * k + 'px', height: 38 * k + 'px', fontSize: 18 * k + 'px' });
+  const [nx, ny, nw, nh] = nameR(); Object.assign(nameIn.style, { left: r.left + nx * k + 'px', top: r.top + ny * k + 'px', width: nw * k + 'px', height: nh * k + 'px', fontSize: 18 * k + 'px' });
 }
 let slowT = 0;
 
