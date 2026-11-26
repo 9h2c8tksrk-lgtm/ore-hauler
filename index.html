@@ -165,6 +165,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if (state === 'waterend') { reset(); state = 'menu'; return; }
   if (state === 'skyway' || state === 'tiptug') {
+    if (state === 'tiptug' && inR(p, VIEW_BTN)) { ttView = ttView === 'cab' ? 'out' : 'cab'; return; }
     for (let i = 0; i < NT; i++) { if (inR(p, lidBtn(i))) toggleLid(i); else if (inR(p, tipBtn(i))) tipTrailer(i); }
     return;
   }
@@ -311,6 +312,7 @@ function onKey(code) {
     return;
   }
   if (state === 'skyway' || state === 'tiptug') {
+    if (state === 'tiptug' && code === 'KeyV') { ttView = ttView === 'cab' ? 'out' : 'cab'; return; }
     const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(code), t = ['KeyQ', 'KeyW', 'KeyE', 'KeyR'].indexOf(code);
     if (n >= 0) toggleLid(n); else if (t >= 0) tipTrailer(t);
     return;
@@ -496,7 +498,7 @@ function mechAct() {
     10: 'The service ute is in the car park behind the crib room.', 12: 'The Hiace is waiting in the car park behind the crib room.' }[mStage] || '');
 }
 function startTipTug() {
-  state = 'tiptug'; mStage = 7; fills = Array(NT).fill(0); ttDone = [0, 0, 0, 0]; ttCam = SKW_TY(0);   // empty bins: the tip and tug just cycles each lid and bin tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];
+  state = 'tiptug'; ttView = 'cab'; mStage = 7; fills = Array(NT).fill(0); ttDone = [0, 0, 0, 0]; ttCam = SKW_TY(0);   // empty bins: the tip and tug just cycles each lid and bin tr = Array.from({ length: NT }, () => ({ lid: 0, want: 0, p: 0, dir: 0, hold: 0 })); rocks = []; particles = [];
   ptrs.clear(); syncBtns(); flash('Bins are empty. Trailer 1 first: open its lid.'); msgT = 3;
 }
 function finishTipTug() {
@@ -519,7 +521,7 @@ const SVC_JOBS = [
   { x: 120, t: 1.4, tool: 'torch', say: 'check the brake linings and slack adjusters', done: 'Linings at 60 percent, slack adjusters within spec.' },
   { x: 412, t: 1.0, tool: 'grease', say: 'grease the steering kingpins', done: 'Kingpins greased until fresh grease showed.' },
   { x: 454, t: 3, tool: 'oil', say: 'climb out and fill the engine with 40 L of new oil', done: 'Filled to the mark on the dipstick. Service done.' }];
-let svc = null, ttDone = [0, 0, 0, 0], ttCam = -62;
+let svc = null, ttDone = [0, 0, 0, 0], ttCam = -62, ttView = 'cab', mirCv = null;   // ttView: 'cab' (in PA236's cab, watching the bins in the mirror) or 'out'
 const ttActive = () => { const b = tr.findIndex(o => o.want || o.lid > .05 || o.dir || o.p > 0 || o.hold > 0); if (b >= 0) return b; const n = ttDone.findIndex(d => !d); return n >= 0 ? n : NT - 1; };
 function startService() { state = 'service'; mStage = 9; svc = { x: 446, step: 0, prog: 0, t: 0, face: -1, drips: [] }; ptrs.clear(); syncBtns(); flash('Under PA236. Walk along the pit with A/D (or the stick) and hold E at each job.'); msgT = 3.5; }
 const SVC_BTN = [340, 600, 132, 56];
@@ -5317,12 +5319,48 @@ function drawTrailer(x, y, w, h, fill, num, lid = 1, tip = 0) {
   if (num) text(String(num), x - w / 2 + 12, y - h / 2 + 16, 12, '#ccd');
   ctx.restore();
 }
+// tip and tug from the driver's seat: what was just drawn (the scene from the right-hand mirror) is copied off, then painted back flipped
+// into a big West Coast mirror, framed by PA236's cab: windscreen onto the back of the workshop, the door window, dash and wheel
+function cabMirror() {
+  if (!mirCv || mirCv.width !== cv.width || mirCv.height !== cv.height) { mirCv = document.createElement('canvas'); mirCv.width = cv.width; mirCv.height = cv.height; }
+  const m = mirCv.getContext('2d'); m.setTransform(1, 0, 0, 1, 0, 0); m.drawImage(cv, 0, 0);
+  const M = { x: 282, y: 102, w: 182, h: 352 }, k = cv.width / W;
+  rect(0, 0, W, H, '#1f2226');                                                         // cab trim
+  ctx.save(); ctx.beginPath(); ctx.moveTo(0, 80); ctx.lineTo(236, 72); ctx.lineTo(224, 352); ctx.lineTo(0, 364); ctx.closePath(); ctx.clip();   // windscreen
+  const g = ctx.createLinearGradient(0, 70, 0, 360); g.addColorStop(0, '#3b78bf'); g.addColorStop(.5, '#a9c7e2'); g.addColorStop(1, '#ecd9bd'); ctx.fillStyle = g; ctx.fillRect(0, 70, 240, 300);
+  ctx.fillStyle = '#9a7a95'; ctx.beginPath(); ctx.moveTo(0, 196); for (let x = 0; x <= 240; x += 8) ctx.lineTo(x, 182 - 10 * Math.sin(x * .03 + 1)); ctx.lineTo(240, 200); ctx.fill();
+  rect(0, 196, 240, 120, '#c7ced3'); rect(0, 196, 240, 10, '#aeb6bb');                   // the back of the workshop: header, open bays
+  for (let x = -10; x < 240; x += 62) { rect(x + 4, 210, 50, 92, '#39414a'); rect(x + 22, 199, 14, 6, '#1d5fb4'); rect(x - 2, 206, 6, 96, '#a3abb1'); }
+  rect(58, 236, 30, 66, '#c93a8a'); rect(150, 240, 30, 62, '#c93a8a');                  // other rigs' last trailers out the back of their bays
+  rect(0, 302, 240, 70, '#b7b2a8');
+  ctx.fillStyle = '#f062a4'; ctx.beginPath(); ctx.moveTo(40, 364); ctx.lineTo(70, 318); ctx.lineTo(206, 316); ctx.lineTo(228, 356); ctx.closePath(); ctx.fill();   // PA236's long pink bonnet
+  rect(118, 318, 4, 40, '#d9dce0');
+  ctx.restore();
+  ctx.fillStyle = '#2c2f33'; ctx.beginPath(); ctx.moveTo(224, 352); ctx.lineTo(236, 72); ctx.lineTo(262, 70); ctx.lineTo(258, 360); ctx.closePath(); ctx.fill();   // A-pillar
+  { const g2 = ctx.createLinearGradient(0, 80, 0, 470); g2.addColorStop(0, '#93b6d4'); g2.addColorStop(.45, '#d9c7aa'); g2.addColorStop(1, '#a7a196'); ctx.fillStyle = g2;   // the driver's door window, bright outside
+    ctx.beginPath(); ctx.moveTo(262, 74); ctx.lineTo(W, 66); ctx.lineTo(W, 470); ctx.lineTo(258, 470); ctx.closePath(); ctx.fill(); }
+  rect(256, 268, 34, 7, '#15171a'); rect(256, 330, 34, 7, '#15171a');                   // mirror arms
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.roundRect(M.x - 7, M.y - 7, M.w + 14, M.h + 14, 10); ctx.fill();   // mirror housing
+  ctx.save(); ctx.beginPath(); ctx.roundRect(M.x, M.y, M.w, M.h, 6); ctx.clip();
+  ctx.translate(M.x + M.w, 0); ctx.scale(-1, 1);                                        // a mirror shows it the wrong way round
+  const sx = W / 2 - M.w / 2 + 20, sy = H * .44 - M.h * .48;
+  ctx.drawImage(mirCv, sx * k, sy * k, M.w * k, M.h * k, 0, M.y, M.w, M.h);
+  ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(0, M.y, 26, M.h);
+  ctx.restore();
+  rect(M.x + 4, M.y + M.h - 64, M.w - 8, 2, 'rgba(0,0,0,.35)');                          // the small spotter mirror's edge
+  rect(0, 360, 262, 110, '#26292d'); rect(0, 360, 262, 6, '#34383d');                  // dash
+  for (const [x, c] of [[70, '#2f7a46'], [92, '#c62828'], [114, '#1d5fb4']]) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, 402, 7, 0, 7); ctx.fill(); }   // the tip and tug switches
+  text('TIP & TUG', 92, 428, 10, '#e8b100');
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 16; ctx.beginPath(); ctx.arc(190, 520, 92, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();   // steering wheel
+  text('In the cab: watch the bin in the mirror', W / 2, 482, 13, '#ffe568');
+}
 function drawSkyway() {
   const tug = state === 'tiptug';   // the same rig on the concrete apron behind the workshop for the mechanic's tip and tug
   const t = beaconClock();
   // drone-style camera out over the drop, looking back along the rig and down onto the stockpile
-  let C = [330, 160, 170], T = [-40, -175, -60]; const f0 = tug ? 440 : 400, cyS = H * .44;
-  if (tug) { const ay = SKW_TY(ttActive()); ttCam += (ay - ttCam) * .06; T = [SKW_X - 2, ttCam + 14, 14]; C = [SKW_X + 150, ttCam - 170, 88]; }   // looking up the rig toward the back of the shed, in close on the trailer you're working on
+  let C = [330, 160, 170], T = [-40, -175, -60], f0 = tug ? 440 : 400; const cyS = H * .44;
+  if (tug) { const ay = SKW_TY(ttActive()); ttCam += (ay - ttCam) * .06; T = [SKW_X - 2, ttCam + 14, 14]; C = [SKW_X + 150, ttCam - 170, 88]; }
+  if (tug && ttView === 'cab') { C = [SKW_X + 25, 18, 36]; T = [SKW_X + 44, -260, 12]; f0 = 260; }   // the right-hand mirror, out on its arm, looking back down the trailers   // looking up the rig toward the back of the shed, in close on the trailer you're working on
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l); }, cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const fw = nrm(sub(T, C)), rt = nrm(cross(fw, [0, 0, 1])), up = cross(rt, fw), NEAR = 5;
@@ -5465,7 +5503,7 @@ function drawSkyway() {
   }
   Q.sort((a, b) => b.d - a.d).forEach(f => { if (f.ram) { if (f.ram[0][1] > NEAR && f.ram[1][1] > NEAR) { ctx.strokeStyle = '#d6dadd'; ctx.lineWidth = Math.max(1, f0 * 1.6 / f.ram[0][1]); ctx.beginPath(); ctx.moveTo(...scr(f.ram[0])); ctx.lineTo(...scr(f.ram[1])); ctx.stroke(); } } else face(f.pts, f.col); });
   Q.length = 0;
-  if (tug) {   // you at the control pedestal on the safe side, beside the trailer you're working on
+  if (tug && ttView !== 'cab') {   // you at the control pedestal on the safe side, beside the trailer you're working on (in the cab view you're in the driver's seat)
     const py = ttCam - 52, px = X + 34;   // about 1.8 m tall at this scene's scale, on the camera side behind the trailer, clear of where the bin swings
     box(px - 5, py, 5.5, .8, .8, 5.5, '#5e6c77', '#7a8892'); box(px - 5, py, 12, 2, 1.6, 1.4, '#e8c21c', '#f2d24a');            // pedestal and its button box
     box(px, py - 1, 4, .7, .7, 4, WS_DENIM); box(px, py + 1, 4, .7, .7, 4, WS_DENIM); box(px, py, 3.2, .78, 2.8, .3, WS_TAPE);   // jeans, tape below the knee
@@ -5487,6 +5525,7 @@ function drawSkyway() {
   if (!tug) for (let k = 0; k < 8; k++) { const f2 = (t * .6 + k / 8) % 1, q = cam([-6 + f2 * 120, -250 + Math.sin(k * 2.1) * 30 * f2, 20 + 25 * f2 - 60 * f2 * f2]); if (q[1] < NEAR) continue;
     const [sx, sy] = scr(q), r = f0 * (2 + f2 * 9) / q[1]; ctx.fillStyle = `rgba(235,240,245,${.28 * (1 - f2)})`; ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill(); }
   { const q = cam([-100, 170, 60]); if (q[1] > NEAR) { const [sx, sy] = scr(q), k = f0 / q[1]; rect(sx - 34 * k, sy - 9 * k, 68 * k, 18 * k, '#1d5fb4'); text(tug ? 'TIP & TUG PAD' : 'SKYWAY TIP', sx, sy + 5 * k, 11 * k, '#fff'); } }
+  if (tug && ttView === 'cab') cabMirror();
   // ----- controls: lid and tip for each trailer
   rect(0, H - 200, W, 200, 'rgba(10,18,28,.8)');
   for (let i = 0; i < NT; i++) {
@@ -5497,6 +5536,7 @@ function drawSkyway() {
   }
   if (tug) { rect(0, 0, W, 64, '#142536e8'); text('TIP & TUG: PA236', W / 2, 26, 20, '#ffea69'); text('One trailer at a time: open the lid, tip the bin, close the lid', W / 2, 50, 12, '#fff');
     if (msgT > 0) text(msg, W / 2, 90, 14, '#ffef79');
+    if (isTouch) drawBtn(VIEW_BTN, ttView === 'cab' ? 'OUTSIDE' : 'CAB', false); else text(ttView === 'cab' ? 'V: outside view' : 'V: cab view', 12, 82, 11, '#ccc', 'left');
     text(isTouch ? 'Lid, tip, then close the lid before the next trailer' : '1-4 open/close lid · Q W E R tip the bin', W / 2, H - 76, 14, '#fff'); }
   else text(isTouch ? 'Open each lid, then tip the bin over the wall' : '1-4 open/close lid · Q W E R tip bin over the wall', W / 2, H - 76, 14, '#fff');
 }
