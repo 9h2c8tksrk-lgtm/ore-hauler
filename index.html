@@ -3120,7 +3120,7 @@ function drawUteHighway() {
 function drawUteScreen() {
   drawUteWorld();
   rect(0, 0, W, 64, '#000a');
-  text('DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
+  text(role === 'mech' ? '79 SERIES BREAKDOWN UTE' : 'DUAL-CAB UTE', 10, 22, 14, '#fff', 'left');
   text(`${Math.round(Math.abs(uv) * .5)} km/h`, W - 10, 22, 16, '#fff', 'right');
   text(shiftStart ? (uHw ? (us < HB0 ? `${Math.round((HB0 - us) / 4)} m to the parking bay` : 'Park in front of the pink truck') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to the highway` : 'Give way - turn LEFT') : us < CP0 ? `${Math.round((CP0 - us) / 4)} m to Camp` : 'Park in a free bay', W - 10, 48, 14, '#ff6', 'right');
   text(`Bumps: ${uBumps}`, 10, 48, 12, '#ccc', 'left');
